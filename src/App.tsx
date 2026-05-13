@@ -11,6 +11,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import AdminProducts from './pages/AdminProducts';
 import AdminStock from './pages/AdminStock';
 import AdminHero from './pages/AdminHero';
+import AdminCategoryTiles from './pages/AdminCategoryTiles';
 import AdminLayout from './components/AdminLayout';
 import Login from './pages/Login';
 import Cart from './pages/Cart';
@@ -30,6 +31,7 @@ const AppContent = () => {
         {/* Admin Routes */}
         <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
         <Route path="/admin/hero" element={<AdminRoute><AdminHero /></AdminRoute>} />
+        <Route path="/admin/category-tiles" element={<AdminRoute><AdminCategoryTiles /></AdminRoute>} />
         <Route path="/admin/products" element={<AdminRoute><AdminProducts /></AdminRoute>} />
         <Route path="/admin/stock" element={<AdminRoute><AdminStock /></AdminRoute>} />
         <Route path="/admin/orders" element={<AdminRoute><div className="p-10 text-center">Orders Management Coming Soon</div></AdminRoute>} />

@@ -13,6 +13,18 @@ export const CATEGORY_KEYS: Record<string, string> = {
   'All': 'cat.all'
 };
 
+/** All categories shown in catalog sidebar (excludes "All"); counts come from products. */
+export const CATALOG_FILTER_CATEGORIES = [
+  'New Arrivals',
+  'Dresses',
+  'Tops',
+  'Pants',
+  'Skirts',
+  'Jackets',
+  'Formal Sets',
+  'Coordinates',
+] as const;
+
 export const CATEGORY_ICONS: Record<string, any> = {
   'New Arrivals': (props: any) => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.1" {...props}>

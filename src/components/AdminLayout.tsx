@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Package, ShoppingCart, Users, Settings, LogOut, ChevronRight, ClipboardList, Image as ImageIcon, Store } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, Users, Settings, LogOut, ChevronRight, ClipboardList, Image as ImageIcon, Store, LayoutGrid } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
 
@@ -12,6 +12,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { icon: LayoutDashboard, label: 'Dashboard', path: '/admin' },
     { icon: Store, label: 'Shop Page', path: '/' },
     { icon: ImageIcon, label: 'Hero Reels', path: '/admin/hero' },
+    { icon: LayoutGrid, label: 'Category tiles', path: '/admin/category-tiles' },
     { icon: Package, label: 'Products', path: '/admin/products' },
     { icon: ClipboardList, label: 'Stock', path: '/admin/stock' },
     { icon: ShoppingCart, label: 'Orders', path: '/admin/orders' },
@@ -67,8 +68,15 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 p-10 overflow-auto">
+      {/* Main: hero editor uses tighter padding; other admin pages stay spacious */}
+      <main
+        className={cn(
+          'flex-1 overflow-auto',
+          location.pathname === '/admin/hero' || location.pathname === '/admin/category-tiles'
+            ? 'p-5 md:p-6'
+            : 'p-10'
+        )}
+      >
         {children}
       </main>
     </div>

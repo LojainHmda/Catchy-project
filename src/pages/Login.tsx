@@ -18,7 +18,7 @@ const Login = () => {
     try {
       await loginWithCredentials(email, password);
     } catch (err) {
-      setError('Invalid credentials. Try admin/admin');
+      setError('Sign-in failed. Use Google, valid Firebase email/password, or admin/admin if VITE_ADMIN_* is set in .env.');
     }
   };
 
@@ -29,7 +29,11 @@ const Login = () => {
           C
         </div>
         <h1 className="text-3xl font-black text-gray-900 mb-2 tracking-tight">Welcome Back</h1>
-        <p className="text-gray-500 font-medium mb-8 text-sm">Sign in with admin/admin for the Admin Hub.</p>
+        <p className="text-gray-500 font-medium mb-8 text-sm">
+          Sign in with Google, or use email/password for a user created in Firebase Authentication. If you set{' '}
+          <code className="rounded bg-gray-100 px-1">VITE_ADMIN_EMAIL</code> / <code className="rounded bg-gray-100 px-1">VITE_ADMIN_PASSWORD</code> in{' '}
+          <code className="rounded bg-gray-100 px-1">.env</code>, the shortcut <strong>admin</strong> / <strong>admin</strong> signs in as that user.
+        </p>
 
         <form onSubmit={handleCredentialsLogin} className="space-y-4 mb-8">
           <div className="relative">

@@ -19,6 +19,7 @@ const AdminStock = () => {
       const q = query(collection(db, 'products'), orderBy('name', 'asc'));
       const snapshot = await getDocs(q);
       const productsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+      productsData.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
       setProducts(productsData);
       
       const initialUpdates: { [key: string]: number } = {};

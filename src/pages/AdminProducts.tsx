@@ -1,16 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import { db, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp } from '../firebase';
-import { Plus, Search, Edit2, Trash2, X, Upload, Package, ArrowLeft } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, X, Upload, Package, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLanguage } from '../context/LanguageContext';
 import { CATEGORY_KEYS, CATEGORY_ICONS } from '../constants';
 import { cn } from '../lib/utils';
 import { seedDressPants } from '../lib/seed';
+import { fileToAdminImageDataUrl } from '../lib/images';
+import { coerceProductImages } from '../lib/productImages';
+
+const MAX_PRODUCT_IMAGES = 6;
+const MAX_FILE_BEFORE_COMPRESS = 15 * 1024 * 1024; // 15MB — compressed before save
 
 const AdminProducts = () => {
   const { t } = useLanguage();
   const [products, setProducts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [listLoading, setListLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -30,46 +37,83 @@ const AdminProducts = () => {
 
   const fetchProducts = async () => {
     try {
+      setListLoading(true);
       const q = query(collection(db, 'products'), orderBy('createdAt', 'desc'));
       const snapshot = await getDocs(q);
-      setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+      list.sort(
+        (a: any, b: any) =>
+          new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      );
+      setProducts(list);
     } catch (error) {
       console.error('Error fetching products:', error);
     } finally {
-      setLoading(false);
+      setListLoading(false);
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files) return;
+    const input = e.target;
+    if (!files?.length) return;
 
-    Array.from(files).forEach((file: File) => {
-      if (file.size > 100 * 1024) { // 100KB limit
-          alert('Image too large. Please select an image smaller than 100KB.');
-          return;
+    const picked = Array.from(files).filter(
+      (f): f is File => f instanceof File && f.type.startsWith('image/')
+    );
+    if (picked.length === 0) {
+      alert('Please choose image files (JPEG, PNG, WebP, GIF).');
+      input.value = '';
+      return;
+    }
+
+    const oversize = picked.find((f) => f.size > MAX_FILE_BEFORE_COMPRESS);
+    if (oversize) {
+      alert(`"${oversize.name}" is too large (max 15MB per file).`);
+      input.value = '';
+      return;
+    }
+
+    setUploadingImages(true);
+    try {
+      const capped = picked.slice(0, MAX_PRODUCT_IMAGES);
+      const newUrls: string[] = [];
+      for (const file of capped) {
+        try {
+          newUrls.push(await fileToAdminImageDataUrl(file));
+        } catch (err) {
+          console.error('Image failed:', file.name, err);
+          alert(`Could not read "${file.name}". Try another image.`);
+        }
       }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({
-          ...prev,
-          images: [...prev.images, reader.result as string].slice(0, 4)
-        }));
-      };
-      reader.readAsDataURL(file as Blob);
-    });
+
+      if (newUrls.length > 0) {
+        setFormData((prev) => {
+          const room = MAX_PRODUCT_IMAGES - prev.images.length;
+          if (room <= 0) return prev;
+          return {
+            ...prev,
+            images: [...prev.images, ...newUrls.slice(0, room)],
+          };
+        });
+      }
+    } finally {
+      setUploadingImages(false);
+      input.value = '';
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setSaving(true);
 
     const productData = {
       ...formData,
+      images: formData.images.filter((u) => typeof u === 'string' && u.trim().length > 12),
       price: parseFloat(formData.price),
-      stock: parseInt(formData.stock),
+      stock: parseInt(formData.stock, 10),
       updatedAt: serverTimestamp(),
-      createdAt: editingProduct ? editingProduct.createdAt : serverTimestamp()
+      createdAt: editingProduct ? editingProduct.createdAt : serverTimestamp(),
     };
 
     try {
@@ -81,11 +125,22 @@ const AdminProducts = () => {
       setIsModalOpen(false);
       setEditingProduct(null);
       setFormData({ name: '', description: '', price: '', stock: '', category: '', images: [] });
-      fetchProducts();
-    } catch (error) {
+      await fetchProducts();
+    } catch (error: unknown) {
       console.error('Error saving product:', error);
+      const msg = error instanceof Error ? error.message : String(error);
+      if (
+        msg.includes('Quota') ||
+        (typeof DOMException !== 'undefined' && error instanceof DOMException && error.name === 'QuotaExceededError')
+      ) {
+        alert(
+          'Browser storage is full. Remove some product images or clear site data for this origin, then try again.'
+        );
+      } else {
+        alert('Could not save the product. Check the console for details.');
+      }
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
@@ -104,25 +159,33 @@ const AdminProducts = () => {
     setEditingProduct(product);
     setFormData({
       name: product.name,
-      description: product.description,
-      price: product.price.toString(),
-      stock: product.stock.toString(),
-      category: product.category,
-      images: product.images || []
+      description: product.description ?? '',
+      price: product.price?.toString() ?? '',
+      stock: (product.stock ?? 0).toString(),
+      category: product.category ?? '',
+      images: coerceProductImages(product),
     });
     setIsModalOpen(true);
   };
 
-  const filteredProducts = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filteredProducts = products.filter((p) =>
+    (p.name || '').toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const tableThumb = (product: any) =>
+    coerceProductImages(product)[0] ||
+    'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=200';
 
   return (
-    <div className="space-y-10 pt-32 md:pt-40 pb-20">
+    <div className="space-y-10 pb-10">
       <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
           <h1 className="text-4xl font-black text-gray-900 mb-2 tracking-tight">Product Management</h1>
           <p className="text-gray-500 font-medium">Add, edit, and manage your fashion items and stock levels.</p>
         </div>
+        <div className="flex flex-wrap items-center gap-3 md:gap-4">
         <button
+          type="button"
           onClick={() => {
             setEditingProduct(null);
             setFormData({ name: '', description: '', price: '', stock: '', category: '', images: [] });
@@ -134,14 +197,16 @@ const AdminProducts = () => {
           Add New Product
         </button>
         <button
+          type="button"
           onClick={async () => {
-             await seedDressPants();
-             fetchProducts();
+            await seedDressPants();
+            fetchProducts();
           }}
-          className="bg-blue-500 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-lg shadow-blue-500/20 hover:bg-blue-600 transition-all transform hover:scale-105"
+          className="text-sm font-bold text-gray-400 hover:text-gray-600 underline-offset-4 hover:underline transition-colors"
         >
-          Seed Mock Data
+          Load demo products
         </button>
+        </div>
       </header>
 
       {/* Search & Filter */}
@@ -172,7 +237,7 @@ const AdminProducts = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {loading ? (
+              {listLoading ? (
                 [1, 2, 3].map(i => (
                   <tr key={i} className="animate-pulse">
                     <td colSpan={5} className="px-8 py-10">
@@ -186,10 +251,14 @@ const AdminProducts = () => {
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-100">
                         <img
-                          src={product.images?.[0] || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=200'}
+                          src={tableThumb(product)}
                           alt={product.name}
                           className="w-full h-full object-cover"
                           referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src =
+                              'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=200';
+                          }}
                         />
                       </div>
                       <div>
@@ -356,26 +425,65 @@ const AdminProducts = () => {
                     </div>
                     <div>
                       <label className="block text-sm font-black text-gray-900 uppercase tracking-widest mb-3">
-                        Product Photos (Max 4)
+                        Product photos ({formData.images.length}/{MAX_PRODUCT_IMAGES})
                       </label>
-                      <div className="grid grid-cols-4 gap-4 mb-4">
+                      <p className="text-xs text-gray-500 mb-3">
+                        Previews appear in order; upload tile stays on the right. Large photos are resized for saving
+                        (this demo stores images in the browser).
+                      </p>
+                      <div className="flex flex-wrap items-center gap-3">
                         {formData.images.map((img, i) => (
-                          <div key={i} className="relative aspect-square w-12 h-12 rounded-lg overflow-hidden bg-gray-100 group border border-gray-100">
-                            <img src={img} alt="" className="w-full h-full object-cover" />
+                          <div
+                            key={`img-${i}`}
+                            className="relative h-24 w-24 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-50 shadow-sm group"
+                          >
+                            <img
+                              src={img}
+                              alt=""
+                              className="h-full w-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
                             <button
                               type="button"
-                              onClick={() => setFormData({ ...formData, images: formData.images.filter((_, idx) => idx !== i) })}
-                              className="absolute top-0.5 right-0.5 p-0.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() =>
+                                setFormData({
+                                  ...formData,
+                                  images: formData.images.filter((_, idx) => idx !== i),
+                                })
+                              }
+                              className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/70 text-white opacity-0 shadow-md transition-opacity group-hover:opacity-100 hover:bg-red-600"
+                              aria-label="Remove photo"
                             >
-                              <X size={10} />
+                              <X size={14} />
                             </button>
+                            <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                              {i + 1}
+                            </span>
                           </div>
                         ))}
-                        {formData.images.length < 4 && (
-                          <label className="aspect-square rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-400 hover:border-[#4CAF50] hover:text-[#4CAF50] transition-all cursor-pointer">
-                            <Upload size={20} />
-                            <span className="text-[10px] font-black uppercase mt-1">Upload</span>
-                            <input type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" />
+                        {formData.images.length < MAX_PRODUCT_IMAGES && (
+                          <label
+                            className={cn(
+                              'relative flex h-24 w-24 shrink-0 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 text-gray-400 transition-all',
+                              'hover:border-[#4CAF50] hover:text-[#4CAF50]',
+                              uploadingImages && 'pointer-events-none opacity-60'
+                            )}
+                          >
+                            {uploadingImages ? (
+                              <Loader2 className="h-6 w-6 animate-spin text-[#4CAF50]" />
+                            ) : (
+                              <>
+                                <Upload size={20} />
+                                <span className="mt-1 text-[10px] font-black uppercase">Add</span>
+                              </>
+                            )}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              onChange={handleImageUpload}
+                              className="hidden"
+                            />
                           </label>
                         )}
                       </div>
@@ -393,10 +501,10 @@ const AdminProducts = () => {
                   </button>
                   <button
                     type="submit"
-                    disabled={loading}
+                    disabled={saving || uploadingImages}
                     className="flex-[2] px-8 py-4 bg-[#4CAF50] text-white rounded-2xl font-black shadow-lg shadow-[#4CAF50]/20 hover:bg-[#45a049] transition-all disabled:opacity-50"
                   >
-                    {loading ? 'Saving...' : editingProduct ? 'Update Product' : 'Create Product'}
+                    {saving ? 'Saving...' : editingProduct ? 'Update Product' : 'Create Product'}
                   </button>
                 </div>
               </form>

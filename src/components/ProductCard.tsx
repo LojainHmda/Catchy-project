@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useLanguage } from '../context/LanguageContext';
-import { CATEGORY_KEYS } from '../constants';
+import { motion } from 'framer-motion';
 import { cn } from '../lib/utils';
+import { coerceProductImages, isRemoteImageUrl, PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
 
 interface ProductCardProps {
   product: {
@@ -15,27 +14,24 @@ interface ProductCardProps {
     category: string;
     stock: number;
   };
-  variant?: 'default' | 'hero';
+  variant?: 'default' | 'hero' | 'compact';
   autoPlay?: boolean;
 }
 
 const ProductCard: React.FC<ProductCardProps> = ({ product, variant = 'default', autoPlay = false }) => {
   const isHero = variant === 'hero';
-  const { isRTL } = useLanguage();
+  const isCompact = variant === 'compact';
 
   const images = React.useMemo(() => {
-    const list = Array.isArray(product.images) && product.images.length > 0 
-      ? product.images 
-      : (product.image ? [product.image] : []);
-    
+    const list = coerceProductImages(product);
     if (list.length === 0) {
-      return ['https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=1000'];
+      return [PRODUCT_IMAGE_PLACEHOLDER];
     }
     return list;
-  }, [product.images, product.image]);
+  }, [product]);
 
   const displayImages = React.useMemo(() => {
-    if (images.length === 0) return ['https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=1000'];
+    if (images.length === 0) return [PRODUCT_IMAGE_PLACEHOLDER];
     if (!isHero) {
       if (images.length === 1) return images;
       return [images[images.length - 1], ...images, images[0]];
@@ -78,20 +74,25 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, variant = 'default',
     <div className="group">
       <Link to={`/product/${product.id}`} className="block">
         <div className={cn(
-          "relative aspect-[3/4] rounded-2xl overflow-hidden mb-4 bg-neutral-100",
-          isHero && "bg-neutral-900/50 border border-white/10 shadow-xl backdrop-blur-sm"
+          "relative aspect-[3/4] overflow-hidden bg-neutral-100",
+          isHero && "rounded-2xl mb-4 bg-neutral-900/50 border border-white/10 shadow-xl backdrop-blur-sm",
+          isCompact && "mb-2.5 rounded-xl ring-1 ring-black/[0.04]",
+          !isHero && !isCompact && "mb-4 rounded-2xl"
         )}>
           <div className="absolute inset-0 overflow-hidden">
             {isHero ? (
               <div className="w-full h-full bg-neutral-100 flex items-center justify-center">
                 <img
-                  src={images[0] || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=600'}
+                  src={images[0] || PRODUCT_IMAGE_PLACEHOLDER}
                   alt={product.name}
                   className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
+                  referrerPolicy={isRemoteImageUrl(images[0] || '') ? 'no-referrer' : undefined}
                   onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.src = 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=600';
+                    const el = e.currentTarget;
+                    const src = el.currentSrc || el.src;
+                    if (src.startsWith('data:')) return;
+                    el.onerror = null;
+                    el.src = PRODUCT_IMAGE_PLACEHOLDER;
                   }}
                 />
               </div>
@@ -105,13 +106,16 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, variant = 'default',
                 {displayImages.map((img, idx) => (
                   <div key={`${product.id}-img-${idx}`} className="w-full h-full flex-shrink-0 bg-neutral-100 flex items-center justify-center">
                     <img
-                      src={img || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=600'}
+                      src={img}
                       alt={`${product.name} - ${idx}`}
                       className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
+                      referrerPolicy={isRemoteImageUrl(img) ? 'no-referrer' : undefined}
                       onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.src = 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=600';
+                        const el = e.currentTarget;
+                        const src = el.currentSrc || el.src;
+                        if (src.startsWith('data:')) return;
+                        el.onerror = null;
+                        el.src = PRODUCT_IMAGE_PLACEHOLDER;
                       }}
                     />
                   </div>
@@ -121,21 +125,31 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, variant = 'default',
           </div>
 
           {/* Overlay Hover Effect */}
-          <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+          <div className={cn(
+            "absolute inset-0 pointer-events-none transition-opacity duration-500",
+            isCompact ? "bg-catchy-dark/0 group-hover:bg-catchy-dark/[0.04]" : "bg-black/5 opacity-0 group-hover:opacity-100"
+          )} />
           
         </div>
       </Link>
-      <div className={cn("px-1 space-y-1", isHero ? "text-center" : "")}>
+      <div className={cn(
+        "space-y-1",
+        isHero ? "px-1 text-center" : isCompact ? "px-0" : "px-1"
+      )}>
         <h3 className={cn(
-          "font-sans text-sm font-medium transition-colors",
-          isHero ? "text-white text-xs group-hover:text-catchy" : "text-gray-900"
+          "font-sans transition-colors",
+          isHero && "text-xs font-medium text-white group-hover:text-catchy",
+          isCompact && "text-[13px] font-semibold leading-snug tracking-tight text-catchy-dark group-hover:text-catchy md:text-sm",
+          !isHero && !isCompact && "text-sm font-medium text-gray-900"
         )}>
-          <Link to={`/product/${product.id}`} className="truncate block">{product.name}</Link>
+          <Link to={`/product/${product.id}`} className={cn("block", isCompact ? "line-clamp-2" : "truncate")}>{product.name}</Link>
         </h3>
         <p className={cn(
-          "font-sans text-xs",
-          isHero ? "text-white/60 font-bold" : "text-gray-500"
-        )}>${product.price}</p>
+          "font-sans tabular-nums tracking-tight",
+          isHero && "text-xs font-bold text-white/60",
+          isCompact && "text-xs font-bold text-catchy-dark/85",
+          !isHero && !isCompact && "text-xs font-semibold text-catchy-dark"
+        )}>£{product.price}</p>
       </div>
     </div>
   );

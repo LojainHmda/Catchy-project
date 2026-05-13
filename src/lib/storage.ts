@@ -6,6 +6,8 @@ const STORAGE_KEYS = {
   USERS: 'catchy_users',
   ORDERS: 'catchy_orders',
   STOCK: 'catchy_stock',
+  /** Home / shop-by-category tile backgrounds: `{ images: Record<category, url> }` */
+  SHOP_CATEGORY_TILES: 'catchy_shop_category_tiles',
 };
 
 const INITIAL_PRODUCTS = [
@@ -71,14 +73,18 @@ const INITIAL_HERO_SLIDES = [
     url: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&q=80&w=2070",
     title: "hero.slide1.title",
     subtitle: "hero.slide1.subtitle",
-    order: 1
+    order: 1,
+    type: 'standard',
+    enabled: true,
   },
   {
     id: 'h2',
     url: "https://images.unsplash.com/photo-1539109132374-348058a1f7b6?auto=format&fit=crop&q=80&w=2070",
     title: "hero.slide2.title",
     subtitle: "hero.slide2.subtitle",
-    order: 2
+    order: 2,
+    type: 'standard',
+    enabled: true,
   }
 ];
 
@@ -101,6 +107,7 @@ export const initStorage = () => {
   getFromStorage(STORAGE_KEYS.HERO_SLIDES, INITIAL_HERO_SLIDES);
   getFromStorage(STORAGE_KEYS.USERS, []);
   getFromStorage(STORAGE_KEYS.ORDERS, []);
+  getFromStorage(STORAGE_KEYS.SHOP_CATEGORY_TILES, { images: {} as Record<string, string> });
 };
 
 export { STORAGE_KEYS };

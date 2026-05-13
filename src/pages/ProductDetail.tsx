@@ -5,6 +5,7 @@ import { useCart } from '../context/CartContext';
 import { ShoppingCart, Heart, Share2, ArrowLeft, ShieldCheck, Truck, RotateCcw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cn } from '../lib/utils';
+import { coerceProductImages, isRemoteImageUrl, PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
 
 const ProductDetail = () => {
   const { id } = useParams();
@@ -21,7 +22,7 @@ const ProductDetail = () => {
       try {
         const docRef = doc(db, 'products', id);
         const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
+        if (docSnap.exists) {
           setProduct({ id: docSnap.id, ...docSnap.data() });
         }
       } catch (error) {
@@ -32,6 +33,21 @@ const ProductDetail = () => {
     };
     fetchProduct();
   }, [id]);
+
+  const galleryImages = React.useMemo(
+    () => (product ? coerceProductImages(product) : []),
+    [product]
+  );
+
+  React.useEffect(() => {
+    setSelectedImage(0);
+  }, [product?.id, galleryImages.length]);
+
+  React.useEffect(() => {
+    if (selectedImage >= galleryImages.length) {
+      setSelectedImage(Math.max(0, galleryImages.length - 1));
+    }
+  }, [galleryImages.length, selectedImage]);
 
   const handleAddToCart = () => {
     if (!product) return;
@@ -75,24 +91,39 @@ const ProductDetail = () => {
               className="relative aspect-[3/4] bg-gray-100 overflow-hidden"
             >
               <img
-                src={product.images?.[selectedImage] || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=1000'}
+                src={galleryImages[selectedImage] || PRODUCT_IMAGE_PLACEHOLDER}
                 alt={product.name}
                 className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
+                referrerPolicy={
+                  isRemoteImageUrl(galleryImages[selectedImage] || '') ? 'no-referrer' : undefined
+                }
+                onError={(e) => {
+                  const el = e.currentTarget;
+                  const src = el.currentSrc || el.src;
+                  if (src.startsWith('data:')) return;
+                  el.onerror = null;
+                  el.src = PRODUCT_IMAGE_PLACEHOLDER;
+                }}
               />
               <span className="absolute top-4 left-4 bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-gray-900">New</span>
             </motion.div>
             <div className="grid grid-cols-4 gap-4">
-              {product.images?.map((img: string, i: number) => (
+              {galleryImages.map((img: string, i: number) => (
                 <button
                   key={i}
+                  type="button"
                   onClick={() => setSelectedImage(i)}
                   className={cn(
                     "aspect-square rounded-2xl overflow-hidden border-2 transition-all",
                     selectedImage === i ? "border-[#4CAF50] scale-105 shadow-lg" : "border-transparent opacity-60 hover:opacity-100"
                   )}
                 >
-                  <img src={img} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  <img
+                    src={img}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    referrerPolicy={isRemoteImageUrl(img) ? 'no-referrer' : undefined}
+                  />
                 </button>
               ))}
             </div>
