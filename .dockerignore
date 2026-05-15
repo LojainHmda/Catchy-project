@@ -1,0 +1,9 @@
+node_modules
+dist
+.git
+*.log
+coverage
+.DS_Store
+
+# Allow `.env` in build context so Cloud Build can run `vite build` with Firebase keys.
+# Final nginx image stage only copies `dist/`, not `.env`.

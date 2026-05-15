@@ -1,0 +1,27 @@
+# Files excluded from `gcloud run deploy --source` uploads.
+# Default would follow .gitignore, which ignores `.env*` — that breaks the Docker/Vite
+# build on Cloud Build because Firebase keys never reach the builder.
+#
+# Root `.env` is intentionally uploaded (short-lived in Cloud Storage). Do not commit `.env` to git.
+
+.gcloudignore
+
+.git
+.github
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+mcps/
+
+# Ignore env variants; do NOT ignore plain `.env` (required for `npm run build` in Docker).
+.env.local
+.env.*.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local

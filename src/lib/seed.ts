@@ -11,7 +11,9 @@ export async function seedDressPants() {
         stock: 50,
         category: 'Pants',
         images: ['https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&q=80&w=600'],
+        description: 'Tailored dress pants for the catalog.',
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       },
       {
         name: 'Slim Fit Trousers',
@@ -19,7 +21,9 @@ export async function seedDressPants() {
         stock: 30,
         category: 'Pants',
         images: ['https://images.unsplash.com/photo-1541099649105-f69ad21f3246?auto=format&fit=crop&q=80&w=600'],
+        description: '',
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       },
       {
         name: 'Wide Leg Chinos',
@@ -27,7 +31,9 @@ export async function seedDressPants() {
         stock: 40,
         category: 'Pants',
         images: ['https://images.unsplash.com/photo-1624378439575-d8705ad7e357?auto=format&fit=crop&q=80&w=600'],
+        description: '',
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       },
       {
         name: 'High-Waisted Jeans',
@@ -35,7 +41,9 @@ export async function seedDressPants() {
         stock: 25,
         category: 'Pants',
         images: ['https://images.unsplash.com/photo-1542272604-787c3835535d?auto=format&fit=crop&q=80&w=600'],
+        description: '',
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       },
       {
         name: 'Classic Silk Top',
@@ -43,7 +51,9 @@ export async function seedDressPants() {
         stock: 60,
         category: 'Tops',
         images: ['https://images.unsplash.com/photo-1551163943-3f6a7bca6094?auto=format&fit=crop&q=80&w=600'],
+        description: '',
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       },
       {
         name: 'Elegant Summer Dress',
@@ -51,7 +61,9 @@ export async function seedDressPants() {
         stock: 20,
         category: 'Dresses',
         images: ['https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?auto=format&fit=crop&q=80&w=600'],
+        description: '',
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       },
     ];
 

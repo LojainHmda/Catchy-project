@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { db, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp } from '../firebase';
 import { Plus, Search, Edit2, Trash2, X, Upload, Package, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -62,14 +63,18 @@ const AdminProducts = () => {
       (f): f is File => f instanceof File && f.type.startsWith('image/')
     );
     if (picked.length === 0) {
-      alert('Please choose image files (JPEG, PNG, WebP, GIF).');
+      toast.error('Invalid file type', {
+        description: 'Choose image files only (JPEG, PNG, WebP, GIF).',
+      });
       input.value = '';
       return;
     }
 
     const oversize = picked.find((f) => f.size > MAX_FILE_BEFORE_COMPRESS);
     if (oversize) {
-      alert(`"${oversize.name}" is too large (max 15MB per file).`);
+      toast.error('File too large', {
+        description: `"${oversize.name}" exceeds the 15 MB per file limit.`,
+      });
       input.value = '';
       return;
     }
@@ -83,7 +88,7 @@ const AdminProducts = () => {
           newUrls.push(await fileToAdminImageDataUrl(file));
         } catch (err) {
           console.error('Image failed:', file.name, err);
-          alert(`Could not read "${file.name}". Try another image.`);
+          toast.error('Could not read image', { description: `Try another file instead of "${file.name}".` });
         }
       }
 
@@ -105,42 +110,111 @@ const AdminProducts = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
+
+    const price = parseFloat(formData.price);
+    const stock = parseInt(formData.stock, 10);
+    if (!Number.isFinite(price) || price < 0) {
+      toast.error('Invalid price', { description: 'Enter a valid number (0 or greater).' });
+      return;
+    }
+    if (!Number.isFinite(stock) || !Number.isInteger(stock) || stock < 0) {
+      toast.error('Invalid stock', { description: 'Enter a whole number (0 or greater).' });
+      return;
+    }
+
+    const images = formData.images.filter((u) => typeof u === 'string' && u.trim().length > 12);
 
     const productData = {
-      ...formData,
-      images: formData.images.filter((u) => typeof u === 'string' && u.trim().length > 12),
-      price: parseFloat(formData.price),
-      stock: parseInt(formData.stock, 10),
+      name: formData.name.trim(),
+      description: (formData.description ?? '').trim(),
+      category: formData.category,
+      images,
+      price,
+      stock,
       updatedAt: serverTimestamp(),
       createdAt: editingProduct ? editingProduct.createdAt : serverTimestamp(),
     };
 
+    const payloadBytes = new Blob([JSON.stringify(productData)]).size;
+    const firestoreDocLimit = 1_000_000;
+    if (payloadBytes > firestoreDocLimit * 0.9) {
+      toast.error('Product too large for Firestore', {
+        description: `About ${Math.round(payloadBytes / 1024)} KB (limit ~1 MB per document). Remove or shrink photos and try again.`,
+      });
+      return;
+    }
+
+    const wasEditing = Boolean(editingProduct);
+    setSaving(true);
     try {
       if (editingProduct) {
         await updateDoc(doc(db, 'products', editingProduct.id), productData);
       } else {
         await addDoc(collection(db, 'products'), productData);
       }
-      setIsModalOpen(false);
-      setEditingProduct(null);
-      setFormData({ name: '', description: '', price: '', stock: '', category: '', images: [] });
-      await fetchProducts();
     } catch (error: unknown) {
       console.error('Error saving product:', error);
       const msg = error instanceof Error ? error.message : String(error);
-      if (
+      const code =
+        error && typeof error === 'object' && 'code' in error ? String((error as { code: unknown }).code) : '';
+
+      if (code === 'permission-denied') {
+        const pid = String(import.meta.env.VITE_FIREBASE_PROJECT_ID ?? '').trim();
+        const rulesUrl = pid
+          ? `https://console.firebase.google.com/project/${pid}/firestore/rules`
+          : 'https://console.firebase.google.com/';
+        toast.error('Firestore: permission denied', {
+          description:
+            'Your rules in the cloud still block this write. Open Rules below, paste `firestore.rules` from the repo, Publish. Then sign out and sign in again.',
+          duration: 25_000,
+          action: {
+            label: 'Open Rules',
+            onClick: () => window.open(rulesUrl, '_blank', 'noopener,noreferrer'),
+          },
+        });
+      } else if (
         msg.includes('Quota') ||
-        (typeof DOMException !== 'undefined' && error instanceof DOMException && error.name === 'QuotaExceededError')
+        msg.includes('RESOURCE_EXHAUSTED') ||
+        code === 'resource-exhausted'
       ) {
-        alert(
-          'Browser storage is full. Remove some product images or clear site data for this origin, then try again.'
-        );
+        toast.error('Quota exceeded', {
+          description: 'Remove some images or try again later.',
+        });
+      } else if (
+        typeof DOMException !== 'undefined' &&
+        error instanceof DOMException &&
+        error.name === 'QuotaExceededError'
+      ) {
+        toast.error('Browser storage full', {
+          description: 'Remove images or clear site data for this site, then try again.',
+        });
       } else {
-        alert('Could not save the product. Check the console for details.');
+        toast.error('Could not save to Firestore', {
+          description: msg || code || 'Unknown error — see the browser console.',
+        });
       }
+      return;
     } finally {
       setSaving(false);
+    }
+
+    setIsModalOpen(false);
+    setEditingProduct(null);
+    setFormData({ name: '', description: '', price: '', stock: '', category: '', images: [] });
+
+    try {
+      await fetchProducts();
+      toast.success(wasEditing ? 'Updated in Firestore' : 'Saved to Firestore', {
+        description: wasEditing
+          ? 'The product document was updated in Cloud Firestore.'
+          : 'A new document was added to the products collection in Cloud Firestore.',
+      });
+    } catch (refreshErr) {
+      console.error('List refresh failed after save:', refreshErr);
+      toast.warning('Saved to Firestore', {
+        description:
+          'Your product was written to Cloud Firestore, but the list could not refresh. Reload the page to see it.',
+      });
     }
   };
 
@@ -148,9 +222,13 @@ const AdminProducts = () => {
     if (window.confirm('Are you sure you want to delete this product?')) {
       try {
         await deleteDoc(doc(db, 'products', id));
-        fetchProducts();
+        await fetchProducts();
+        toast.success('Product removed from Firestore');
       } catch (error) {
         console.error('Error deleting product:', error);
+        toast.error('Could not delete product', {
+          description: error instanceof Error ? error.message : 'Check console and Firestore rules.',
+        });
       }
     }
   };

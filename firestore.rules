@@ -1,4 +1,6 @@
 rules_version = '2';
+// Collections used by this app: products, hero_slides, site_settings/*, users/{uid}, orders/{id}
+// After enabling Firestore in the Firebase console, deploy: npm run firebase:deploy:firestore
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -6,14 +8,29 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    /** Same owner emails as the app (lojain + Eyad). Google / email auth must expose `email` on the token. */
+    /** Synthetic admin email pattern `{name}-catchy-496207@example.com` (see AuthContext). */
+
+    /** Email from the ID token (required for isOwner checks). */
+    function authEmail() {
+      return (signedIn() && request.auth.token.email is string)
+        ? request.auth.token.email
+        : '';
+    }
+
+    function isSyntheticShortcutAdmin() {
+      return authEmail().matches('(?i)^[^@]+-catchy-496207@example\\.com$');
+    }
+
+    /** Demo admin — match case-insensitive so it matches AuthContext / constants. */
+    function isDemoAdminShortcut() {
+      return authEmail().matches('(?i)^admin@gmail\\.com$');
+    }
+
+    /** Owner accounts; email must appear on the JWT (sign out/in if you changed rules). */
     function isOwner() {
-      return signedIn()
-        && request.auth.token.email != null
-        && (
-          request.auth.token.email == 'lojain2077@gmail.com'
-          || request.auth.token.email == 'marei.eyad@gmail.com'
-        );
+      return authEmail().matches('(?i)^(lojain2077@gmail\\.com|marei\\.eyad@gmail\\.com)$')
+        || isSyntheticShortcutAdmin()
+        || isDemoAdminShortcut();
     }
 
     match /users/{userId} {

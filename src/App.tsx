@@ -1,4 +1,5 @@
 import React from 'react';
+import { Toaster } from 'sonner';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
@@ -42,7 +43,7 @@ const AppContent = () => {
         <Route path="*" element={
           <>
             <Navbar />
-            <main className="flex-1">
+            <main className="flex min-h-0 flex-1 flex-col">
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/catalog" element={<Catalog />} />
@@ -66,6 +67,20 @@ export default function App() {
       <LanguageProvider>
         <CartProvider>
           <Router>
+            <Toaster
+              position="top-center"
+              richColors
+              closeButton
+              offset="5rem"
+              visibleToasts={4}
+              expand
+              toastOptions={{
+                classNames: {
+                  toast: 'w-[min(100vw-2rem,26rem)] max-w-[min(100vw-2rem,26rem)]',
+                  description: 'whitespace-pre-wrap break-words text-left leading-snug',
+                },
+              }}
+            />
             <AppContent />
           </Router>
         </CartProvider>

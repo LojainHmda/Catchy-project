@@ -48,13 +48,15 @@ const AdminHero = () => {
     const maxOrder = slides.reduce((m, s) => Math.max(m, Number(s.order) ?? 0), -1);
     const newSlide = {
       title: type === 'new_arrivals' ? 'New Arrivals' : 'New Slide Title',
+      titleAr: type === 'new_arrivals' ? 'وصلنا حديثاً' : 'عنوان الشريحة',
       subtitle: type === 'new_arrivals' ? 'Explore Latest Pieces' : 'New Slide Subtitle',
+      subtitleAr: type === 'new_arrivals' ? 'اكتشفي أحدث القطع' : 'العنوان الفرعي',
       url: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&q=80&w=1000',
       order: maxOrder + 1,
-      type: type,
+      type,
       enabled: true,
-      productIds: type === 'new_arrivals' ? [] : undefined,
-      createdAt: serverTimestamp()
+      createdAt: serverTimestamp(),
+      ...(type === 'new_arrivals' ? { productIds: [] as string[] } : {}),
     };
     try {
       await addDoc(collection(db, 'hero_slides'), newSlide);
@@ -187,6 +189,18 @@ const AdminHero = () => {
                       onChange={(e) => updateSlide(slide.id, { title: e.target.value })}
                       className="w-full rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-catchy/20"
                     />
+                    <label className="mb-1 mt-2 block text-[9px] font-black uppercase tracking-widest text-gray-400/80">
+                      Title (Arabic)
+                    </label>
+                    <input
+                      type="text"
+                      dir="rtl"
+                      lang="ar"
+                      value={slide.titleAr ?? ''}
+                      onChange={(e) => updateSlide(slide.id, { titleAr: e.target.value })}
+                      placeholder="العنوان بالعربية"
+                      className="w-full rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm font-bold font-arabic outline-none focus:ring-2 focus:ring-catchy/20"
+                    />
                   </div>
                   <div>
                     <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-gray-400">
@@ -197,6 +211,18 @@ const AdminHero = () => {
                       value={slide.subtitle ?? ''}
                       onChange={(e) => updateSlide(slide.id, { subtitle: e.target.value })}
                       className="w-full rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-catchy/20"
+                    />
+                    <label className="mb-1 mt-2 block text-[9px] font-black uppercase tracking-widest text-gray-400/80">
+                      Subtitle (Arabic)
+                    </label>
+                    <input
+                      type="text"
+                      dir="rtl"
+                      lang="ar"
+                      value={slide.subtitleAr ?? ''}
+                      onChange={(e) => updateSlide(slide.id, { subtitleAr: e.target.value })}
+                      placeholder="العنوان الفرعي بالعربية"
+                      className="w-full rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm font-bold font-arabic outline-none focus:ring-2 focus:ring-catchy/20"
                     />
                   </div>
                 </div>

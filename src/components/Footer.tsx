@@ -1,37 +1,74 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { useLanguage } from '../context/LanguageContext';
+import { cn } from '../lib/utils';
 
 const Footer = () => {
+  const { t, isRTL } = useLanguage();
   return (
-    <footer className="bg-white py-32 px-6 md:px-12 border-t border-gray-100">
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-16 items-start">
-        <div className="md:col-span-5">
-          <div className="flex items-center space-x-3 mb-10">
-            <div className="w-8 h-8 rounded-full bg-catchy flex items-center justify-center text-white font-medium text-xs">C</div>
-            <span className="text-2xl tracking-[0.5em] font-medium uppercase text-catchy">Atchy</span>
+    <footer className="border-t border-gray-100 bg-white px-4 py-10 sm:px-6 md:px-8 md:py-12">
+      <div className="mx-auto max-w-6xl">
+        <div className="grid grid-cols-1 items-start gap-8 md:grid-cols-12 md:gap-10">
+          <div className="md:col-span-5">
+            <div className="mb-4 flex items-center gap-2.5">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-catchy text-[10px] font-medium text-white">
+                C
+              </div>
+              <span className="text-lg font-medium uppercase tracking-[0.4em] text-catchy">Atchy</span>
+            </div>
+            <p
+              className={cn(
+                'max-w-sm text-[10px] leading-relaxed tracking-wide text-catchy uppercase',
+                isRTL && 'font-arabic normal-case'
+              )}
+            >
+              {t('footer.tagline')}
+            </p>
           </div>
-          <p className="text-[11px] leading-loose tracking-[0.1em] max-w-sm uppercase text-catchy">
-            Sustainable luxury for the modern era.
-          </p>
-        </div>
-        <div className="md:col-span-3 flex flex-col space-y-5 text-[10px] uppercase tracking-widest text-catchy">
-          <span className="opacity-30 mb-2">Legal</span>
-          <Link to="/privacy" className="hover:opacity-60">Privacy Policy</Link>
-          <Link to="/terms" className="hover:opacity-60">Terms of Service</Link>
-        </div>
-        <div className="md:col-span-4 md:text-right flex flex-col md:items-end space-y-5 text-[10px] uppercase tracking-widest text-catchy">
-          <span className="opacity-30 mb-2">Newsletter</span>
-          <div className="border-b border-catchy py-2 w-full max-w-xs">
-            <input 
-              type="email" 
-              placeholder="YOUR EMAIL" 
-              className="bg-transparent border-none w-full text-[10px] tracking-widest focus:ring-0 placeholder:text-catchy/30"
-            />
+          <div
+            className={cn(
+              'flex flex-col gap-2.5 text-[10px] uppercase tracking-widest text-catchy md:col-span-3',
+              isRTL && 'font-arabic'
+            )}
+          >
+            <span className="mb-0.5 opacity-30">{t('footer.legal')}</span>
+            <Link to="/login" className="hover:opacity-60">
+              {t('nav.login')}
+            </Link>
+            <Link to="/privacy" className="hover:opacity-60">
+              {t('footer.privacy')}
+            </Link>
+            <Link to="/terms" className="hover:opacity-60">
+              {t('footer.terms')}
+            </Link>
+          </div>
+          <div
+            className={cn(
+              'flex flex-col gap-2.5 text-[10px] uppercase tracking-widest text-catchy md:col-span-4',
+              isRTL ? 'md:items-start md:text-left font-arabic' : 'md:items-end md:text-right'
+            )}
+          >
+            <span className="mb-0.5 opacity-30">{t('footer.newsletter')}</span>
+            <div className="w-full max-w-xs border-b border-catchy py-1.5">
+              <input
+                type="email"
+                placeholder={t('footer.emailPlaceholder')}
+                className={cn(
+                  'w-full border-none bg-transparent text-[10px] tracking-widest focus:ring-0 placeholder:text-catchy/30',
+                  isRTL && 'font-arabic text-end normal-case'
+                )}
+              />
+            </div>
           </div>
         </div>
-      </div>
-      <div className="mt-40 flex justify-between items-center text-[9px] uppercase tracking-[0.3em] opacity-40 text-catchy">
-        <p>© 2026 Catchy Clothing.</p>
+        <div
+          className={cn(
+            'mt-8 flex items-center justify-between border-t border-gray-100 pt-6 text-[9px] uppercase tracking-[0.25em] text-catchy/40',
+            isRTL && 'font-arabic'
+          )}
+        >
+          <p>{t('footer.copyright')}</p>
+        </div>
       </div>
     </footer>
   );

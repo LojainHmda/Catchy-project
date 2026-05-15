@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
+import { useAuth } from './AuthContext';
 
 interface CartItem {
   id: string;
@@ -21,60 +22,132 @@ interface CartContextType {
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
-export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [cart, setCart] = useState<CartItem[]>(() => {
-    const savedCart = localStorage.getItem('catchy_cart');
-    return savedCart ? JSON.parse(savedCart) : [];
-  });
+function cartStorageKey(ownerId: string) {
+  return `catchy_cart_${ownerId}`;
+}
 
+function readCartFromStorage(key: string): CartItem[] {
+  try {
+    const saved = localStorage.getItem(key);
+    if (!saved) return [];
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, loading: authLoading } = useAuth();
+  const ownerId = user?.uid ?? 'guest';
+
+  // Drop the old shared cart key so it cannot attach to the wrong account.
   useEffect(() => {
-    localStorage.setItem('catchy_cart', JSON.stringify(cart));
-  }, [cart]);
+    localStorage.removeItem('catchy_cart');
+  }, []);
+
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cartReady, setCartReady] = useState(false);
+  const cartRef = useRef(cart);
+  cartRef.current = cart;
+  const ownerIdRef = useRef(ownerId);
+  const prevOwnerIdRef = useRef<string | null>(null);
+
+  const persistCart = useCallback((items: CartItem[], forOwnerId: string) => {
+    localStorage.setItem(cartStorageKey(forOwnerId), JSON.stringify(items));
+  }, []);
+
+  // Re-bind cart whenever auth finishes loading or the signed-in user changes.
+  useEffect(() => {
+    if (authLoading) {
+      setCart([]);
+      setCartReady(false);
+      prevOwnerIdRef.current = null;
+      return;
+    }
+
+    const prevOwnerId = prevOwnerIdRef.current;
+    if (prevOwnerId !== null && prevOwnerId !== ownerId) {
+      persistCart(cartRef.current, prevOwnerId);
+    }
+
+    const loaded = readCartFromStorage(cartStorageKey(ownerId));
+    setCart(loaded);
+    ownerIdRef.current = ownerId;
+    prevOwnerIdRef.current = ownerId;
+    setCartReady(true);
+  }, [authLoading, ownerId, persistCart]);
 
   const addToCart = (product: any, quantity: number) => {
-    setCart(prevCart => {
-      const existingItem = prevCart.find(item => item.id === product.id);
-      if (existingItem) {
-        return prevCart.map(item =>
-          item.id === product.id
-            ? { ...item, quantity: Math.min(item.stock, item.quantity + quantity) }
-            : item
-        );
-      }
-      return [...prevCart, {
-        id: product.id,
-        name: product.name,
-        price: product.price,
-        quantity,
-        image: product.images?.[0] || '',
-        stock: product.stock
-      }];
+    if (!cartReady || authLoading) return;
+    const activeOwner = ownerIdRef.current;
+
+    setCart((prevCart) => {
+      const existingItem = prevCart.find((item) => item.id === product.id);
+      const next = existingItem
+        ? prevCart.map((item) =>
+            item.id === product.id
+              ? { ...item, quantity: Math.min(item.stock, item.quantity + quantity) }
+              : item
+          )
+        : [
+            ...prevCart,
+            {
+              id: product.id,
+              name: product.name,
+              price: product.price,
+              quantity,
+              image: product.images?.[0] || '',
+              stock: product.stock,
+            },
+          ];
+      persistCart(next, activeOwner);
+      return next;
     });
   };
 
   const removeFromCart = (productId: string) => {
-    setCart(prevCart => prevCart.filter(item => item.id !== productId));
+    if (!cartReady || authLoading) return;
+    const activeOwner = ownerIdRef.current;
+
+    setCart((prevCart) => {
+      const next = prevCart.filter((item) => item.id !== productId);
+      persistCart(next, activeOwner);
+      return next;
+    });
   };
 
   const updateQuantity = (productId: string, quantity: number) => {
-    setCart(prevCart =>
-      prevCart.map(item =>
+    if (!cartReady || authLoading) return;
+    const activeOwner = ownerIdRef.current;
+
+    setCart((prevCart) => {
+      const next = prevCart.map((item) =>
         item.id === productId
           ? { ...item, quantity: Math.max(1, Math.min(item.stock, quantity)) }
           : item
-      )
-    );
+      );
+      persistCart(next, activeOwner);
+      return next;
+    });
   };
 
   const clearCart = () => {
+    if (!cartReady || authLoading) return;
+    const activeOwner = ownerIdRef.current;
     setCart([]);
+    persistCart([], activeOwner);
   };
 
-  const cartTotal = cart.reduce((total, item) => total + item.price * item.quantity, 0);
-  const cartCount = cart.reduce((count, item) => count + item.quantity, 0);
+  const cartTotal = cartReady
+    ? cart.reduce((total, item) => total + item.price * item.quantity, 0)
+    : 0;
+  const cartCount = cartReady ? cart.reduce((count, item) => count + item.quantity, 0) : 0;
 
   return (
-    <CartContext.Provider value={{ cart, addToCart, removeFromCart, updateQuantity, clearCart, cartTotal, cartCount }}>
+    <CartContext.Provider
+      value={{ cart, addToCart, removeFromCart, updateQuantity, clearCart, cartTotal, cartCount }}
+    >
       {children}
     </CartContext.Provider>
   );

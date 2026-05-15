@@ -6,6 +6,8 @@ import {
   signInWithPopup,
   signOut,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
 } from 'firebase/auth';
 import {
   getFirestore,
@@ -22,6 +24,7 @@ import {
   where,
   orderBy,
   limit,
+  startAfter,
   serverTimestamp,
   runTransaction,
 } from 'firebase/firestore';
@@ -71,11 +74,14 @@ export {
   where,
   orderBy,
   limit,
+  startAfter,
   serverTimestamp,
   GoogleAuthProvider,
   signInWithPopup,
   signOut,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
   onAuthStateChanged,
 };
 

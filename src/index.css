@@ -1,10 +1,11 @@
-@import url('https://fonts.googleapis.com/css2?family=Almarai:wght@300;400;700;800&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,700;1,6..96,400&family=Inter:wght@300;400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,700;1,6..96,400&family=Cairo:wght@400;500;600;700;800&family=Inter:wght@300;400;600&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Bodoni Moda", serif;
-  --font-arabic: "Almarai", sans-serif;
+  /* Cairo: Arabic UI + Latin companion glyphs; Inter as fallback for English metrics */
+  --font-arabic: "Cairo", "Inter", ui-sans-serif, system-ui, sans-serif;
   --color-catchy: #388e5d;
   --color-catchy-dark: #1a1a1a;
 }
@@ -12,6 +13,37 @@
 @layer base {
   body {
     @apply font-sans bg-white text-catchy overflow-x-hidden;
+  }
+
+  /*
+   * Mobile Arabic (Cairo): Tailwind tracking-* adds letter-spacing and breaks glyph joining
+   * (e.g. ط + ي). Desktop (md+) unchanged. Admin [dir="ltr"] subtree reverts so English UI stays the same.
+   */
+  @media (max-width: 767px) {
+    [dir="rtl"] {
+      font-feature-settings: "calt" 1, "liga" 1, "rlig" 1;
+      -webkit-font-feature-settings: "calt" 1, "liga" 1, "rlig" 1;
+      font-variant-ligatures: common-ligatures contextual;
+      font-kerning: auto;
+      text-rendering: auto;
+      letter-spacing: normal;
+      word-spacing: normal;
+    }
+
+    [dir="rtl"] * {
+      letter-spacing: normal !important;
+      word-spacing: normal !important;
+    }
+
+    [dir="rtl"] [dir="ltr"],
+    [dir="rtl"] [dir="ltr"] * {
+      letter-spacing: revert !important;
+      word-spacing: revert !important;
+      font-feature-settings: revert !important;
+      -webkit-font-feature-settings: revert !important;
+      font-variant-ligatures: revert !important;
+      text-rendering: revert !important;
+    }
   }
 }
 

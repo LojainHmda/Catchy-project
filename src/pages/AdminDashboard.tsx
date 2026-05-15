@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import { db, collection, getDocs, query, orderBy, limit, addDoc, serverTimestamp } from '../firebase';
 import { Package, ShoppingCart, Users, TrendingUp, ArrowUpRight, ArrowDownRight, Database, Loader2, Image as ImageIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -28,7 +29,8 @@ const AdminDashboard = () => {
         description: "A stunning emerald green silk gown with a deep V-neck and elegant floor-length silhouette. Perfect for high-end evening events.",
         images: ["https://images.unsplash.com/photo-1566174053879-31528523f8ae?auto=format&fit=crop&q=80&w=1000"],
         stock: 12,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       },
       {
         name: "Midnight Velvet Blazer",
@@ -37,7 +39,8 @@ const AdminDashboard = () => {
         description: "Sophisticated midnight blue velvet blazer with satin lapels. Part of our signature evening set collection.",
         images: ["https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&q=80&w=1000"],
         stock: 8,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       },
       {
         name: "Ivory Lace Cocktail Dress",
@@ -46,7 +49,8 @@ const AdminDashboard = () => {
         description: "Delicate ivory lace overlay with a silk lining. Features a modern midi length and intricate floral patterns.",
         images: ["https://images.unsplash.com/photo-1539008835279-434674508233?auto=format&fit=crop&q=80&w=1000"],
         stock: 15,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       },
       {
         name: "Golden Hour Satin Set",
@@ -55,7 +59,8 @@ const AdminDashboard = () => {
         description: "Two-piece satin set in a warm golden hue. Includes a cropped top and high-waisted wide-leg trousers.",
         images: ["https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=1000"],
         stock: 5,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       },
       {
         name: "Pearl Embellished Top",
@@ -64,7 +69,8 @@ const AdminDashboard = () => {
         description: "Elegant sheer top with hand-sewn pearl embellishments along the neckline and cuffs.",
         images: ["https://images.unsplash.com/photo-1551163943-3f6a855d1153?auto=format&fit=crop&q=80&w=1000"],
         stock: 20,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       },
       {
         name: "Onyx Leather Mini Skirt",
@@ -73,7 +79,8 @@ const AdminDashboard = () => {
         description: "Premium black leather mini skirt with a subtle gloss finish and silver hardware details.",
         images: ["https://images.unsplash.com/photo-1548624149-f9b1859aa700?auto=format&fit=crop&q=80&w=1000"],
         stock: 10,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       },
       {
         name: "Tailored Wool Trousers",
@@ -82,7 +89,8 @@ const AdminDashboard = () => {
         description: "High-waisted tailored wool trousers in charcoal grey. Features a sharp crease and slim fit.",
         images: ["https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?auto=format&fit=crop&q=80&w=1000"],
         stock: 15,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       },
       {
         name: "Silk Coordinate Set",
@@ -91,15 +99,48 @@ const AdminDashboard = () => {
         description: "Matching silk shirt and trousers set with a custom geometric print. Effortless luxury.",
         images: ["https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&q=80&w=1000"],
         stock: 7,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       }
     ];
 
     const dummyHeroSlides = [
-      { title: 'hero.slide1.title', subtitle: 'hero.slide1.subtitle', url: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&q=80&w=1000', order: 0 },
-      { title: 'hero.slide2.title', subtitle: 'hero.slide2.subtitle', url: 'https://images.unsplash.com/photo-1441984904996-e0b6ba687e12?auto=format&fit=crop&q=80&w=1000', order: 1 },
-      { title: 'hero.slide3.title', subtitle: 'hero.slide3.subtitle', url: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&q=80&w=1000', order: 2 },
-      { title: 'hero.slide4.title', subtitle: 'hero.slide4.subtitle', url: 'https://images.unsplash.com/photo-1469334031218-e382a71b716b?auto=format&fit=crop&q=80&w=1000', order: 3 }
+      {
+        title: 'hero.slide1.title',
+        subtitle: 'hero.slide1.subtitle',
+        url: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&q=80&w=1000',
+        order: 0,
+        type: 'standard' as const,
+        enabled: true,
+        createdAt: serverTimestamp(),
+      },
+      {
+        title: 'hero.slide2.title',
+        subtitle: 'hero.slide2.subtitle',
+        url: 'https://images.unsplash.com/photo-1441984904996-e0b6ba687e12?auto=format&fit=crop&q=80&w=1000',
+        order: 1,
+        type: 'standard' as const,
+        enabled: true,
+        createdAt: serverTimestamp(),
+      },
+      {
+        title: 'hero.slide3.title',
+        subtitle: 'hero.slide3.subtitle',
+        url: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&q=80&w=1000',
+        order: 2,
+        type: 'standard' as const,
+        enabled: true,
+        createdAt: serverTimestamp(),
+      },
+      {
+        title: 'hero.slide4.title',
+        subtitle: 'hero.slide4.subtitle',
+        url: 'https://images.unsplash.com/photo-1469334031218-e382a71b716b?auto=format&fit=crop&q=80&w=1000',
+        order: 3,
+        type: 'standard' as const,
+        enabled: true,
+        createdAt: serverTimestamp(),
+      },
     ];
 
     try {
@@ -109,11 +150,15 @@ const AdminDashboard = () => {
       for (const slide of dummyHeroSlides) {
         await addDoc(collection(db, 'hero_slides'), slide);
       }
-      alert('Successfully seeded dummy items and hero slides!');
+      toast.success('Firestore seeded', {
+        description: 'Sample products and hero slides were added. Reloading…',
+      });
       window.location.reload();
     } catch (error) {
       console.error('Error seeding data:', error);
-      alert('Failed to seed data.');
+      toast.error('Could not seed Firestore', {
+        description: error instanceof Error ? error.message : 'Deploy security rules and sign in as an admin.',
+      });
     } finally {
       setIsSeeding(false);
     }
@@ -140,12 +185,17 @@ const AdminDashboard = () => {
           products: productsSnap.size,
           orders: ordersSnap.size,
           users: usersSnap.size,
-          revenue: totalRevenue
+          revenue: totalRevenue,
         });
 
-        const recentQ = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(5));
-        const recentSnap = await getDocs(recentQ);
-        setRecentOrders(recentSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        try {
+          const recentQ = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(5));
+          const recentSnap = await getDocs(recentQ);
+          setRecentOrders(recentSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        } catch (recentErr) {
+          console.warn('Recent orders query failed (ok if no orders yet):', recentErr);
+          setRecentOrders([]);
+        }
       } catch (error) {
         console.error('Error fetching stats:', error);
       } finally {
@@ -153,7 +203,7 @@ const AdminDashboard = () => {
       }
     };
     fetchStats();
-  }, []);
+  }, [authLoading, role]);
 
   const statCards = [
     { label: 'Total Revenue', value: `£${stats.revenue.toLocaleString()}`, icon: TrendingUp, color: 'bg-emerald-500', trend: '+12.5%', isUp: true },
@@ -164,16 +214,21 @@ const AdminDashboard = () => {
   ];
 
   return (
-    <div className="space-y-10">
-      <header className="flex justify-between items-center">
-        <div>
-          <h1 className="text-4xl font-black text-gray-900 mb-2 tracking-tight">Dashboard Overview</h1>
-          <p className="text-gray-500 font-medium">Welcome back! Here's what's happening with Catchy Clothing today.</p>
+    <div className="min-w-0 space-y-6 sm:space-y-8 md:space-y-10">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="mb-2 text-2xl font-black tracking-tight text-gray-900 sm:text-3xl md:text-4xl">
+            Dashboard Overview
+          </h1>
+          <p className="text-sm font-medium text-gray-500 sm:text-base">
+            Welcome back! Here&apos;s what&apos;s happening with Catchy Clothing today.
+          </p>
         </div>
         <button
+          type="button"
           onClick={seedData}
           disabled={isSeeding}
-          className="flex items-center gap-2 bg-[#4ba673] text-white px-6 py-3 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-[#3d8a5f] transition-all shadow-lg shadow-[#4ba673]/20 disabled:opacity-50"
+          className="flex w-full shrink-0 items-center justify-center gap-2 rounded-2xl bg-[#4ba673] px-5 py-3 text-xs font-black uppercase tracking-widest text-white shadow-lg shadow-[#4ba673]/20 transition-all hover:bg-[#3d8a5f] disabled:opacity-50 sm:w-auto sm:px-6 touch-manipulation min-h-[48px]"
         >
           {isSeeding ? <Loader2 className="animate-spin" size={18} /> : <Database size={18} />}
           {isSeeding ? 'Seeding...' : 'Seed Sample Data'}
@@ -181,7 +236,7 @@ const AdminDashboard = () => {
       </header>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 md:gap-8 lg:grid-cols-4">
         {statCards.map((stat, i) => (
           <motion.div
             key={stat.label}
@@ -191,11 +246,11 @@ const AdminDashboard = () => {
           >
             <Link
               to={stat.path || '#'}
-              className="block bg-white p-8 rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl transition-all group"
+              className="block min-w-0 rounded-3xl border border-gray-100 bg-white p-5 shadow-sm transition-all hover:shadow-xl group sm:p-6 md:p-8"
             >
-              <div className="flex justify-between items-start mb-6">
-                <div className={cn("w-14 h-14 rounded-2xl flex items-center justify-center text-white shadow-lg", stat.color)}>
-                  <stat.icon size={28} />
+              <div className="mb-4 flex items-start justify-between gap-3 sm:mb-6">
+                <div className={cn('flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white shadow-lg sm:h-14 sm:w-14', stat.color)}>
+                  <stat.icon className="h-6 w-6 sm:h-7 sm:w-7" strokeWidth={2} aria-hidden />
                 </div>
                 <div className={cn(
                   "flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-black",
@@ -205,53 +260,103 @@ const AdminDashboard = () => {
                   {stat.trend}
                 </div>
               </div>
-              <p className="text-gray-500 font-bold text-sm uppercase tracking-widest mb-1">{stat.label}</p>
-              <h3 className="text-3xl font-black text-gray-900">{stat.value}</h3>
+              <p className="mb-1 text-xs font-bold uppercase tracking-widest text-gray-500">{stat.label}</p>
+              <h3 className="truncate text-2xl font-black text-gray-900 sm:text-3xl">{stat.value}</h3>
             </Link>
           </motion.div>
         ))}
       </div>
 
       {/* Recent Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-        <div className="lg:col-span-2 bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="p-8 border-b border-gray-50 flex justify-between items-center">
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight">Recent Orders</h2>
-            <button className="text-[#4CAF50] font-bold text-sm hover:underline">View All</button>
+      <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-10">
+        <div className="min-w-0 overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm lg:col-span-2">
+          <div className="flex flex-col gap-3 border-b border-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-6 md:p-8">
+            <h2 className="text-xl font-black tracking-tight text-gray-900 sm:text-2xl">Recent Orders</h2>
+            <button
+              type="button"
+              className="self-start text-sm font-bold text-[#4CAF50] hover:underline sm:self-auto touch-manipulation min-h-[44px] px-1"
+            >
+              View All
+            </button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
+
+          {/* Mobile: stacked cards */}
+          <div className="divide-y divide-gray-50 md:hidden">
+            {recentOrders.length > 0 ? (
+              recentOrders.map((order) => (
+                <div key={order.id} className="space-y-2 p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-mono text-xs font-bold text-gray-400">#{order.id.slice(0, 8)}</span>
+                    <span
+                      className={cn(
+                        'shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider',
+                        order.status === 'delivered'
+                          ? 'bg-emerald-50 text-emerald-600'
+                          : order.status === 'pending'
+                            ? 'bg-orange-50 text-orange-600'
+                            : 'bg-blue-50 text-blue-600'
+                      )}
+                    >
+                      {order.status}
+                    </span>
+                  </div>
+                  <p className="break-all text-sm font-medium text-gray-600">{String(order.userId ?? '—')}</p>
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <span className="font-black text-gray-900">£{order.total}</span>
+                    <span className="text-xs text-gray-400">
+                      {order.createdAt?.toDate ? order.createdAt.toDate().toLocaleDateString() : 'N/A'}
+                    </span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="p-8 text-center text-sm font-medium text-gray-400">No recent orders found.</p>
+            )}
+          </div>
+
+          {/* md+: table */}
+          <div className="hidden min-w-0 overflow-x-auto md:block">
+            <table className="w-full min-w-0 text-left text-sm">
               <thead>
-                <tr className="bg-gray-50/50 text-gray-400 text-xs font-black uppercase tracking-widest">
-                  <th className="px-8 py-5">Order ID</th>
-                  <th className="px-8 py-5">Customer</th>
-                  <th className="px-8 py-5">Status</th>
-                  <th className="px-8 py-5">Total</th>
-                  <th className="px-8 py-5">Date</th>
+                <tr className="bg-gray-50/50 text-xs font-black uppercase tracking-widest text-gray-400">
+                  <th className="px-4 py-4 md:px-8 md:py-5">Order ID</th>
+                  <th className="px-4 py-4 md:px-8 md:py-5">Customer</th>
+                  <th className="px-4 py-4 md:px-8 md:py-5">Status</th>
+                  <th className="px-4 py-4 md:px-8 md:py-5">Total</th>
+                  <th className="px-4 py-4 md:px-8 md:py-5">Date</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {recentOrders.length > 0 ? recentOrders.map((order) => (
-                  <tr key={order.id} className="hover:bg-gray-50/50 transition-colors group">
-                    <td className="px-8 py-6 font-bold text-gray-900">#{order.id.slice(0, 8)}</td>
-                    <td className="px-8 py-6 text-gray-500 font-medium">{order.userId}</td>
-                    <td className="px-8 py-6">
-                      <span className={cn(
-                        "px-3 py-1.5 rounded-full text-xs font-black uppercase tracking-wider",
-                        order.status === 'delivered' ? "bg-emerald-50 text-emerald-600" :
-                        order.status === 'pending' ? "bg-orange-50 text-orange-600" : "bg-blue-50 text-blue-600"
-                      )}>
-                        {order.status}
-                      </span>
-                    </td>
-                    <td className="px-8 py-6 font-black text-gray-900">£{order.total}</td>
-                    <td className="px-8 py-6 text-gray-400 font-medium">
-                      {order.createdAt?.toDate ? order.createdAt.toDate().toLocaleDateString() : 'N/A'}
-                    </td>
-                  </tr>
-                )) : (
+                {recentOrders.length > 0 ? (
+                  recentOrders.map((order) => (
+                    <tr key={order.id} className="transition-colors hover:bg-gray-50/50">
+                      <td className="px-4 py-4 font-bold text-gray-900 md:px-8 md:py-6">#{order.id.slice(0, 8)}</td>
+                      <td className="max-w-[10rem] truncate px-4 py-4 font-medium text-gray-500 md:max-w-none md:px-8 md:py-6">
+                        {order.userId}
+                      </td>
+                      <td className="px-4 py-4 md:px-8 md:py-6">
+                        <span
+                          className={cn(
+                            'inline-flex rounded-full px-3 py-1.5 text-xs font-black uppercase tracking-wider',
+                            order.status === 'delivered'
+                              ? 'bg-emerald-50 text-emerald-600'
+                              : order.status === 'pending'
+                                ? 'bg-orange-50 text-orange-600'
+                                : 'bg-blue-50 text-blue-600'
+                          )}
+                        >
+                          {order.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 font-black text-gray-900 md:px-8 md:py-6">£{order.total}</td>
+                      <td className="px-4 py-4 font-medium text-gray-400 md:px-8 md:py-6">
+                        {order.createdAt?.toDate ? order.createdAt.toDate().toLocaleDateString() : 'N/A'}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
                   <tr>
-                    <td colSpan={5} className="px-8 py-20 text-center text-gray-400 font-medium">
+                    <td colSpan={5} className="px-8 py-16 text-center font-medium text-gray-400 md:py-20">
                       No recent orders found.
                     </td>
                   </tr>
@@ -261,20 +366,20 @@ const AdminDashboard = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-8">
-          <h2 className="text-2xl font-black text-gray-900 tracking-tight mb-8">Inventory Alerts</h2>
-          <div className="space-y-6">
+        <div className="min-w-0 rounded-3xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6 md:p-8">
+          <h2 className="mb-6 text-xl font-black tracking-tight text-gray-900 sm:text-2xl">Inventory Alerts</h2>
+          <div className="space-y-4 sm:space-y-6">
             {/* Low stock items would go here */}
-            <div className="flex items-center gap-4 p-4 rounded-2xl bg-orange-50 border border-orange-100">
-              <div className="w-12 h-12 bg-orange-500 rounded-xl flex items-center justify-center text-white">
-                <Package size={24} />
+            <div className="flex items-center gap-3 rounded-2xl border border-orange-100 bg-orange-50 p-3 sm:gap-4 sm:p-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-500 text-white sm:h-12 sm:w-12">
+                <Package size={22} className="sm:h-6 sm:w-6" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h4 className="font-bold text-orange-900">Low Stock Alert</h4>
-                <p className="text-sm text-orange-700 font-medium">5 items are below threshold</p>
+                <p className="text-sm font-medium text-orange-700">5 items are below threshold</p>
               </div>
             </div>
-            <p className="text-gray-400 text-sm font-medium text-center">All systems operational.</p>
+            <p className="text-center text-sm font-medium text-gray-400">All systems operational.</p>
           </div>
         </div>
       </div>

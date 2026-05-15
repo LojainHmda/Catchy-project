@@ -3,19 +3,22 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { db, collection, getDocs, query, orderBy, limit, onSnapshot } from '../firebase';
 import ProductCard from '../components/ProductCard';
-import ShopCategoryGrid from '../components/ShopCategoryGrid';
+import { CATEGORY_ICONS, CATEGORY_KEYS } from '../constants';
 import { useLanguage } from '../context/LanguageContext';
 import { cn } from '../lib/utils';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import CatalogProductCard from '../components/CatalogProductCard';
 import { getCatalogSaleMeta } from '../lib/catalogSale';
+import { heroSlideField } from '../lib/heroSlideText';
 
 interface HeroSlide {
   id?: string;
   url?: string;
   image?: string;
   title?: string;
+  titleAr?: string;
   subtitle?: string;
+  subtitleAr?: string;
   type?: 'new_arrivals' | 'standard';
   order?: number;
   /** When false, slide is hidden on the storefront (admin can re-enable). */
@@ -42,8 +45,19 @@ const DEFAULT_SLIDES: HeroSlide[] = [
   },
 ];
 
+/** Home #products-grid — classic “Featured collections” icon rings (matches storefront reference layout). */
+const HOME_FEATURED_CATEGORIES = [
+  'Pants',
+  'Tops',
+  'Dresses',
+  'Skirts',
+  'Jackets',
+  'Formal Sets',
+  'Coordinates',
+] as const;
+
 const Home = () => {
-  const { t, isRTL } = useLanguage();
+  const { t, isRTL, language } = useLanguage();
   const navigate = useNavigate();
   const [heroSlides, setHeroSlides] = useState<HeroSlide[]>([]);
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -132,20 +146,11 @@ const Home = () => {
     exit: (d: number) => ({ x: d < 0 ? '100%' : '-100%', opacity: 0 }),
   };
 
-  const looksLikeI18nKey = (s?: string) => !!s && /^[a-z][a-z0-9]*(\.[a-zA-Z0-9_]+)+$/.test(s);
+  const heroTitle = (slide: HeroSlide) =>
+    heroSlideField(slide, 'title', language, t, 'hero.title');
 
-  const heroTitle = (slide: HeroSlide) => {
-    if (slide.type === 'new_arrivals') return t('home.newArrivals');
-    const raw = slide.title?.trim();
-    if (!raw) return t('hero.title');
-    return looksLikeI18nKey(raw) ? t(raw) : raw;
-  };
-
-  const heroSubtitle = (slide: HeroSlide) => {
-    const raw = slide.subtitle?.trim();
-    if (!raw) return t('hero.limited');
-    return looksLikeI18nKey(raw) ? t(raw) : raw;
-  };
+  const heroSubtitle = (slide: HeroSlide) =>
+    heroSlideField(slide, 'subtitle', language, t, 'hero.limited');
 
   const isProductShowcaseSlide = activeSlide?.type === 'new_arrivals';
 
@@ -166,8 +171,8 @@ const Home = () => {
 
   return (
     <div className="min-h-screen bg-white text-catchy-dark">
-      {/* Hero — full-viewport slider (Velora-style) */}
-      <section className="relative min-h-[100svh] w-full overflow-hidden bg-catchy-dark">
+      {/* Hero — capped height so featured categories stay nearer the fold */}
+      <section className="relative min-h-[clamp(17rem,46svh,27.5rem)] w-full overflow-hidden bg-catchy-dark sm:min-h-[clamp(18.5rem,48svh,31rem)] md:min-h-[clamp(20rem,50svh,35rem)] lg:min-h-[clamp(21.5rem,52svh,39rem)]">
         <div className="absolute inset-0">
           <AnimatePresence initial={false} custom={direction} mode="sync">
             {activeSlide && (
@@ -206,9 +211,9 @@ const Home = () => {
 
         <div
           className={cn(
-            'relative z-10 flex min-h-[100svh] flex-col justify-center px-5 pb-28 pt-28 md:px-10',
+            'relative z-10 flex min-h-[clamp(17rem,46svh,27.5rem)] flex-col justify-center px-5 pb-20 pt-14 sm:min-h-[clamp(18.5rem,48svh,31rem)] sm:pb-24 sm:pt-16 md:min-h-[clamp(20rem,50svh,35rem)] md:px-10 md:pb-24 md:pt-20 lg:min-h-[clamp(21.5rem,52svh,39rem)] lg:pb-28 lg:pt-20',
             isProductShowcaseSlide
-              ? 'items-stretch gap-10 lg:flex-row lg:items-center lg:gap-14'
+              ? 'items-stretch gap-6 sm:gap-8 lg:flex-row lg:items-center lg:gap-12 xl:gap-14'
               : 'items-center text-center'
           )}
         >
@@ -223,14 +228,14 @@ const Home = () => {
                 className={cn(
                   'w-full',
                   isProductShowcaseSlide
-                    ? 'mx-auto flex max-w-7xl flex-col gap-10 lg:flex-row lg:items-center lg:gap-16'
+                    ? 'mx-auto flex max-w-7xl flex-col gap-6 sm:gap-8 lg:flex-row lg:items-center lg:gap-12 xl:gap-16'
                     : 'max-w-5xl text-center'
                 )}
               >
                 <div className={cn('shrink-0', isProductShowcaseSlide && 'lg:max-w-md lg:text-start')}>
                   <p
                     className={cn(
-                      'mb-5 text-[10px] font-bold uppercase tracking-[0.55em] text-white/85 md:text-[11px]',
+                      'mb-3 text-[10px] font-bold uppercase tracking-[0.55em] text-white/85 sm:mb-4 md:mb-5 md:text-[11px]',
                       !isProductShowcaseSlide && 'text-center',
                       isProductShowcaseSlide && 'lg:text-start'
                     )}
@@ -239,10 +244,10 @@ const Home = () => {
                   </p>
                   <h1
                     className={cn(
-                      'mb-8 text-5xl font-light leading-[0.95] tracking-tight text-white drop-shadow-lg sm:text-6xl md:text-7xl lg:text-8xl',
+                      'mb-5 text-5xl font-light leading-[0.95] tracking-tight text-white drop-shadow-lg sm:mb-7 sm:text-6xl md:mb-8 md:text-7xl lg:text-8xl',
                       isRTL ? 'font-arabic' : 'font-serif',
-                      !isProductShowcaseSlide && 'mb-10 text-center xl:text-9xl',
-                      isProductShowcaseSlide && 'lg:mb-10'
+                      !isProductShowcaseSlide && 'mb-6 text-center sm:mb-8 xl:text-9xl',
+                      isProductShowcaseSlide && 'lg:mb-8'
                     )}
                   >
                     {heroTitle(activeSlide)}
@@ -250,7 +255,12 @@ const Home = () => {
                   <div className={cn(isProductShowcaseSlide && 'flex justify-center lg:justify-start')}>
                     <Link
                       to="/catalog"
-                      className="inline-block rounded-full bg-white px-10 py-3.5 text-[11px] font-bold uppercase tracking-[0.35em] text-catchy-dark shadow-xl transition-transform hover:scale-[1.03] hover:bg-catchy hover:text-white"
+                      className={cn(
+                        'inline-block rounded-full bg-white px-10 py-3.5 font-bold text-catchy-dark shadow-xl transition-transform hover:scale-[1.03] hover:bg-catchy hover:text-white',
+                        isRTL
+                          ? 'font-arabic text-sm font-semibold tracking-wide'
+                          : 'text-[11px] uppercase tracking-[0.35em]'
+                      )}
                     >
                       {t('home.shopNow')}
                     </Link>
@@ -301,7 +311,7 @@ const Home = () => {
           </button>
         </div>
 
-        <div className="absolute bottom-10 left-1/2 z-20 flex -translate-x-1/2 gap-2">
+        <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 gap-2 sm:bottom-5 md:bottom-7">
           {normSlides.map((s, i) => (
             <button
               key={s.id ?? `dot-${i}`}
@@ -320,31 +330,71 @@ const Home = () => {
         </div>
       </section>
 
-      {/* Shop by category — same grid as Catalog; links into filtered catalog */}
-      <section id="products-grid" className="mx-auto max-w-7xl px-5 py-20 md:px-10 md:py-28">
-        <div className={cn('text-center', isRTL && 'font-arabic')}>
-          <h2 className="font-sans text-3xl font-medium tracking-tight text-catchy-dark md:text-4xl">
-            {t('catalog.shopByCategory')}
-          </h2>
-          <p
-            className={cn(
-              'mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-gray-500 md:text-base',
-              isRTL && 'font-arabic'
-            )}
-          >
-            {t('catalog.subtitle')}
-          </p>
+      {/* Featured collections — icon grid + editorial heading (classic layout) */}
+      <section
+        id="products-grid"
+        dir={isRTL ? 'rtl' : 'ltr'}
+        className="mx-auto max-w-7xl px-5 pb-14 pt-3 sm:pt-5 md:px-10 md:pb-20 md:pt-7 lg:pb-24"
+      >
+        <div className="grid grid-cols-1 items-start gap-8 md:grid-cols-12 md:gap-12 lg:gap-16">
+          <div className={cn('md:col-span-5 lg:col-span-4', isRTL && 'font-arabic')}>
+            <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.45em] text-catchy md:text-[11px]">
+              {t('featured.subtitle')}
+            </p>
+            <h2
+              className={cn(
+                'font-serif text-4xl font-medium leading-[1.05] tracking-tight md:text-5xl lg:text-6xl',
+                isRTL ? 'font-arabic text-catchy-dark' : 'text-catchy-dark'
+              )}
+            >
+              <span className="block">{t('featured.headingLine1')}</span>
+              <span className="mt-1 block text-catchy/40 md:mt-2">{t('featured.headingLine2')}</span>
+            </h2>
+            <div className={cn('mt-6 md:mt-8', isRTL && 'md:text-end')}>
+              <Link
+                to="/catalog"
+                className="inline-block text-[10px] font-bold uppercase tracking-[0.35em] text-catchy-dark underline-offset-4 transition hover:text-catchy hover:underline"
+              >
+                {t('featured.viewAll')}
+              </Link>
+            </div>
+          </div>
+
+          <div className="md:col-span-7 lg:col-span-8">
+            <div className="flex flex-wrap justify-center gap-x-6 gap-y-6 sm:gap-x-10 sm:gap-y-8 md:gap-x-10 lg:gap-x-12 xl:gap-x-14">
+              {HOME_FEATURED_CATEGORIES.map((cat) => {
+                const Icon = CATEGORY_ICONS[cat];
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => navigate(`/catalog?category=${encodeURIComponent(cat)}`)}
+                    className="group flex w-[5.75rem] flex-col items-center text-center sm:w-24 md:w-[6.25rem]"
+                  >
+                    <div className="mb-3 flex aspect-square w-full max-w-[6.5rem] items-center justify-center rounded-full border border-catchy/30 bg-catchy/5 text-catchy shadow-sm transition group-hover:border-catchy group-hover:bg-catchy/10 group-hover:shadow-md">
+                      {Icon &&
+                        React.createElement(Icon, {
+                          className: 'h-9 w-9 sm:h-10 sm:w-10',
+                          strokeWidth: 1.1,
+                          'aria-hidden': true,
+                        })}
+                    </div>
+                    <span
+                      className={cn(
+                        'text-[10px] font-semibold uppercase tracking-[0.14em] text-catchy/90 transition group-hover:text-catchy sm:text-[11px]',
+                        isRTL && 'font-arabic'
+                      )}
+                    >
+                      {t(CATEGORY_KEYS[cat] || cat)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
-        <ShopCategoryGrid
-          className="mt-10"
-          products={catalogPool}
-          onSelectTile={(cat) => navigate(`/catalog?category=${encodeURIComponent(cat)}`)}
-          showViewAll
-          onViewAll={() => navigate('/catalog')}
-        />
-
-        <div className="mt-14 flex justify-center">
+        <div className="mt-10 flex justify-center md:mt-14">
           <Link
             to="/catalog"
             className="rounded-full border-2 border-catchy-dark bg-transparent px-10 py-3 text-[11px] font-bold uppercase tracking-[0.3em] text-catchy-dark transition hover:bg-catchy-dark hover:text-white"
@@ -358,7 +408,14 @@ const Home = () => {
       <section className="border-t border-gray-100 bg-neutral-100 py-14 md:py-20">
         <div className="mx-auto max-w-7xl px-5 md:px-10">
           <div className={cn('mb-8 text-center', isRTL && 'font-arabic')}>
-            <h2 className="font-serif text-2xl font-medium tracking-tight text-catchy-dark md:text-3xl">{t('catalog.title')}</h2>
+            <h2
+              className={cn(
+                'text-2xl font-medium tracking-tight text-catchy-dark md:text-3xl',
+                isRTL ? 'font-arabic' : 'font-serif'
+              )}
+            >
+              {t('catalog.title')}
+            </h2>
           </div>
 
           <div

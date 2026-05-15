@@ -84,3 +84,7 @@ export const CATEGORY_ICONS: Record<string, any> = {
   ),
   'All': Layout
 };
+
+/** Demo admin used by Login “fill” button and AuthContext (create in Firebase if missing). */
+export const ADMIN_DEMO_EMAIL = 'admin@gmail.com';
+export const ADMIN_DEMO_PASSWORD = 'admin123';
