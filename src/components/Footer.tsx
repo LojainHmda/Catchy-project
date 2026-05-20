@@ -6,17 +6,17 @@ import { cn } from '../lib/utils';
 const Footer = () => {
   const { t, isRTL } = useLanguage();
   return (
-    <footer className="border-t border-gray-100 bg-white px-4 py-10 sm:px-6 md:px-8 md:py-12">
+    <footer className="border-t border-gray-100 bg-white px-4 py-6 sm:px-6 md:px-8 md:py-8">
       <div className="mx-auto max-w-6xl">
-        <div className="grid grid-cols-1 items-start gap-8 md:grid-cols-12 md:gap-10">
+        <div className="grid grid-cols-1 items-start gap-5 md:grid-cols-12 md:gap-6">
           <div className={cn('md:col-span-5', isRTL && 'flex flex-col items-start')}>
-            <div dir="ltr" className={cn('mb-4 flex items-center gap-2.5', isRTL && 'ml-auto')}>
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-catchy text-[10px] font-medium text-white">
+            <div dir="ltr" className={cn('mb-2 flex items-center gap-1', isRTL && 'ml-auto')}>
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-catchy text-[10px] font-medium text-white">
                 C
               </div>
               <span
                 className={cn(
-                  'text-lg tracking-[0.35em] text-catchy',
+                  'text-lg tracking-[0.12em] text-catchy',
                   isRTL ? 'font-arabic' : 'font-serif'
                 )}
               >
@@ -35,7 +35,7 @@ const Footer = () => {
           </div>
           <div
             className={cn(
-              'flex flex-col gap-2.5 text-[10px] uppercase tracking-widest text-catchy md:col-span-3',
+              'flex flex-col gap-1.5 text-[10px] uppercase tracking-widest text-catchy md:col-span-3',
               isRTL && 'font-arabic'
             )}
           >
@@ -52,12 +52,12 @@ const Footer = () => {
           </div>
           <div
             className={cn(
-              'flex flex-col gap-2.5 text-[10px] uppercase tracking-widest text-catchy md:col-span-4',
+              'flex flex-col gap-1.5 text-[10px] uppercase tracking-widest text-catchy md:col-span-4',
               isRTL ? 'md:items-start md:text-left font-arabic' : 'md:items-end md:text-right'
             )}
           >
             <span className="mb-0.5 opacity-30">{t('footer.newsletter')}</span>
-            <div className="w-full max-w-xs border-b border-catchy py-1.5">
+            <div className="w-full max-w-xs border-b border-catchy py-1">
               <input
                 type="email"
                 placeholder={t('footer.emailPlaceholder')}
@@ -71,7 +71,7 @@ const Footer = () => {
         </div>
         <div
           className={cn(
-            'mt-8 flex items-center justify-between border-t border-gray-100 pt-6 text-[9px] uppercase tracking-[0.25em] text-catchy/40',
+            'mt-3 flex items-center justify-between border-t border-gray-100 pt-2 text-[8px] uppercase tracking-[0.2em] text-catchy/40 leading-none',
             isRTL && 'font-arabic'
           )}
         >

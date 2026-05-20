@@ -99,7 +99,7 @@ const ProductDetail = () => {
   }
 
   return (
-    <div className="min-h-screen bg-white pt-14 pb-10 md:pt-16 md:pb-12" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-white pb-10 pt-2 md:pb-12 md:pt-3" dir={isRTL ? 'rtl' : 'ltr'}>
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <div className="mb-4 border-b border-gray-100 pb-4">{backLink}</div>
 

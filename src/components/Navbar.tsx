@@ -45,7 +45,7 @@ function SearchDropdown({
       className={cn(
         'z-[120] overflow-y-auto rounded-xl border border-gray-200/90 bg-white py-2 text-catchy-dark shadow-lg ring-1 ring-black/[0.04]',
         variant === 'desktop' &&
-          'absolute end-0 top-[calc(100%+0.5rem)] max-h-[min(70vh,22rem)] w-[min(calc(100vw-2.5rem),22rem)]',
+          'absolute inset-x-0 top-full z-[120] mt-2 max-h-[min(70vh,22rem)] w-full min-w-[12rem]',
         variant === 'mobile' && 'mt-2 max-h-[min(50dvh,20rem)] w-full'
       )}
     >
@@ -253,22 +253,11 @@ const Navbar = () => {
         <Link
           to="/"
           dir="ltr"
-          className="max-md:col-start-2 max-md:row-start-1 max-md:justify-self-center max-md:pointer-events-auto relative z-10 flex min-w-0 shrink-0 items-baseline gap-1 font-serif text-xl font-bold md:hidden"
-        >
-          <span className={cn(onLight ? 'text-white' : 'text-catchy-dark')}>C</span>
-          <span className={cn('tracking-[0.35em]', onLight ? 'text-white' : 'text-catchy-dark')}>
-            ATCHY
-          </span>
-        </Link>
-
-        <Link
-          to="/"
-          dir="ltr"
-          className="hidden min-w-0 shrink-0 items-center gap-2.5 md:flex"
+          className="max-md:col-start-2 max-md:row-start-1 max-md:justify-self-center max-md:pointer-events-auto relative z-10 flex min-w-0 shrink-0 items-center gap-1 font-serif text-xl font-bold md:hidden"
         >
           <div
             className={cn(
-              'flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold shadow-sm md:h-10 md:w-10 md:text-base',
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold shadow-sm',
               onLight ? 'border border-white/35 bg-white/15 text-white' : 'bg-catchy text-white'
             )}
           >
@@ -276,7 +265,31 @@ const Navbar = () => {
           </div>
           <span
             className={cn(
-              'text-xl tracking-[0.35em] md:text-2xl',
+              'tracking-[0.12em]',
+              isRTL ? 'font-arabic' : 'font-serif',
+              onLight ? 'text-white' : 'text-catchy-dark'
+            )}
+          >
+            ATCHY
+          </span>
+        </Link>
+
+        <Link
+          to="/"
+          dir="ltr"
+          className="hidden min-w-0 shrink-0 items-center gap-1 md:flex"
+        >
+          <div
+            className={cn(
+              'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold shadow-sm md:h-10 md:w-10 md:text-base',
+              onLight ? 'border border-white/35 bg-white/15 text-white' : 'bg-catchy text-white'
+            )}
+          >
+            C
+          </div>
+          <span
+            className={cn(
+              'text-xl tracking-[0.12em] md:text-2xl',
               isRTL ? 'font-arabic' : 'font-serif',
               onLight ? 'text-white' : 'text-catchy-dark'
             )}
@@ -427,7 +440,7 @@ const Navbar = () => {
                   isSearchOpen
                     ? cn(
                         'flex min-h-10 min-w-0 flex-1 basis-0 items-center overflow-visible opacity-100',
-                        'md:max-w-[min(72vw,20rem)] md:overflow-hidden md:transition-[max-width,opacity] md:duration-300 md:ease-out'
+                        'md:max-w-[min(72vw,20rem)] md:overflow-visible md:transition-[max-width,opacity] md:duration-300 md:ease-out'
                       )
                     : cn(
                         'pointer-events-none opacity-0 md:block md:max-w-0 md:overflow-hidden md:transition-[max-width,opacity] md:duration-300 md:ease-out'
@@ -435,7 +448,7 @@ const Navbar = () => {
                 )}
                 aria-hidden={!isSearchOpen}
               >
-                <div className="relative min-w-0">
+                <div className="relative min-w-0 flex-1">
                   <input
                     ref={inputRefDesktop}
                     id="navbar-search-input-desktop"
@@ -460,6 +473,18 @@ const Navbar = () => {
                       <X className="h-4 w-4" strokeWidth={2} />
                     </button>
                   )}
+                  {isSearchOpen && (
+                    <SearchDropdown
+                      id="navbar-search-dropdown-desktop"
+                      labelledBy="navbar-search-input-desktop"
+                      variant="desktop"
+                      productsLoading={productsLoading}
+                      searchQuery={searchQuery}
+                      filteredProducts={filteredProducts}
+                      onPickResult={closeSearch}
+                      t={t}
+                    />
+                  )}
                 </div>
               </div>
 
@@ -477,19 +502,6 @@ const Navbar = () => {
               >
                 <Search className="h-5 w-5" strokeWidth={1.75} />
               </button>
-
-              {isSearchOpen && (
-                <SearchDropdown
-                  id="navbar-search-dropdown-desktop"
-                  labelledBy="navbar-search-input-desktop"
-                  variant="desktop"
-                  productsLoading={productsLoading}
-                  searchQuery={searchQuery}
-                  filteredProducts={filteredProducts}
-                  onPickResult={closeSearch}
-                  t={t}
-                />
-              )}
             </div>
 
           </div>

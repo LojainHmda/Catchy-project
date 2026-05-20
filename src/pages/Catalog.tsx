@@ -225,7 +225,7 @@ const Catalog = () => {
 
   const chipClass = (active: boolean) =>
     cn(
-      'shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+      'shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors',
       active
         ? 'border-catchy bg-catchy text-white shadow-sm'
         : 'border-gray-200 bg-white text-catchy-dark hover:border-catchy/35 hover:bg-catchy/5'
@@ -233,28 +233,50 @@ const Catalog = () => {
 
   return (
     <div className="min-h-screen bg-neutral-50 text-catchy-dark">
-      <div className="mx-auto max-w-[1400px] px-4 pb-12 pt-14 md:px-8 md:pb-16 md:pt-16">
+      <div className="mx-auto max-w-[1400px] px-4 pb-4 pt-2 md:px-8 md:pb-6 md:pt-3">
         <div className="min-w-0">
-            <nav
+            <div
               className={cn(
-                'flex flex-wrap items-center gap-1 text-xs text-gray-500',
-                isRTL && 'flex-row-reverse justify-end'
+                'flex w-full min-w-0 flex-row flex-nowrap items-center justify-between gap-1',
+                isRTL && 'flex-row-reverse'
               )}
-              aria-label="Breadcrumb"
             >
-              <Link to="/" className="transition hover:text-catchy-dark">
-                {t('catalog.breadcrumbHome')}
-              </Link>
-              <span className="text-gray-300">/</span>
-              <span className="font-medium text-catchy-dark">{t('catalog.breadcrumbCatalog')}</span>
-            </nav>
+              <nav
+                className={cn(
+                  'flex min-w-0 flex-nowrap items-center gap-0.5 text-[10px] leading-none text-gray-500',
+                  isRTL && 'flex-row-reverse'
+                )}
+                aria-label="Breadcrumb"
+              >
+                <Link to="/" className="shrink-0 transition hover:text-catchy-dark">
+                  {t('catalog.breadcrumbHome')}
+                </Link>
+                <span className="shrink-0 text-gray-300">/</span>
+                <span className="truncate font-medium text-catchy-dark">
+                  {t('catalog.breadcrumbCatalog')}
+                </span>
+              </nav>
 
-            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex h-6 shrink-0 flex-nowrap items-center">
+                <select
+                  id="catalog-sort"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as CatalogSortKey)}
+                  aria-label={t('catalog.sortBy')}
+                  className="h-6 max-w-[8.75rem] shrink-0 rounded-md border border-gray-200 bg-white py-0 pl-2 pr-5 text-[10px] font-medium leading-tight text-catchy-dark outline-none focus:border-catchy focus:ring-1 focus:ring-catchy/20"
+                >
+                  <option value="priceAsc">{t('catalog.sortPriceAsc')}</option>
+                  <option value="priceDesc">{t('catalog.sortPriceDesc')}</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-1.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="relative max-w-md flex-1">
                 <Search
                   className={cn(
-                    'pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400',
-                    isRTL ? 'right-3' : 'left-3'
+                    'pointer-events-none absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400',
+                    isRTL ? 'right-2.5' : 'left-2.5'
                   )}
                   aria-hidden
                 />
@@ -264,41 +286,27 @@ const Catalog = () => {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className={cn(
-                    'w-full rounded-lg border border-gray-200 bg-white py-2.5 text-sm outline-none ring-catchy/20 placeholder:text-gray-400 focus:border-catchy focus:ring-2',
-                    isRTL ? 'pr-10 pl-3' : 'pl-10 pr-3'
+                    'h-8 w-full rounded-lg border border-gray-200 bg-white py-0 text-xs outline-none ring-catchy/20 placeholder:text-gray-400 focus:border-catchy focus:ring-2',
+                    isRTL ? 'pr-9 pl-2.5' : 'pl-9 pr-2.5'
                   )}
                 />
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <label htmlFor="catalog-sort" className="text-xs font-medium text-gray-500">
-                  {t('catalog.sortBy')}
-                </label>
-                <select
-                  id="catalog-sort"
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as CatalogSortKey)}
-                  className="rounded-lg border border-gray-200 bg-white py-2 pl-3 pr-8 text-sm font-medium text-catchy-dark outline-none focus:border-catchy focus:ring-2 focus:ring-catchy/20"
-                >
-                  <option value="priceAsc">{t('catalog.sortPriceAsc')}</option>
-                  <option value="priceDesc">{t('catalog.sortPriceDesc')}</option>
-                </select>
               </div>
             </div>
 
             <div
               className={cn(
-                'mt-4 rounded-xl border border-gray-200/80 bg-white px-3 py-3 shadow-sm sm:px-4',
+                'mt-1.5 rounded-xl border border-gray-200/80 bg-white px-2.5 py-2 shadow-sm sm:px-3',
                 isRTL && 'font-arabic'
               )}
             >
               <div
                 dir={isRTL ? 'rtl' : 'ltr'}
-                className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-6"
+                className="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-4"
               >
                 <div className={cn('min-w-0 flex-1', isRTL && 'flex flex-col items-start')}>
                   <p
                     className={cn(
-                      'mb-2 w-full text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400',
+                      'mb-1 w-full text-[9px] font-bold uppercase tracking-[0.18em] text-gray-400',
                       isRTL && 'text-start'
                     )}
                   >
@@ -306,7 +314,7 @@ const Catalog = () => {
                   </p>
                   <div
                     dir={isRTL ? 'rtl' : 'ltr'}
-                    className="flex w-full gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                    className="flex w-full gap-1.5 overflow-x-auto pb-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                   >
                     {categoryOptions.map(([cat, count]) => {
                       const checked = selectedCats.some(
@@ -318,7 +326,7 @@ const Catalog = () => {
                           type="button"
                           onClick={() => toggleCat(cat)}
                           aria-pressed={checked}
-                          className={cn(chipClass(checked), 'inline-flex items-center gap-1.5')}
+                          className={cn(chipClass(checked), 'inline-flex items-center gap-1')}
                         >
                           <span>{t(CATEGORY_KEYS[cat] || cat)}</span>
                           <span className={cn('tabular-nums', checked ? 'text-white/80' : 'text-gray-400')}>
@@ -332,10 +340,17 @@ const Catalog = () => {
               </div>
             </div>
 
-            <p className={cn('mt-4 text-sm text-gray-600', isRTL && 'font-arabic')}>{showingLine}</p>
+            <p
+              className={cn(
+                'mt-1.5 mb-0 text-xs leading-none text-gray-600',
+                isRTL ? 'text-start font-arabic' : 'text-end'
+              )}
+            >
+              {showingLine}
+            </p>
 
             {filterPills.length > 0 && (
-              <div className={cn('mt-4 flex flex-wrap gap-2', isRTL && 'flex-row-reverse')}>
+              <div className={cn('mt-1.5 flex flex-wrap gap-2', isRTL && 'flex-row-reverse')}>
                 {filterPills.map((pill) => (
                   <button
                     key={pill.key}
@@ -357,7 +372,7 @@ const Catalog = () => {
               </div>
             )}
 
-            <div className="mt-6">
+            <div className={cn(filterPills.length > 0 ? 'mt-1.5' : 'mt-2')}>
               {loading ? (
                 <div className="grid grid-cols-2 justify-items-center gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 lg:gap-x-5 lg:gap-y-6">
                   {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
@@ -369,7 +384,7 @@ const Catalog = () => {
                 </div>
               ) : sortedProducts.length > 0 ? (
                 <>
-                  <div className="grid grid-cols-2 justify-items-center gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 lg:gap-x-5 lg:gap-y-6">
+                  <div className="grid grid-cols-2 justify-items-center gap-x-4 gap-y-4 sm:grid-cols-3 lg:grid-cols-4 lg:gap-x-5 lg:gap-y-5">
                     {pagedProducts.map((product) => {
                       const meta = getCatalogSaleMeta(product);
                       const colorsLine = t('catalog.colorsCount').replace('{n}', String(meta.nColors));
@@ -387,21 +402,21 @@ const Catalog = () => {
 
                   <div
                     className={cn(
-                      'mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-4',
+                      'mt-3 flex flex-col items-center justify-center gap-2 sm:flex-row sm:gap-3',
                       isRTL && 'font-arabic'
                     )}
                   >
-                    <p className="text-xs text-gray-500">
+                    <p className="text-[11px] leading-none text-gray-500">
                       {t('catalog.pageInfo')
                         .replace('{page}', String(viewPage + 1))
                         .replace('{pages}', String(totalViewPages))}
                     </p>
-                    <div className="flex flex-wrap items-center justify-center gap-2">
+                    <div className="flex flex-wrap items-center justify-center gap-1.5">
                       <button
                         type="button"
                         disabled={viewPage === 0}
                         onClick={() => setViewPage((p) => Math.max(0, p - 1))}
-                        className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-catchy-dark transition hover:border-catchy disabled:cursor-not-allowed disabled:opacity-40"
+                        className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-catchy-dark transition hover:border-catchy disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         {t('catalog.prevPage')}
                       </button>
@@ -415,7 +430,7 @@ const Catalog = () => {
                             loadProducts(false);
                           }
                         }}
-                        className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-catchy-dark transition hover:border-catchy disabled:cursor-not-allowed disabled:opacity-40"
+                        className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-catchy-dark transition hover:border-catchy disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         {t('catalog.nextPage')}
                       </button>
@@ -424,7 +439,7 @@ const Catalog = () => {
                           type="button"
                           disabled={loadingMore}
                           onClick={() => loadProducts(false)}
-                          className="inline-flex items-center gap-2 rounded-lg bg-catchy px-4 py-2 text-xs font-semibold text-white transition hover:bg-catchy-dark disabled:opacity-60"
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-catchy px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-catchy-dark disabled:opacity-60"
                         >
                           {loadingMore ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
