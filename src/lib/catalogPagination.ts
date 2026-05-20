@@ -9,11 +9,12 @@ import {
   startAfter,
   where,
 } from '../firebase';
+import { canonicalCategory } from './category';
 
 export const CATALOG_FETCH_SIZE = 24;
 export const CATALOG_VIEW_PAGE_SIZE = 24;
 
-export type CatalogSortKey = 'popularity' | 'priceAsc' | 'priceDesc' | 'name';
+export type CatalogSortKey = 'priceAsc' | 'priceDesc';
 
 export async function fetchCatalogProductsPage(options: {
   selectedCats: string[];
@@ -27,17 +28,20 @@ export async function fetchCatalogProductsPage(options: {
 }> {
   const pageSize = options.pageSize ?? CATALOG_FETCH_SIZE;
   const constraints: QueryConstraint[] = [];
+  const categories = options.selectedCats.map(canonicalCategory).filter(Boolean);
 
-  if (options.selectedCats.length === 1) {
-    constraints.push(where('category', '==', options.selectedCats[0]));
-  } else if (options.selectedCats.length > 1) {
-    constraints.push(where('category', 'in', options.selectedCats.slice(0, 10)));
+  if (categories.length === 1) {
+    constraints.push(where('category', '==', categories[0]!));
+  } else if (categories.length > 1) {
+    constraints.push(where('category', 'in', categories.slice(0, 10)));
   }
 
-  if (options.sortBy === 'priceAsc') constraints.push(orderBy('price', 'asc'));
-  else if (options.sortBy === 'priceDesc') constraints.push(orderBy('price', 'desc'));
-  else if (options.sortBy === 'name') constraints.push(orderBy('name', 'asc'));
-  else constraints.push(orderBy('createdAt', 'desc'));
+  // category + orderBy(price) needs a composite Firestore index; sort client-side when filtered
+  if (categories.length === 0) {
+    constraints.push(
+      orderBy('price', options.sortBy === 'priceDesc' ? 'desc' : 'asc')
+    );
+  }
 
   constraints.push(limit(pageSize));
   if (options.cursor) constraints.push(startAfter(options.cursor));
@@ -58,9 +62,8 @@ export async function fetchCatalogCategoryCounts(): Promise<Map<string, number>>
   const snap = await getDocs(query(collection(db, 'products'), limit(500)));
   const map = new Map<string, number>();
   snap.docs.forEach((d) => {
-    const raw = d.data().category;
-    if (!raw || typeof raw !== 'string') return;
-    const key = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+    const key = canonicalCategory(d.data().category);
+    if (!key) return;
     map.set(key, (map.get(key) ?? 0) + 1);
   });
   return map;

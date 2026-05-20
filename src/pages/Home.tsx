@@ -336,8 +336,8 @@ const Home = () => {
         dir={isRTL ? 'rtl' : 'ltr'}
         className="mx-auto max-w-7xl px-5 pb-14 pt-3 sm:pt-5 md:px-10 md:pb-20 md:pt-7 lg:pb-24"
       >
-        <div className="grid grid-cols-1 items-start gap-8 md:grid-cols-12 md:gap-12 lg:gap-16">
-          <div className={cn('md:col-span-5 lg:col-span-4', isRTL && 'font-arabic')}>
+        <div className="grid grid-cols-1 items-start gap-10 md:grid-cols-12 md:gap-14 lg:gap-20">
+          <div className={cn('md:col-span-5 lg:col-span-4', isRTL && 'flex flex-col items-start font-arabic')}>
             <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.45em] text-catchy md:text-[11px]">
               {t('featured.subtitle')}
             </p>
@@ -350,18 +350,26 @@ const Home = () => {
               <span className="block">{t('featured.headingLine1')}</span>
               <span className="mt-1 block text-catchy/40 md:mt-2">{t('featured.headingLine2')}</span>
             </h2>
-            <div className={cn('mt-6 md:mt-8', isRTL && 'md:text-end')}>
+            <div className="mt-6 w-full md:mt-8">
               <Link
                 to="/catalog"
-                className="inline-block text-[10px] font-bold uppercase tracking-[0.35em] text-catchy-dark underline-offset-4 transition hover:text-catchy hover:underline"
+                className={cn(
+                  'inline-block rounded-full border-2 border-catchy-dark bg-transparent px-10 py-3 text-[11px] font-bold uppercase tracking-[0.3em] text-catchy-dark transition hover:bg-catchy-dark hover:text-white',
+                  isRTL && 'ml-auto block w-fit font-arabic'
+                )}
               >
-                {t('featured.viewAll')}
+                {t('hero.cta')}
               </Link>
             </div>
           </div>
 
           <div className="md:col-span-7 lg:col-span-8">
-            <div className="flex flex-wrap justify-center gap-x-6 gap-y-6 sm:gap-x-10 sm:gap-y-8 md:gap-x-10 lg:gap-x-12 xl:gap-x-14">
+            <div
+              className={cn(
+                'grid grid-cols-2 justify-items-center md:grid-cols-4',
+                'gap-x-6 gap-y-10 sm:gap-x-10 sm:gap-y-12 md:gap-x-14 md:gap-y-16 lg:gap-x-[4.25rem] lg:gap-y-[4.5rem]'
+              )}
+            >
               {HOME_FEATURED_CATEGORIES.map((cat) => {
                 const Icon = CATEGORY_ICONS[cat];
                 return (
@@ -369,12 +377,12 @@ const Home = () => {
                     key={cat}
                     type="button"
                     onClick={() => navigate(`/catalog?category=${encodeURIComponent(cat)}`)}
-                    className="group flex w-[5.75rem] flex-col items-center text-center sm:w-24 md:w-[6.25rem]"
+                    className="group flex w-full max-w-[8.5rem] flex-col items-center text-center"
                   >
-                    <div className="mb-3 flex aspect-square w-full max-w-[6.5rem] items-center justify-center rounded-full border border-catchy/30 bg-catchy/5 text-catchy shadow-sm transition group-hover:border-catchy group-hover:bg-catchy/10 group-hover:shadow-md">
+                    <div className="mb-3 flex size-[5.75rem] shrink-0 items-center justify-center rounded-full border border-catchy/30 bg-catchy/5 text-catchy shadow-sm transition group-hover:border-catchy group-hover:bg-catchy/10 group-hover:shadow-md sm:size-[6.75rem] md:size-[7.75rem] lg:size-32">
                       {Icon &&
                         React.createElement(Icon, {
-                          className: 'h-9 w-9 sm:h-10 sm:w-10',
+                          className: 'h-9 w-9 sm:h-10 sm:w-10 md:h-11 md:w-11',
                           strokeWidth: 1.1,
                           'aria-hidden': true,
                         })}
@@ -392,15 +400,6 @@ const Home = () => {
               })}
             </div>
           </div>
-        </div>
-
-        <div className="mt-10 flex justify-center md:mt-14">
-          <Link
-            to="/catalog"
-            className="rounded-full border-2 border-catchy-dark bg-transparent px-10 py-3 text-[11px] font-bold uppercase tracking-[0.3em] text-catchy-dark transition hover:bg-catchy-dark hover:text-white"
-          >
-            {t('hero.cta')}
-          </Link>
         </div>
       </section>
 

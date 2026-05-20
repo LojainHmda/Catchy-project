@@ -13,9 +13,12 @@ import AdminProducts from './pages/AdminProducts';
 import AdminStock from './pages/AdminStock';
 import AdminHero from './pages/AdminHero';
 import AdminCategoryTiles from './pages/AdminCategoryTiles';
+import AdminCustomers from './pages/AdminCustomers';
+import AdminOrders from './pages/AdminOrders';
 import AdminLayout from './components/AdminLayout';
 import Login from './pages/Login';
 import Cart from './pages/Cart';
+import CartDrawer from './components/CartDrawer';
 import Footer from './components/Footer';
 
 const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -35,8 +38,8 @@ const AppContent = () => {
         <Route path="/admin/category-tiles" element={<AdminRoute><AdminCategoryTiles /></AdminRoute>} />
         <Route path="/admin/products" element={<AdminRoute><AdminProducts /></AdminRoute>} />
         <Route path="/admin/stock" element={<AdminRoute><AdminStock /></AdminRoute>} />
-        <Route path="/admin/orders" element={<AdminRoute><div className="p-10 text-center">Orders Management Coming Soon</div></AdminRoute>} />
-        <Route path="/admin/customers" element={<AdminRoute><div className="p-10 text-center">Customer Management Coming Soon</div></AdminRoute>} />
+        <Route path="/admin/orders" element={<AdminRoute><AdminOrders /></AdminRoute>} />
+        <Route path="/admin/customers" element={<AdminRoute><AdminCustomers /></AdminRoute>} />
         <Route path="/admin/settings" element={<AdminRoute><div className="p-10 text-center">Settings Coming Soon</div></AdminRoute>} />
 
         {/* Public Routes */}
@@ -54,6 +57,7 @@ const AppContent = () => {
               </Routes>
             </main>
             <Footer />
+            <CartDrawer />
           </>
         } />
       </Routes>

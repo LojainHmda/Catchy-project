@@ -11,7 +11,6 @@ import {
   ClipboardList,
   Image as ImageIcon,
   Store,
-  LayoutGrid,
   Menu,
   X,
 } from 'lucide-react';
@@ -58,7 +57,6 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { icon: LayoutDashboard, label: 'Dashboard', path: '/admin' },
     { icon: Store, label: 'Shop Page', path: '/' },
     { icon: ImageIcon, label: 'Hero Reels', path: '/admin/hero' },
-    { icon: LayoutGrid, label: 'Category tiles', path: '/admin/category-tiles' },
     { icon: Package, label: 'Products', path: '/admin/products' },
     { icon: ClipboardList, label: 'Stock', path: '/admin/stock' },
     { icon: ShoppingCart, label: 'Orders', path: '/admin/orders' },
@@ -186,7 +184,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       <main
         className={cn(
           'min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto',
-          location.pathname === '/admin/hero' || location.pathname === '/admin/category-tiles'
+          location.pathname === '/admin/hero'
             ? 'p-4 sm:p-5 md:p-6'
             : 'p-4 sm:p-6 md:p-10'
         )}

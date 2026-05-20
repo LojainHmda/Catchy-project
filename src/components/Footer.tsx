@@ -9,17 +9,25 @@ const Footer = () => {
     <footer className="border-t border-gray-100 bg-white px-4 py-10 sm:px-6 md:px-8 md:py-12">
       <div className="mx-auto max-w-6xl">
         <div className="grid grid-cols-1 items-start gap-8 md:grid-cols-12 md:gap-10">
-          <div className="md:col-span-5">
-            <div className="mb-4 flex items-center gap-2.5">
+          <div className={cn('md:col-span-5', isRTL && 'flex flex-col items-start')}>
+            <div dir="ltr" className={cn('mb-4 flex items-center gap-2.5', isRTL && 'ml-auto')}>
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-catchy text-[10px] font-medium text-white">
                 C
               </div>
-              <span className="text-lg font-medium uppercase tracking-[0.4em] text-catchy">Atchy</span>
+              <span
+                className={cn(
+                  'text-lg tracking-[0.35em] text-catchy',
+                  isRTL ? 'font-arabic' : 'font-serif'
+                )}
+              >
+                ATCHY
+              </span>
             </div>
             <p
+              dir={isRTL ? 'rtl' : undefined}
               className={cn(
                 'max-w-sm text-[10px] leading-relaxed tracking-wide text-catchy uppercase',
-                isRTL && 'font-arabic normal-case'
+                isRTL && 'ml-auto w-full max-w-none font-arabic text-right normal-case'
               )}
             >
               {t('footer.tagline')}

@@ -1,52 +1,81 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { db, collection, getDocs, updateDoc, doc, query, orderBy } from '../firebase';
-import { Search, Package, Save, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Search, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { coerceProductImages, PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
+
+type ProductRow = {
+  id: string;
+  name: string;
+  category: string;
+  stock: number;
+  image: string;
+};
+
+type StockFilter = 'all' | 'low' | 'out';
+
+function stockStatus(stock: number): { label: string; tone: string } {
+  if (stock === 0) return { label: 'Out of stock', tone: 'bg-gray-300' };
+  if (stock <= 10) return { label: 'Low', tone: 'bg-gray-500' };
+  return { label: 'In stock', tone: 'bg-gray-900' };
+}
 
 const AdminStock = () => {
-  const [products, setProducts] = useState<any[]>([]);
+  const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [stockFilter, setStockFilter] = useState<StockFilter>('all');
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [stockUpdates, setStockUpdates] = useState<{ [key: string]: number }>({});
+  const [stockUpdates, setStockUpdates] = useState<Record<string, number>>({});
 
-  useEffect(() => {
-    fetchProducts();
-  }, []);
-
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
+    setLoading(true);
     try {
       const q = query(collection(db, 'products'), orderBy('name', 'asc'));
       const snapshot = await getDocs(q);
-      const productsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-      productsData.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+      const productsData: ProductRow[] = snapshot.docs
+        .map((d) => {
+          const data = d.data();
+          const imgs = coerceProductImages(data);
+          return {
+            id: d.id,
+            name: String(data.name ?? ''),
+            category: String(data.category ?? ''),
+            stock: Number(data.stock) || 0,
+            image: imgs[0] ?? PRODUCT_IMAGE_PLACEHOLDER,
+          };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
       setProducts(productsData);
-      
-      const initialUpdates: { [key: string]: number } = {};
-      productsData.forEach(p => {
-        initialUpdates[p.id] = p.stock || 0;
+      const initial: Record<string, number> = {};
+      productsData.forEach((p) => {
+        initial[p.id] = p.stock;
       });
-      setStockUpdates(initialUpdates);
+      setStockUpdates(initial);
     } catch (error) {
       console.error('Error fetching products:', error);
+      setProducts([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
 
   const handleStockChange = (id: string, value: string) => {
-    const numValue = parseInt(value) || 0;
-    setStockUpdates(prev => ({ ...prev, [id]: numValue }));
+    const numValue = Math.max(0, parseInt(value, 10) || 0);
+    setStockUpdates((prev) => ({ ...prev, [id]: numValue }));
   };
 
   const saveStock = async (id: string) => {
     setSavingId(id);
     try {
-      await updateDoc(doc(db, 'products', id), {
-        stock: stockUpdates[id]
-      });
-      // Update local state
-      setProducts(prev => prev.map(p => p.id === id ? { ...p, stock: stockUpdates[id] } : p));
+      const next = stockUpdates[id] ?? 0;
+      await updateDoc(doc(db, 'products', id), { stock: next });
+      setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, stock: next } : p)));
     } catch (error) {
       console.error('Error updating stock:', error);
     } finally {
@@ -54,133 +83,225 @@ const AdminStock = () => {
     }
   };
 
-  const filteredProducts = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const summary = useMemo(() => {
+    const low = products.filter((p) => p.stock > 0 && p.stock <= 10).length;
+    const out = products.filter((p) => p.stock === 0).length;
+    return { total: products.length, low, out };
+  }, [products]);
+
+  const filterCounts = useMemo(
+    () => ({
+      all: products.length,
+      low: products.filter((p) => p.stock > 0 && p.stock <= 10).length,
+      out: products.filter((p) => p.stock === 0).length,
+    }),
+    [products]
+  );
+
+  const filteredProducts = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return products.filter((p) => {
+      if (stockFilter === 'low' && !(p.stock > 0 && p.stock <= 10)) return false;
+      if (stockFilter === 'out' && p.stock !== 0) return false;
+      if (!q) return true;
+      return (
+        p.name.toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q) ||
+        p.id.toLowerCase().includes(q)
+      );
+    });
+  }, [products, searchTerm, stockFilter]);
+
+  const stockFilters: { key: StockFilter; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'low', label: 'Low' },
+    { key: 'out', label: 'Out' },
+  ];
 
   return (
-    <div className="space-y-10">
-      <header>
-        <h1 className="text-4xl font-black text-gray-900 mb-2 tracking-tight">Stock Management</h1>
-        <p className="text-gray-500 font-medium">Quickly update inventory levels for all products.</p>
+    <div className="min-w-0">
+      <header className="border-b border-gray-200 pb-4">
+        <h1 className="text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">Stock</h1>
+        <p className="mt-0.5 text-sm text-gray-500">Update inventory levels across the catalog.</p>
+        <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+          <div className="flex gap-1.5">
+            <dt className="text-gray-500">Products</dt>
+            <dd className="font-medium tabular-nums text-gray-900">{summary.total}</dd>
+          </div>
+          <div className="flex gap-1.5">
+            <dt className="text-gray-500">Low</dt>
+            <dd className="font-medium tabular-nums text-gray-900">{summary.low}</dd>
+          </div>
+          <div className="flex gap-1.5">
+            <dt className="text-gray-500">Out of stock</dt>
+            <dd className="font-medium tabular-nums text-gray-900">{summary.out}</dd>
+          </div>
+        </dl>
       </header>
 
-      {/* Search */}
-      <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-          <input
-            type="text"
-            placeholder="Search products..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-12 pr-4 py-3 bg-gray-50 rounded-2xl border-none focus:ring-2 focus:ring-[#4ba673] transition-all font-medium"
-          />
+      <div className="mt-4">
+        <div className="flex flex-col gap-2 border-b border-gray-200 pb-3 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              type="search"
+              placeholder="Search products…"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="h-9 w-full rounded-md border border-gray-200 bg-white pl-9 pr-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-400 focus:ring-0"
+            />
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {stockFilters.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setStockFilter(f.key)}
+                className={cn(
+                  'h-8 rounded-md px-2.5 text-xs font-medium transition-colors',
+                  stockFilter === f.key
+                    ? 'bg-gray-900 text-white'
+                    : 'text-gray-600 hover:bg-gray-100'
+                )}
+              >
+                {f.label}
+                <span className="ml-1 tabular-nums opacity-70">{filterCounts[f.key]}</span>
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* Stock List */}
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-gray-50/50 text-gray-400 text-xs font-black uppercase tracking-widest">
-                <th className="px-8 py-5">Product</th>
-                <th className="px-8 py-5">Current Stock</th>
-                <th className="px-8 py-5">Status</th>
-                <th className="px-8 py-5">Update Inventory</th>
-                <th className="px-8 py-5">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {loading ? (
-                [1, 2, 3].map(i => (
-                  <tr key={i} className="animate-pulse">
-                    <td colSpan={5} className="px-8 py-10">
-                      <div className="h-12 bg-gray-50 rounded-2xl w-full" />
-                    </td>
-                  </tr>
-                ))
-              ) : filteredProducts.length > 0 ? filteredProducts.map((product) => {
-                const currentVal = stockUpdates[product.id];
-                const hasChanged = currentVal !== product.stock;
-                
-                return (
-                  <tr key={product.id} className="hover:bg-gray-50/50 transition-colors group">
-                    <td className="px-8 py-6">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
-                          <img
-                            src={product.images?.[0] || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=200'}
-                            alt={product.name}
-                            className="w-full h-full object-cover"
-                            referrerPolicy="no-referrer"
-                          />
-                        </div>
-                        <div>
-                          <h4 className="font-black text-gray-900 text-sm">{product.name}</h4>
-                          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{product.category}</p>
+        <div className="mt-0 overflow-hidden rounded-md border border-gray-200 bg-white">
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-gray-500">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading…
+            </div>
+          ) : filteredProducts.length === 0 ? (
+            <p className="py-10 text-center text-sm text-gray-500">No products match your filters.</p>
+          ) : (
+            <>
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-xs font-medium text-gray-500">
+                      <th className="px-4 py-2.5 font-medium">Product</th>
+                      <th className="px-4 py-2.5 font-medium">On hand</th>
+                      <th className="px-4 py-2.5 font-medium">Status</th>
+                      <th className="px-4 py-2.5 font-medium">New qty</th>
+                      <th className="px-4 py-2.5 text-right font-medium" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredProducts.map((product) => {
+                      const currentVal = stockUpdates[product.id] ?? product.stock;
+                      const hasChanged = currentVal !== product.stock;
+                      const status = stockStatus(product.stock);
+
+                      return (
+                        <tr key={product.id} className="hover:bg-gray-50/60">
+                          <td className="px-4 py-2.5">
+                            <div className="flex min-w-0 items-center gap-2.5">
+                              <img
+                                src={product.image}
+                                alt=""
+                                className="h-8 w-8 shrink-0 rounded object-cover bg-gray-100"
+                                referrerPolicy="no-referrer"
+                              />
+                              <div className="min-w-0">
+                                <p className="truncate font-medium text-gray-900">{product.name}</p>
+                                <p className="truncate text-xs text-gray-500">{product.category}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 tabular-nums text-gray-900">{product.stock}</td>
+                          <td className="px-4 py-2.5">
+                            <span className="inline-flex items-center gap-1.5 text-xs text-gray-600">
+                              <span className={cn('h-1.5 w-1.5 rounded-full', status.tone)} />
+                              {status.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <input
+                              type="number"
+                              min={0}
+                              value={currentVal}
+                              onChange={(e) => handleStockChange(product.id, e.target.value)}
+                              className="h-8 w-20 rounded-md border border-gray-200 px-2 text-center text-sm tabular-nums text-gray-900 outline-none focus:border-gray-400"
+                            />
+                          </td>
+                          <td className="px-4 py-2.5 text-right">
+                            <button
+                              type="button"
+                              onClick={() => saveStock(product.id)}
+                              disabled={!hasChanged || savingId === product.id}
+                              className={cn(
+                                'h-8 rounded-md px-3 text-xs font-medium transition-colors',
+                                hasChanged
+                                  ? 'bg-gray-900 text-white hover:bg-gray-800'
+                                  : 'cursor-not-allowed text-gray-300'
+                              )}
+                            >
+                              {savingId === product.id ? 'Saving…' : 'Save'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <ul className="divide-y divide-gray-100 md:hidden">
+                {filteredProducts.map((product) => {
+                  const currentVal = stockUpdates[product.id] ?? product.stock;
+                  const hasChanged = currentVal !== product.stock;
+                  const status = stockStatus(product.stock);
+
+                  return (
+                    <li key={product.id} className="px-4 py-3">
+                      <div className="flex gap-2.5">
+                        <img
+                          src={product.image}
+                          alt=""
+                          className="h-10 w-10 shrink-0 rounded object-cover bg-gray-100"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-gray-900">{product.name}</p>
+                          <p className="text-xs text-gray-500">
+                            {product.stock} on hand · {status.label}
+                          </p>
+                          <div className="mt-2 flex items-center gap-2">
+                            <input
+                              type="number"
+                              min={0}
+                              value={currentVal}
+                              onChange={(e) => handleStockChange(product.id, e.target.value)}
+                              className="h-8 w-20 rounded-md border border-gray-200 px-2 text-center text-sm tabular-nums outline-none focus:border-gray-400"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => saveStock(product.id)}
+                              disabled={!hasChanged || savingId === product.id}
+                              className={cn(
+                                'h-8 rounded-md px-3 text-xs font-medium',
+                                hasChanged
+                                  ? 'bg-gray-900 text-white'
+                                  : 'cursor-not-allowed text-gray-300'
+                              )}
+                            >
+                              {savingId === product.id ? '…' : 'Save'}
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </td>
-                    <td className="px-8 py-6">
-                      <span className={cn(
-                        "font-black text-lg",
-                        product.stock > 10 ? "text-emerald-600" : product.stock > 0 ? "text-orange-600" : "text-red-600"
-                      )}>
-                        {product.stock}
-                      </span>
-                    </td>
-                    <td className="px-8 py-6">
-                      {product.stock === 0 ? (
-                        <div className="flex items-center gap-2 text-red-500 text-xs font-black uppercase tracking-widest">
-                          <AlertTriangle size={14} /> Out of Stock
-                        </div>
-                      ) : product.stock <= 10 ? (
-                        <div className="flex items-center gap-2 text-orange-500 text-xs font-black uppercase tracking-widest">
-                          <AlertTriangle size={14} /> Low Stock
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 text-emerald-500 text-xs font-black uppercase tracking-widest">
-                          <CheckCircle2 size={14} /> Healthy
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-8 py-6">
-                      <input
-                        type="number"
-                        value={currentVal}
-                        onChange={(e) => handleStockChange(product.id, e.target.value)}
-                        className="w-24 px-4 py-2 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-[#4ba673] transition-all font-black text-center"
-                      />
-                    </td>
-                    <td className="px-8 py-6">
-                      <button
-                        onClick={() => saveStock(product.id)}
-                        disabled={!hasChanged || savingId === product.id}
-                        className={cn(
-                          "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all",
-                          hasChanged 
-                            ? "bg-[#4ba673] text-white shadow-lg shadow-[#4ba673]/20 hover:bg-[#3d8a5f]" 
-                            : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                        )}
-                      >
-                        <Save size={14} />
-                        {savingId === product.id ? 'Saving...' : 'Save'}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              }) : (
-                <tr>
-                  <td colSpan={5} className="px-8 py-20 text-center">
-                    <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-6 text-gray-300">
-                      <Package size={40} />
-                    </div>
-                    <h3 className="text-xl font-black text-gray-900 mb-2">No products found</h3>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
         </div>
       </div>
     </div>

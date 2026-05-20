@@ -11,7 +11,7 @@ import { coerceProductImages, isRemoteImageUrl, PRODUCT_IMAGE_PLACEHOLDER } from
 
 const ProductDetail = () => {
   const { id } = useParams();
-  const { addToCart } = useCart();
+  const { addToCart, openCart } = useCart();
   const { t, isRTL } = useLanguage();
   const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -56,6 +56,7 @@ const ProductDetail = () => {
     if (!product) return;
     setIsAdding(true);
     addToCart(product, quantity);
+    openCart();
     setTimeout(() => setIsAdding(false), 1000);
   };
 

@@ -1,33 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
-import { Search, ChevronDown, ChevronRight, X, Loader2 } from 'lucide-react';
+import { Search, X, Loader2 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { CATEGORY_KEYS, CATALOG_FILTER_CATEGORIES } from '../constants';
 import { cn } from '../lib/utils';
 import { getCatalogSaleMeta, isProductDiscounted } from '../lib/catalogSale';
 import CatalogProductCard from '../components/CatalogProductCard';
+import { canonicalCategory } from '../lib/category';
 import {
   CATALOG_VIEW_PAGE_SIZE,
   fetchCatalogCategoryCounts,
   fetchCatalogProductsPage,
   type CatalogSortKey,
 } from '../lib/catalogPagination';
-
-function normalizeCategory(c?: string) {
-  if (!c || typeof c !== 'string') return '';
-  return c.charAt(0).toUpperCase() + c.slice(1).toLowerCase();
-}
-
-function inPriceRange(price: number, key: string): boolean {
-  if (key === '0-50') return price < 50;
-  if (key === '50-100') return price >= 50 && price < 100;
-  if (key === '100-150') return price >= 100 && price < 150;
-  if (key === '150+') return price >= 150;
-  return true;
-}
-
-const PRICE_KEYS = ['0-50', '50-100', '100-150', '150+'] as const;
 
 const Catalog = () => {
   const { t, isRTL } = useLanguage();
@@ -43,12 +29,7 @@ const Catalog = () => {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [priceRanges, setPriceRanges] = useState<string[]>([]);
-  const [sortBy, setSortBy] = useState<CatalogSortKey>('popularity');
-  const [openSections, setOpenSections] = useState({
-    category: true,
-    price: true,
-  });
+  const [sortBy, setSortBy] = useState<CatalogSortKey>('priceAsc');
 
   useEffect(() => {
     const id = window.setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
@@ -64,14 +45,12 @@ const Catalog = () => {
   const selectedCats = useMemo(() => {
     const cats = searchParams.get('cats');
     const one = searchParams.get('category');
-    if (cats) {
-      return cats
-        .split(',')
-        .map((s) => decodeURIComponent(s.trim()))
-        .filter(Boolean);
-    }
-    if (one) return [decodeURIComponent(one.trim())];
-    return [];
+    const raw = cats
+      ? cats.split(',').map((s) => decodeURIComponent(s.trim()))
+      : one
+        ? [decodeURIComponent(one.trim())]
+        : [];
+    return raw.map(canonicalCategory).filter(Boolean);
   }, [searchParams]);
 
   const saleOnly = searchParams.get('sale') === '1';
@@ -85,11 +64,11 @@ const Catalog = () => {
   };
 
   const toggleCat = (cat: string) => {
-    const norm = normalizeCategory(cat);
-    const cur = selectedCats.map((c) => normalizeCategory(c));
+    const norm = canonicalCategory(cat);
+    const cur = selectedCats.map((c) => canonicalCategory(c));
     const has = cur.some((c) => c.toLowerCase() === norm.toLowerCase());
     const next = has
-      ? selectedCats.filter((c) => normalizeCategory(c).toLowerCase() !== norm.toLowerCase())
+      ? selectedCats.filter((c) => canonicalCategory(c).toLowerCase() !== norm.toLowerCase())
       : [...selectedCats, cat];
     setSelectedCats(next);
   };
@@ -136,11 +115,11 @@ const Catalog = () => {
 
   useEffect(() => {
     setViewPage(0);
-  }, [debouncedSearch, priceRanges, saleOnly]);
+  }, [debouncedSearch, saleOnly]);
 
   const categoryOptions = useMemo(() => {
     return CATALOG_FILTER_CATEGORIES.map((cat) => {
-      const key = normalizeCategory(cat);
+      const key = canonicalCategory(cat);
       return [cat, categoryCounts.get(key) ?? 0] as [string, number];
     });
   }, [categoryCounts]);
@@ -152,22 +131,20 @@ const Catalog = () => {
         return false;
       }
       if (selectedCats.length) {
-        const pc = p.category ? normalizeCategory(p.category).toLowerCase() : '';
-        const ok = selectedCats.some((c) => normalizeCategory(c).toLowerCase() === pc);
+        const pc = p.category ? canonicalCategory(p.category).toLowerCase() : '';
+        const ok = selectedCats.some((c) => canonicalCategory(c).toLowerCase() === pc);
         if (!ok) return false;
-      }
-      if (priceRanges.length) {
-        if (!priceRanges.some((k) => inPriceRange(Number(p.price) || 0, k))) return false;
       }
       return true;
     });
 
-    if (sortBy === 'priceAsc') list.sort((a, b) => (Number(a.price) || 0) - (Number(b.price) || 0));
-    else if (sortBy === 'priceDesc') list.sort((a, b) => (Number(b.price) || 0) - (Number(a.price) || 0));
-    else if (sortBy === 'name') list.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    list.sort((a, b) => {
+      const diff = (Number(a.price) || 0) - (Number(b.price) || 0);
+      return sortBy === 'priceAsc' ? diff : -diff;
+    });
 
     return list;
-  }, [products, saleOnly, debouncedSearch, selectedCats, priceRanges, sortBy]);
+  }, [products, saleOnly, debouncedSearch, selectedCats, sortBy]);
 
   const totalViewPages = Math.max(1, Math.ceil(sortedProducts.length / CATALOG_VIEW_PAGE_SIZE));
 
@@ -190,17 +167,8 @@ const Catalog = () => {
     if (needMoreFromServer) loadProducts(false);
   }, [viewPage, totalViewPages, hasMore, loading, loadingMore, sortedProducts.length, loadProducts]);
 
-  const toggleSection = (key: keyof typeof openSections) => {
-    setOpenSections((s) => ({ ...s, [key]: !s[key] }));
-  };
-
-  const togglePrice = (key: string) => {
-    setPriceRanges((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
-  };
-
   const clearAllFilters = () => {
     setSelectedCats([]);
-    setPriceRanges([]);
     setSearchTerm('');
     const next = new URLSearchParams(searchParams);
     next.delete('cats');
@@ -225,27 +193,12 @@ const Catalog = () => {
     selectedCats.forEach((c) => {
       pills.push({
         key: `c-${c}`,
-        label: t(CATEGORY_KEYS[normalizeCategory(c)] || c),
+        label: t(CATEGORY_KEYS[canonicalCategory(c)] || c),
         onRemove: () => toggleCat(c),
       });
     });
-    priceRanges.forEach((k) => {
-      const labelKey =
-        k === '0-50'
-          ? 'catalog.price0_50'
-          : k === '50-100'
-            ? 'catalog.price50_100'
-            : k === '100-150'
-              ? 'catalog.price100_150'
-              : 'catalog.price150_plus';
-      pills.push({
-        key: `p-${k}`,
-        label: t(labelKey),
-        onRemove: () => setPriceRanges((prev) => prev.filter((x) => x !== k)),
-      });
-    });
     return pills;
-  }, [saleOnly, searchParams, selectedCats, priceRanges, t, setSearchParams]);
+  }, [saleOnly, searchParams, selectedCats, t, setSearchParams]);
 
   const showingLine = useMemo(() => {
     if (sortedProducts.length === 0 && !loading) {
@@ -270,97 +223,18 @@ const Catalog = () => {
       .replace('{for}', forPart);
   }, [sortedProducts.length, viewPage, debouncedSearch, saleOnly, hasMore, loading, t]);
 
+  const chipClass = (active: boolean) =>
+    cn(
+      'shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+      active
+        ? 'border-catchy bg-catchy text-white shadow-sm'
+        : 'border-gray-200 bg-white text-catchy-dark hover:border-catchy/35 hover:bg-catchy/5'
+    );
+
   return (
     <div className="min-h-screen bg-neutral-50 text-catchy-dark">
       <div className="mx-auto max-w-[1400px] px-4 pb-12 pt-14 md:px-8 md:pb-16 md:pt-16">
-        <div className={cn('flex flex-col gap-6 lg:flex-row lg:gap-8', isRTL && 'lg:flex-row-reverse')}>
-          <aside className="w-full shrink-0 lg:sticky lg:top-20 lg:w-72 lg:self-start">
-            <div className="rounded-xl border border-gray-200/90 bg-white p-3 shadow-sm sm:p-4">
-              <div>
-                <button
-                  type="button"
-                  onClick={() => toggleSection('category')}
-                  className="flex w-full items-center justify-between py-2 text-left text-sm font-semibold text-catchy-dark"
-                >
-                  {t('catalog.filterCategory')}
-                  {openSections.category ? (
-                    <ChevronDown className="h-4 w-4 text-gray-400" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-gray-400" />
-                  )}
-                </button>
-                {openSections.category && (
-                  <ul className="space-y-1 pb-2 pl-0.5">
-                    {categoryOptions.map(([cat, count]) => {
-                      const checked = selectedCats.some(
-                        (c) => normalizeCategory(c).toLowerCase() === cat.toLowerCase()
-                      );
-                      return (
-                        <li key={cat}>
-                          <label className="flex cursor-pointer items-center justify-between gap-2 rounded-lg py-1.5 pl-1 pr-1 text-sm hover:bg-gray-50">
-                            <span className="flex min-w-0 items-center gap-2">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => toggleCat(cat)}
-                                className="h-3.5 w-3.5 rounded border-gray-300 text-catchy focus:ring-catchy"
-                              />
-                              <span className="truncate">{t(CATEGORY_KEYS[cat] || cat)}</span>
-                            </span>
-                            <span className="shrink-0 tabular-nums text-gray-400">{count}</span>
-                          </label>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-
-              <div className="border-t border-gray-100 pt-1">
-                <button
-                  type="button"
-                  onClick={() => toggleSection('price')}
-                  className="flex w-full items-center justify-between py-2 text-left text-sm font-semibold text-catchy-dark"
-                >
-                  {t('catalog.filterPrice')}
-                  {openSections.price ? (
-                    <ChevronDown className="h-4 w-4 text-gray-400" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-gray-400" />
-                  )}
-                </button>
-                {openSections.price && (
-                  <ul className="space-y-1 pb-2 pl-0.5">
-                    {PRICE_KEYS.map((key) => {
-                      const labelKey =
-                        key === '0-50'
-                          ? 'catalog.price0_50'
-                          : key === '50-100'
-                            ? 'catalog.price50_100'
-                            : key === '100-150'
-                              ? 'catalog.price100_150'
-                              : 'catalog.price150_plus';
-                      return (
-                        <li key={key}>
-                          <label className="flex cursor-pointer items-center gap-2 rounded-lg py-1.5 pl-1 text-sm hover:bg-gray-50">
-                            <input
-                              type="checkbox"
-                              checked={priceRanges.includes(key)}
-                              onChange={() => togglePrice(key)}
-                              className="h-3.5 w-3.5 rounded border-gray-300 text-catchy focus:ring-catchy"
-                            />
-                            {t(labelKey)}
-                          </label>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            </div>
-          </aside>
-
-          <div className="min-w-0 flex-1">
+        <div className="min-w-0">
             <nav
               className={cn(
                 'flex flex-wrap items-center gap-1 text-xs text-gray-500',
@@ -405,11 +279,56 @@ const Catalog = () => {
                   onChange={(e) => setSortBy(e.target.value as CatalogSortKey)}
                   className="rounded-lg border border-gray-200 bg-white py-2 pl-3 pr-8 text-sm font-medium text-catchy-dark outline-none focus:border-catchy focus:ring-2 focus:ring-catchy/20"
                 >
-                  <option value="popularity">{t('catalog.sortPopularity')}</option>
                   <option value="priceAsc">{t('catalog.sortPriceAsc')}</option>
                   <option value="priceDesc">{t('catalog.sortPriceDesc')}</option>
-                  <option value="name">{t('catalog.sortName')}</option>
                 </select>
+              </div>
+            </div>
+
+            <div
+              className={cn(
+                'mt-4 rounded-xl border border-gray-200/80 bg-white px-3 py-3 shadow-sm sm:px-4',
+                isRTL && 'font-arabic'
+              )}
+            >
+              <div
+                dir={isRTL ? 'rtl' : 'ltr'}
+                className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-6"
+              >
+                <div className={cn('min-w-0 flex-1', isRTL && 'flex flex-col items-start')}>
+                  <p
+                    className={cn(
+                      'mb-2 w-full text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400',
+                      isRTL && 'text-start'
+                    )}
+                  >
+                    {t('catalog.filterCategory')}
+                  </p>
+                  <div
+                    dir={isRTL ? 'rtl' : 'ltr'}
+                    className="flex w-full gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  >
+                    {categoryOptions.map(([cat, count]) => {
+                      const checked = selectedCats.some(
+                        (c) => canonicalCategory(c).toLowerCase() === cat.toLowerCase()
+                      );
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => toggleCat(cat)}
+                          aria-pressed={checked}
+                          className={cn(chipClass(checked), 'inline-flex items-center gap-1.5')}
+                        >
+                          <span>{t(CATEGORY_KEYS[cat] || cat)}</span>
+                          <span className={cn('tabular-nums', checked ? 'text-white/80' : 'text-gray-400')}>
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -530,7 +449,6 @@ const Catalog = () => {
                 </div>
               )}
             </div>
-          </div>
         </div>
       </div>
     </div>

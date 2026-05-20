@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Search, ShoppingBag, ChevronDown, User, Loader2, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -67,7 +67,7 @@ function SearchDropdown({
             const imgs = coerceProductImages(p);
             const src = imgs[0] ?? PRODUCT_IMAGE_PLACEHOLDER;
             const price = Number(p.price);
-            const priceLabel = Number.isFinite(price) ? `£${price}` : '';
+            const priceLabel = Number.isFinite(price) ? `آ£${price}` : '';
             return (
               <li key={p.id} role="option">
                 <Link
@@ -100,7 +100,7 @@ const Navbar = () => {
   const location = useLocation();
   const isHome = location.pathname === '/';
   const { user, role, logout } = useAuth();
-  const { cartCount } = useCart();
+  const { cartCount, openCart, closeCart } = useCart();
   const { language, setLanguage, t, isRTL } = useLanguage();
   const [scrolled, setScrolled] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -113,6 +113,10 @@ const Navbar = () => {
   const inputRefMobile = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    closeCart();
+  }, [location.pathname, closeCart]);
+
+  useEffect(() => {
     const handleScroll = () => {
       const next = window.scrollY > 40;
       setScrolled((prev) => (prev === next ? prev : next));
@@ -122,7 +126,7 @@ const Navbar = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Load search catalog only when the panel opens — avoids competing with Home/Catalog on first paint (mobile timeouts / freezes).
+  // Load search catalog only when the panel opens â€” avoids competing with Home/Catalog on first paint (mobile timeouts / freezes).
   useEffect(() => {
     if (!isSearchOpen) return;
     if (searchCatalogLoadedRef.current) return;
@@ -236,32 +240,23 @@ const Navbar = () => {
       <nav
         dir={isRTL ? 'rtl' : 'ltr'}
         className={cn(
-          'flex w-full min-w-0 touch-manipulation max-md:transition-none md:transition-all md:duration-500',
+          'w-full min-w-0 touch-manipulation max-md:transition-none md:transition-all md:duration-500',
           'py-4 pt-[max(1rem,env(safe-area-inset-top,0px))] md:py-5',
           'pl-[max(1.25rem,env(safe-area-inset-left,0px))] pr-[max(1.25rem,env(safe-area-inset-right,0px))] md:px-10 lg:px-14',
-          'items-center justify-between',
+          'max-md:grid max-md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] max-md:items-center max-md:gap-x-2',
+          'md:flex md:items-center md:justify-between',
           onLight
             ? 'bg-transparent'
             : 'border-b border-black/[0.06] bg-white/95 text-catchy-dark shadow-sm max-md:bg-white max-md:backdrop-blur-none md:backdrop-blur-md'
         )}
       >
-        <Link to="/" dir="ltr" className="flex min-w-0 shrink-0 items-center gap-1 md:hidden">
-          <span
-            className={cn(
-              'text-xl font-bold tracking-normal',
-              isRTL ? 'font-arabic' : 'font-serif',
-              onLight ? 'text-white' : 'text-catchy-dark'
-            )}
-          >
-            C
-          </span>
-          <span
-            className={cn(
-              'text-xl tracking-[0.35em]',
-              isRTL ? 'font-arabic' : 'font-serif',
-              onLight ? 'text-white' : 'text-catchy-dark'
-            )}
-          >
+        <Link
+          to="/"
+          dir="ltr"
+          className="max-md:col-start-2 max-md:row-start-1 max-md:justify-self-center max-md:pointer-events-auto relative z-10 flex min-w-0 shrink-0 items-baseline gap-1 font-serif text-xl font-bold md:hidden"
+        >
+          <span className={cn(onLight ? 'text-white' : 'text-catchy-dark')}>C</span>
+          <span className={cn('tracking-[0.35em]', onLight ? 'text-white' : 'text-catchy-dark')}>
             ATCHY
           </span>
         </Link>
@@ -308,19 +303,74 @@ const Navbar = () => {
 
         <div
           className={cn(
-            'flex shrink-0 items-center gap-3 sm:gap-4 md:gap-6 rtl:gap-x-reverse',
-            'max-md:min-w-0 max-md:flex-1',
-            isSearchOpen && 'md:min-w-0 md:flex-1'
+            'flex min-w-0 max-w-full items-center gap-1.5 max-md:col-start-1 max-md:row-start-1 max-md:justify-self-start',
+            'md:hidden'
           )}
         >
-          {/* Mobile: grows so cart stays between the logo and search/account controls */}
-          <div className="min-w-0 flex-1 md:hidden" aria-hidden />
+          {user && role === 'admin' && (
+            <Link
+              to="/admin"
+              className={cn(
+                'shrink-0 truncate py-2 text-[10px] font-semibold uppercase tracking-[0.15em] transition-colors',
+                linkClass
+              )}
+            >
+              {t('nav.dashboard')}
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')}
+            className={cn(
+              'shrink-0 touch-manipulation rounded-full border px-2.5 py-2 text-[10px] font-bold tracking-wider transition-colors',
+              'min-h-[40px] min-w-[40px]',
+              language === 'en' ? 'font-arabic normal-case' : 'uppercase',
+              onLight
+                ? 'border-white/30 bg-white/10 text-white hover:bg-white/20'
+                : 'border-catchy/25 bg-catchy/5 text-catchy-dark hover:bg-catchy/10'
+            )}
+          >
+            {language === 'en' ? t('nav.langArabic') : t('nav.langEnglish')}
+          </button>
+          {user ? (
+            <button
+              type="button"
+              onClick={logout}
+              aria-label={t('nav.logout')}
+              className={cn(
+                iconTapClass,
+                onLight ? 'text-white hover:bg-white/10' : 'text-catchy-dark hover:bg-gray-100'
+              )}
+            >
+              <User className="h-5 w-5" strokeWidth={1.75} />
+            </button>
+          ) : (
+            <Link
+              to="/login"
+              aria-label={t('nav.login')}
+              className={cn(
+                iconTapClass,
+                onLight ? 'text-white hover:bg-white/10' : 'text-catchy-dark hover:bg-gray-100'
+              )}
+            >
+              <User className="h-5 w-5" strokeWidth={1.75} />
+            </Link>
+          )}
+        </div>
 
-          <Link
-            to="/cart"
+        <div
+          className={cn(
+            'flex shrink-0 items-center gap-0.5 max-md:col-start-3 max-md:row-start-1 max-md:justify-self-end',
+            isRTL && 'flex-row-reverse',
+            'md:hidden'
+          )}
+        >
+          <button
+            type="button"
+            onClick={openCart}
             className={cn(
               iconTapClass,
-              'relative shrink-0 md:hidden',
+              'relative shrink-0',
               onLight ? 'text-white hover:bg-white/10' : 'text-catchy-dark hover:bg-gray-100'
             )}
             aria-label={t('nav.cart')}
@@ -330,14 +380,34 @@ const Navbar = () => {
               <span
                 className={cn(
                   'absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[9px] font-bold',
-                  onLight ? 'bg-catchy text-white' : 'bg-catchy text-white'
+                  'bg-catchy text-white'
                 )}
               >
                 {cartCount > 9 ? '9+' : cartCount}
               </span>
             )}
-          </Link>
+          </button>
+          <button
+            type="button"
+            aria-label={t('nav.search')}
+            aria-expanded={isSearchOpen}
+            aria-controls="navbar-search-dropdown-mobile"
+            onClick={() => setIsSearchOpen((o) => !o)}
+            className={cn(
+              iconTapClass,
+              onLight ? 'text-white hover:bg-white/10' : 'text-catchy-dark hover:bg-gray-100'
+            )}
+          >
+            <Search className="h-5 w-5" strokeWidth={1.75} />
+          </button>
+        </div>
 
+        <div
+          className={cn(
+            'hidden shrink-0 items-center gap-3 sm:gap-4 md:flex md:gap-6 rtl:gap-x-reverse',
+            isSearchOpen && 'md:min-w-0 md:flex-1'
+          )}
+        >
           <div
             className={cn(
               'relative z-[110] flex min-w-0 items-center gap-1.5 sm:gap-2',
@@ -422,25 +492,11 @@ const Navbar = () => {
               )}
             </div>
 
-            {/* Mobile: search icon only in the navbar row */}
-            <button
-              type="button"
-              aria-label={t('nav.search')}
-              aria-expanded={isSearchOpen}
-              aria-controls="navbar-search-dropdown-mobile"
-              onClick={() => setIsSearchOpen((o) => !o)}
-              className={cn(
-                iconTapClass,
-                'md:hidden',
-                onLight ? 'text-white hover:bg-white/10' : 'text-catchy-dark hover:bg-gray-100'
-              )}
-            >
-              <Search className="h-5 w-5" strokeWidth={1.75} />
-            </button>
           </div>
 
-          <Link
-            to="/cart"
+          <button
+            type="button"
+            onClick={openCart}
             className={cn(
               iconTapClass,
               'relative hidden shrink-0 md:inline-flex',
@@ -453,13 +509,13 @@ const Navbar = () => {
               <span
                 className={cn(
                   'absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[9px] font-bold',
-                  onLight ? 'bg-catchy text-white' : 'bg-catchy text-white'
+                  'bg-catchy text-white'
                 )}
               >
                 {cartCount > 9 ? '9+' : cartCount}
               </span>
             )}
-          </Link>
+          </button>
 
           {user && role === 'admin' && (
             <Link
@@ -484,7 +540,7 @@ const Navbar = () => {
                   : 'border-catchy/25 bg-catchy/5 text-catchy-dark hover:bg-catchy/10'
               )}
             >
-              {language === 'en' ? 'العربية' : 'EN'}
+              {language === 'en' ? t('nav.langArabic') : t('nav.langEnglish')}
             </button>
             {user ? (
               <button
@@ -498,34 +554,21 @@ const Navbar = () => {
                 {t('nav.logout')}
               </button>
             ) : (
-              <>
-                <Link
-                  to="/login"
-                  aria-label={t('nav.login')}
-                  className={cn(
-                    iconTapClass,
-                    'md:hidden',
-                    onLight ? 'text-white hover:bg-white/10' : 'text-catchy-dark hover:bg-gray-100'
-                  )}
-                >
-                  <User className="h-5 w-5" strokeWidth={1.75} />
-                </Link>
-                <Link
-                  to="/login"
-                  className={cn(
-                    'hidden touch-manipulation whitespace-nowrap py-2 text-[11px] font-semibold uppercase tracking-[0.2em] transition-colors md:inline-block md:py-0',
-                    linkClass
-                  )}
-                >
-                  {t('nav.login')}
-                </Link>
-              </>
+              <Link
+                to="/login"
+                className={cn(
+                  'touch-manipulation whitespace-nowrap py-2 text-[11px] font-semibold uppercase tracking-[0.2em] transition-colors md:py-0',
+                  linkClass
+                )}
+              >
+                {t('nav.login')}
+              </Link>
             )}
           </div>
         </div>
       </nav>
 
-      {/* Mobile-only: search strip (mounted only when open — avoids grid height / blur animation jank) */}
+      {/* Mobile-only: search strip (mounted only when open â€” avoids grid height / blur animation jank) */}
       {isSearchOpen ? (
         <div className="md:hidden w-full min-w-0 overflow-x-hidden overscroll-contain">
           <div
