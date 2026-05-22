@@ -271,28 +271,6 @@ const Catalog = () => {
               </div>
             </div>
 
-            <div className="mt-1.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="relative max-w-md flex-1">
-                <Search
-                  className={cn(
-                    'pointer-events-none absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400',
-                    isRTL ? 'right-2.5' : 'left-2.5'
-                  )}
-                  aria-hidden
-                />
-                <input
-                  type="search"
-                  placeholder={t('catalog.search')}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className={cn(
-                    'h-8 w-full rounded-lg border border-gray-200 bg-white py-0 text-xs outline-none ring-catchy/20 placeholder:text-gray-400 focus:border-catchy focus:ring-2',
-                    isRTL ? 'pr-9 pl-2.5' : 'pl-9 pr-2.5'
-                  )}
-                />
-              </div>
-            </div>
-
             <div
               className={cn(
                 'mt-1.5 rounded-xl border border-gray-200/80 bg-white px-2.5 py-2 shadow-sm sm:px-3',
@@ -301,17 +279,9 @@ const Catalog = () => {
             >
               <div
                 dir={isRTL ? 'rtl' : 'ltr'}
-                className="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-4"
+                className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3"
               >
                 <div className={cn('min-w-0 flex-1', isRTL && 'flex flex-col items-start')}>
-                  <p
-                    className={cn(
-                      'mb-1 w-full text-[9px] font-bold uppercase tracking-[0.18em] text-gray-400',
-                      isRTL && 'text-start'
-                    )}
-                  >
-                    {t('catalog.filterCategory')}
-                  </p>
                   <div
                     dir={isRTL ? 'rtl' : 'ltr'}
                     className="flex w-full gap-1.5 overflow-x-auto pb-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -336,6 +306,31 @@ const Catalog = () => {
                       );
                     })}
                   </div>
+                </div>
+                <div
+                  className={cn(
+                    'relative w-full max-w-[9.5rem] shrink-0 sm:w-[9.5rem] md:w-[10.5rem]',
+                    isRTL ? 'self-start sm:self-auto' : 'self-end sm:self-auto'
+                  )}
+                >
+                  <Search
+                    className={cn(
+                      'pointer-events-none absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400',
+                      isRTL ? 'right-2.5' : 'left-2.5'
+                    )}
+                    aria-hidden
+                  />
+                  <input
+                    type="search"
+                    dir={isRTL ? 'rtl' : 'ltr'}
+                    placeholder={t('catalog.search')}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className={cn(
+                      'h-8 w-full rounded-lg border border-gray-200 bg-white py-0 text-xs outline-none ring-catchy/20 placeholder:text-gray-400 focus:border-catchy focus:ring-2',
+                      isRTL ? 'pr-9 pl-2.5 text-start' : 'pl-9 pr-2.5'
+                    )}
+                  />
                 </div>
               </div>
             </div>

@@ -139,3 +139,15 @@
 .fade-in {
   animation: fadeIn 1.5s ease-out forwards;
 }
+
+/* Unlayered: navbar logo must render identically in EN and AR on every screen.
+ * Beats the @layer base [dir="rtl"] * letter-spacing reset (unlayered !important wins all layers). */
+.catchy-logo-word {
+  letter-spacing: 0.08em !important;
+  font-family: var(--font-sans) !important;
+}
+.catchy-logo-mark {
+  letter-spacing: normal !important;
+  font-family: var(--font-sans) !important;
+  margin-inline-end: 0.25em !important;
+}

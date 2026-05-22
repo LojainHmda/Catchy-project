@@ -228,7 +228,7 @@ const Home = () => {
           className={cn(
             'absolute inset-x-0 z-10 flex flex-col px-5 md:px-10',
             isProductShowcaseSlide
-              ? 'max-lg:top-[7.25rem] max-lg:bottom-[5.5rem] max-lg:justify-center lg:bottom-24 lg:top-[7rem] lg:justify-center'
+              ? 'max-md:top-[7.25rem] max-md:bottom-[5.5rem] max-md:justify-center md:bottom-24 md:top-[7rem] md:justify-center'
               : 'bottom-14 top-14 justify-center sm:bottom-16 sm:top-16 md:bottom-20 md:top-20 lg:bottom-28 lg:top-20'
           )}
         >
@@ -241,9 +241,9 @@ const Home = () => {
                 exit={{ opacity: 0, y: -12 }}
                 transition={{ duration: 0.45 }}
                 className={cn(
-                  'flex w-full min-h-0 max-lg:flex-1',
+                  'flex w-full min-h-0 max-md:flex-1',
                   isProductShowcaseSlide
-                    ? 'mx-auto flex max-w-7xl flex-col items-center max-lg:justify-center max-lg:gap-1.5 max-lg:px-1 lg:flex-row lg:items-center lg:justify-between lg:gap-12 xl:gap-16'
+                    ? 'mx-auto flex max-w-7xl flex-col items-center max-md:justify-center max-md:gap-1.5 max-md:px-1 md:flex-row md:items-center md:justify-between md:gap-8 lg:gap-12 xl:gap-16'
                     : 'max-w-5xl flex-1 items-center justify-center text-center'
                 )}
               >
@@ -251,8 +251,8 @@ const Home = () => {
                   className={cn(
                     'shrink-0',
                     isProductShowcaseSlide &&
-                      'w-full max-lg:px-10 max-lg:text-center lg:max-w-md lg:text-start',
-                    isProductShowcaseSlide && (isRTL ? 'lg:pr-16' : 'lg:pl-16')
+                      'w-full max-md:px-10 max-md:text-center md:max-w-md md:text-start',
+                    isProductShowcaseSlide && (isRTL ? 'md:pr-16' : 'md:pl-16')
                   )}
                 >
                   <p
@@ -260,7 +260,7 @@ const Home = () => {
                       'text-[10px] font-bold uppercase tracking-[0.55em] text-white/85 md:text-[11px]',
                       !isProductShowcaseSlide && 'mb-3 text-center sm:mb-4',
                       isProductShowcaseSlide &&
-                        'mb-3 max-lg:mb-1 max-lg:text-center max-lg:text-[9px] max-lg:tracking-[0.4em] sm:mb-4 lg:text-start'
+                        'mb-3 max-md:mb-1 max-md:text-center max-md:text-[9px] max-md:tracking-[0.4em] sm:mb-4 md:text-start'
                     )}
                   >
                     {heroSubtitle(activeSlide)}
@@ -272,14 +272,14 @@ const Home = () => {
                       !isProductShowcaseSlide &&
                         'mb-5 text-center text-5xl sm:mb-7 sm:text-6xl md:mb-8 md:text-7xl lg:text-8xl xl:text-9xl',
                       isProductShowcaseSlide &&
-                        'mb-0 whitespace-nowrap text-[1.65rem] max-lg:text-center sm:text-4xl md:text-5xl lg:mb-8 lg:text-7xl lg:text-start xl:text-8xl'
+                        'mb-0 whitespace-nowrap text-[1.65rem] max-md:text-center sm:text-4xl md:mb-8 md:text-5xl md:text-start lg:text-7xl xl:text-8xl'
                     )}
                   >
                     {heroTitle(activeSlide)}
                   </h1>
                   <div
                     className={cn(
-                      isProductShowcaseSlide && 'hidden justify-center lg:flex lg:justify-start'
+                      isProductShowcaseSlide && 'hidden justify-center md:flex md:justify-start'
                     )}
                   >
                     <Link
@@ -297,12 +297,12 @@ const Home = () => {
                 </div>
 
                 {isProductShowcaseSlide && (
-                  <div className="flex w-full min-w-0 max-lg:shrink-0 max-lg:items-center max-lg:justify-center lg:max-w-[58%] lg:flex-1 lg:items-center lg:justify-center">
+                  <div className="flex w-full min-w-0 max-md:shrink-0 max-md:items-center max-md:justify-center md:max-w-[58%] md:flex-1 md:items-center md:justify-center">
                     <div
                       className={cn(
-                        'flex w-full items-end justify-center gap-2 max-lg:snap-x max-lg:snap-mandatory max-lg:overflow-x-auto max-lg:px-2 max-lg:no-scrollbar sm:gap-2.5 md:gap-3 lg:gap-5 lg:overflow-visible',
+                        'flex w-full items-end justify-center gap-2 max-md:snap-x max-md:snap-mandatory max-md:overflow-x-auto max-md:px-2 max-md:no-scrollbar sm:gap-2.5 md:gap-5 md:overflow-visible',
                         showcaseProducts.length > 3 &&
-                          'max-lg:justify-start lg:justify-start lg:overflow-x-auto lg:no-scrollbar',
+                          'max-md:justify-start md:justify-start md:overflow-x-auto md:no-scrollbar',
                         isRTL && 'flex-row-reverse'
                       )}
                     >
@@ -319,7 +319,7 @@ const Home = () => {
                 )}
 
                 {isProductShowcaseSlide && (
-                  <div className="mt-3 flex w-full shrink-0 justify-center max-lg:mt-1 lg:hidden">
+                  <div className="mt-3 flex w-full shrink-0 justify-center max-md:mt-1 md:hidden">
                     <Link
                       to="/catalog"
                       className={cn(
@@ -384,7 +384,7 @@ const Home = () => {
       <section
         id="products-grid"
         dir={isRTL ? 'rtl' : 'ltr'}
-        className="mx-auto max-w-7xl px-5 pb-14 pt-3 sm:pt-5 md:px-10 md:pb-20 md:pt-7 lg:pb-24"
+        className="mx-auto max-w-7xl bg-catchy/5 px-5 pb-6 pt-3 sm:pt-5 md:px-10 md:pb-8 md:pt-7"
       >
         <div className="grid grid-cols-1 items-start gap-10 md:grid-cols-12 md:gap-14 lg:gap-20">
           <div className={cn('md:col-span-5 lg:col-span-4', isRTL && 'flex flex-col items-start font-arabic')}>
@@ -429,7 +429,7 @@ const Home = () => {
                     onClick={() => navigate(`/catalog?category=${encodeURIComponent(cat)}`)}
                     className="group flex w-full max-w-[8.5rem] flex-col items-center text-center"
                   >
-                    <div className="mb-3 flex size-[5.75rem] shrink-0 items-center justify-center rounded-full border border-catchy/30 bg-catchy/5 text-catchy shadow-sm transition group-hover:border-catchy group-hover:bg-catchy/10 group-hover:shadow-md sm:size-[6.75rem] md:size-[7.75rem] lg:size-32">
+                    <div className="mb-3 flex size-[5.75rem] shrink-0 items-center justify-center rounded-full border border-catchy/30 bg-white text-catchy shadow-sm transition group-hover:border-catchy group-hover:bg-catchy/10 group-hover:shadow-md sm:size-[6.75rem] md:size-[7.75rem] lg:size-32">
                       {Icon &&
                         React.createElement(Icon, {
                           className: 'h-9 w-9 sm:h-10 sm:w-10 md:h-11 md:w-11',
@@ -454,7 +454,7 @@ const Home = () => {
       </section>
 
       {/* Featured products — horizontal rail → catalog */}
-      <section className="border-t border-gray-100 bg-neutral-100 py-14 md:py-20">
+      <section className="border-t border-gray-100 bg-neutral-100 pt-6 pb-14 md:pt-8 md:pb-20">
         <div className="mx-auto max-w-7xl px-5 md:px-10">
           <div className={cn('mb-8 text-center', isRTL && 'font-arabic')}>
             <h2

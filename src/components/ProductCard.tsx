@@ -81,33 +81,35 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, variant = 'default',
         )}>
           <div className={cn("absolute", isHero ? "inset-0 overflow-visible" : "inset-0 overflow-hidden")}>
             {isHero ? (
-              <div className="relative flex h-full w-full items-center justify-center">
-                <div className="relative h-[92%] w-[92%] overflow-hidden rounded-xl ring-1 ring-white/[0.16] shadow-[0_8px_28px_-10px_rgba(0,0,0,0.55)] transition-[box-shadow,ring-color,transform] duration-500 group-hover:ring-white/30 group-hover:shadow-[0_12px_36px_-10px_rgba(0,0,0,0.62)] group-hover:-translate-y-0.5">
-                  <img
-                    src={images[0] || PRODUCT_IMAGE_PLACEHOLDER}
-                    alt={product.name}
-                    className="h-full w-full object-cover [mask-image:radial-gradient(ellipse_88%_88%_at_50%_50%,#000_58%,transparent_100%)] [-webkit-mask-image:radial-gradient(ellipse_88%_88%_at_50%_50%,#000_58%,transparent_100%)]"
-                    referrerPolicy={isRemoteImageUrl(images[0] || '') ? 'no-referrer' : undefined}
-                    onError={(e) => {
-                      const el = e.currentTarget;
-                      const src = el.currentSrc || el.src;
-                      if (src.startsWith('data:')) return;
-                      el.onerror = null;
-                      el.src = PRODUCT_IMAGE_PLACEHOLDER;
-                    }}
-                  />
-                  <div
-                    aria-hidden
-                    className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-white/[0.1]"
-                  />
-                  <div
-                    aria-hidden
-                    className="pointer-events-none absolute inset-0 rounded-xl bg-gradient-to-b from-white/[0.07] via-transparent to-black/10 opacity-80"
-                  />
-                  <div
-                    aria-hidden
-                    className="pointer-events-none absolute inset-0 rounded-xl bg-catchy/0 transition-colors duration-500 group-hover:bg-catchy/[0.06]"
-                  />
+              <div className="relative flex h-full w-full items-stretch">
+                <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-white/20 bg-white/10 p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.28)] backdrop-blur-md transition-[transform,box-shadow,border-color,background-color] duration-500 group-hover:-translate-y-0.5 group-hover:border-white/35 group-hover:bg-white/15 group-hover:shadow-[0_12px_40px_rgba(0,0,0,0.38)] sm:p-2">
+                  <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl ring-1 ring-inset ring-white/10">
+                    <img
+                      src={images[0] || PRODUCT_IMAGE_PLACEHOLDER}
+                      alt={product.name}
+                      className="h-full w-full object-cover"
+                      referrerPolicy={isRemoteImageUrl(images[0] || '') ? 'no-referrer' : undefined}
+                      onError={(e) => {
+                        const el = e.currentTarget;
+                        const src = el.currentSrc || el.src;
+                        if (src.startsWith('data:')) return;
+                        el.onerror = null;
+                        el.src = PRODUCT_IMAGE_PLACEHOLDER;
+                      }}
+                    />
+                    <div
+                      aria-hidden
+                      className="pointer-events-none absolute inset-0 rounded-xl bg-gradient-to-b from-white/[0.08] via-transparent to-black/15"
+                    />
+                  </div>
+                  <div className="mt-1.5 shrink-0 space-y-0 px-0.5 text-center sm:mt-2">
+                    <h3 className="line-clamp-2 font-sans text-[9px] font-medium leading-tight text-white transition-colors group-hover:text-catchy sm:text-[10px]">
+                      {product.name}
+                    </h3>
+                    <p className="font-sans text-[8px] font-bold tabular-nums tracking-tight text-white/60 sm:text-[9px]">
+                      £{product.price}
+                    </p>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -146,25 +148,25 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, variant = 'default',
           
         </div>
       </Link>
+      {!isHero && (
       <div className={cn(
-        isHero ? "space-y-0 px-0.5 text-center" : "space-y-1",
-        isCompact ? "px-0" : !isHero && "px-1"
+        "space-y-1",
+        isCompact ? "px-0" : "px-1"
       )}>
         <h3 className={cn(
           "font-sans transition-colors",
-          isHero && "text-[10px] font-medium leading-tight text-white group-hover:text-catchy",
           isCompact && "text-[13px] font-semibold leading-snug tracking-tight text-catchy-dark group-hover:text-catchy md:text-sm",
-          !isHero && !isCompact && "text-sm font-medium text-gray-900"
+          !isCompact && "text-sm font-medium text-gray-900"
         )}>
-          <Link to={`/product/${product.id}`} className={cn("block", isCompact ? "line-clamp-2" : isHero ? "line-clamp-2" : "truncate")}>{product.name}</Link>
+          <Link to={`/product/${product.id}`} className={cn("block", isCompact ? "line-clamp-2" : "truncate")}>{product.name}</Link>
         </h3>
         <p className={cn(
           "font-sans tabular-nums tracking-tight",
-          isHero && "text-[9px] font-bold text-white/60",
           isCompact && "text-xs font-bold text-catchy-dark/85",
-          !isHero && !isCompact && "text-xs font-semibold text-catchy-dark"
+          !isCompact && "text-xs font-semibold text-catchy-dark"
         )}>£{product.price}</p>
       </div>
+      )}
     </div>
   );
 };
