@@ -208,7 +208,7 @@ const Navbar = () => {
   const onLight = isHome && !scrolled;
 
   const linkClass = cn(
-    'text-[11px] font-semibold uppercase tracking-[0.2em] transition-colors',
+    'text-sm font-semibold uppercase tracking-[0.2em] transition-colors',
     onLight ? 'text-white/90 hover:text-white' : 'text-catchy-dark/80 hover:text-catchy'
   );
 

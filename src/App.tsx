@@ -1,6 +1,7 @@
 import React from 'react';
 import { Toaster } from 'sonner';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import './lib/heroSlidesCache';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';

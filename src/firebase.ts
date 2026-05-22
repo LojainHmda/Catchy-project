@@ -11,6 +11,9 @@ import {
 } from 'firebase/auth';
 import {
   getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   collection,
   doc,
   getDoc,
@@ -57,8 +60,17 @@ function getOrInitApp(): FirebaseApp {
 
 const app = getOrInitApp();
 
+let db: ReturnType<typeof getFirestore>;
+try {
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+  });
+} catch {
+  db = getFirestore(app);
+}
+
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+export { db };
 
 export {
   collection,

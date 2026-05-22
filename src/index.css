@@ -86,11 +86,49 @@
   .zoom-effect {
     animation: slowZoom 12s infinite alternate;
   }
+
+  /* Hero slider — slow zoom + pan while each slide is visible */
+  .hero-slide-ken-burns-a {
+    animation: hero-ken-burns-a 6.5s ease-out forwards;
+    will-change: transform;
+  }
+  .hero-slide-ken-burns-b {
+    animation: hero-ken-burns-b 6.5s ease-out forwards;
+    will-change: transform;
+  }
+  .hero-slide-ken-burns-c {
+    animation: hero-ken-burns-c 6.5s ease-out forwards;
+    will-change: transform;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-slide-ken-burns-a,
+    .hero-slide-ken-burns-b,
+    .hero-slide-ken-burns-c {
+      animation: none;
+      transform: scale(1.05);
+    }
+  }
 }
 
 @keyframes slowZoom {
   from { transform: scale(1); }
   to { transform: scale(1.1); }
+}
+
+@keyframes hero-ken-burns-a {
+  from { transform: scale(1) translate(0, 0); }
+  to { transform: scale(1.14) translate(-2.5%, -1.5%); }
+}
+
+@keyframes hero-ken-burns-b {
+  from { transform: scale(1.06) translate(1%, 0); }
+  to { transform: scale(1.16) translate(-1.5%, 2%); }
+}
+
+@keyframes hero-ken-burns-c {
+  from { transform: scale(1) translate(-1%, 1%); }
+  to { transform: scale(1.12) translate(2%, -1%); }
 }
 
 @keyframes fadeIn {

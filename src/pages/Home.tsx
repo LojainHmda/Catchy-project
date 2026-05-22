@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { db, collection, getDocs, query, orderBy, limit, onSnapshot } from '../firebase';
+import { db, collection, getDocs, query, orderBy, limit } from '../firebase';
 import ProductCard from '../components/ProductCard';
 import { CATEGORY_ICONS, CATEGORY_KEYS } from '../constants';
 import { useLanguage } from '../context/LanguageContext';
@@ -10,22 +10,12 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import CatalogProductCard from '../components/CatalogProductCard';
 import { getCatalogSaleMeta } from '../lib/catalogSale';
 import { heroSlideField } from '../lib/heroSlideText';
-
-interface HeroSlide {
-  id?: string;
-  url?: string;
-  image?: string;
-  title?: string;
-  titleAr?: string;
-  subtitle?: string;
-  subtitleAr?: string;
-  type?: 'new_arrivals' | 'standard';
-  order?: number;
-  /** When false, slide is hidden on the storefront (admin can re-enable). */
-  enabled?: boolean;
-  /** For `new_arrivals` slides: product IDs to show in the hero strip (max 4). */
-  productIds?: string[];
-}
+import {
+  type HeroSlide,
+  normalizeHeroSlides,
+  readCachedHeroSlides,
+  subscribeHeroSlides,
+} from '../lib/heroSlidesCache';
 
 const DEFAULT_SLIDES: HeroSlide[] = [
   {
@@ -45,6 +35,13 @@ const DEFAULT_SLIDES: HeroSlide[] = [
   },
 ];
 
+/** Shared fixed hero height — both standard and product-showcase slides use the same frame. */
+const HERO_SECTION_HEIGHT =
+  'h-[clamp(17rem,46svh,27.5rem)] sm:h-[clamp(18.5rem,48svh,31rem)] md:h-[clamp(20rem,50svh,35rem)] lg:h-[clamp(21.5rem,52svh,39rem)]';
+
+const HERO_SLIDE_MS = 6500;
+const HERO_KEN_BURNS = ['hero-slide-ken-burns-a', 'hero-slide-ken-burns-b', 'hero-slide-ken-burns-c'] as const;
+
 /** Home #products-grid — classic “Featured collections” icon rings (matches storefront reference layout). */
 const HOME_FEATURED_CATEGORIES = [
   'Pants',
@@ -59,41 +56,48 @@ const HOME_FEATURED_CATEGORIES = [
 const Home = () => {
   const { t, isRTL, language } = useLanguage();
   const navigate = useNavigate();
-  const [heroSlides, setHeroSlides] = useState<HeroSlide[]>([]);
+  const [heroSlides, setHeroSlides] = useState<HeroSlide[]>(() => readCachedHeroSlides());
+  const [heroSlidesReady, setHeroSlidesReady] = useState(
+    () => normalizeHeroSlides(readCachedHeroSlides()).length > 0
+  );
+  const [allowSlideTransition, setAllowSlideTransition] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [direction, setDirection] = useState(0);
   const [catalogPool, setCatalogPool] = useState<any[]>([]);
 
   const normSlides = useMemo(() => {
-    const list = heroSlides
-      .filter((s) => s.enabled !== false)
-      .filter((s) => {
-        const hasBg = !!(s.url || s.image);
-        if (!hasBg) return false;
-        return true;
-      })
-      .slice()
-      .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
-    return list.length ? list : DEFAULT_SLIDES;
-  }, [heroSlides]);
+    const list = normalizeHeroSlides(heroSlides);
+    if (list.length) return list;
+    return heroSlidesReady ? DEFAULT_SLIDES : [];
+  }, [heroSlides, heroSlidesReady]);
 
   const activeSlide = normSlides[currentSlide] ?? normSlides[0];
 
+  useEffect(() => subscribeHeroSlides((slides, ready) => {
+    setHeroSlides(slides);
+    setHeroSlidesReady(ready);
+  }), []);
+
   useEffect(() => {
-    const heroQ = query(collection(db, 'hero_slides'), orderBy('order', 'asc'));
-    const unsubscribe = onSnapshot(
-      heroQ,
-      (snapshot) => {
-        const fetched: HeroSlide[] = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(typeof doc.data === 'function' ? doc.data() : {}),
-        })) as HeroSlide[];
-        setHeroSlides(fetched);
-      },
-      () => setHeroSlides([])
-    );
-    return () => unsubscribe();
-  }, [isRTL]);
+    if (normSlides.length === 0) {
+      setAllowSlideTransition(false);
+      return;
+    }
+    const id = window.requestAnimationFrame(() => setAllowSlideTransition(true));
+    return () => window.cancelAnimationFrame(id);
+  }, [normSlides.length]);
+
+  useEffect(() => {
+    if (normSlides.length === 0) return;
+    normSlides.forEach((slide) => {
+      const url = slide.url || slide.image;
+      if (!url) return;
+      const img = new Image();
+      img.src = url;
+    });
+  }, [normSlides]);
+
+  const heroVisible = normSlides.length > 0;
 
   useEffect(() => {
     setCurrentSlide((i) => Math.min(i, Math.max(0, normSlides.length - 1)));
@@ -104,7 +108,7 @@ const Home = () => {
     const id = window.setInterval(() => {
       setDirection(1);
       setCurrentSlide((p) => (p + 1) % normSlides.length);
-    }, 6500);
+    }, HERO_SLIDE_MS);
     return () => clearInterval(id);
   }, [normSlides.length]);
 
@@ -172,7 +176,15 @@ const Home = () => {
   return (
     <div className="min-h-screen bg-white text-catchy-dark">
       {/* Hero — capped height so featured categories stay nearer the fold */}
-      <section className="relative min-h-[clamp(17rem,46svh,27.5rem)] w-full overflow-hidden bg-catchy-dark sm:min-h-[clamp(18.5rem,48svh,31rem)] md:min-h-[clamp(20rem,50svh,35rem)] lg:min-h-[clamp(21.5rem,52svh,39rem)]">
+      <section
+        className={cn(
+          'relative w-full overflow-hidden transition-opacity duration-500',
+          HERO_SECTION_HEIGHT,
+          heroVisible
+            ? 'bg-catchy-dark opacity-100'
+            : 'pointer-events-none bg-transparent opacity-0'
+        )}
+      >
         <div className="absolute inset-0">
           <AnimatePresence initial={false} custom={direction} mode="sync">
             {activeSlide && (
@@ -180,20 +192,23 @@ const Home = () => {
                 key={activeSlide.id ?? `${activeSlide.url?.slice(0, 48)}-${currentSlide}`}
                 custom={direction}
                 variants={slideVariants}
-                initial="enter"
+                initial={allowSlideTransition ? 'enter' : false}
                 animate="center"
                 exit="exit"
                 transition={{ duration: 0.55, ease: [0.32, 0.72, 0, 1] }}
-                className="absolute inset-0"
+                className="absolute inset-0 overflow-hidden"
               >
                 <img
-                  key={activeSlide.url || activeSlide.image || String(currentSlide)}
+                  key={`${activeSlide.id ?? currentSlide}-${activeSlide.url || activeSlide.image}`}
                   src={activeSlide.url || activeSlide.image}
                   alt=""
-                  className="h-full w-full scale-105 object-cover"
+                  className={cn(
+                    'h-full w-full object-cover',
+                    HERO_KEN_BURNS[currentSlide % HERO_KEN_BURNS.length]
+                  )}
                   referrerPolicy={/^https?:/i.test(activeSlide.url || activeSlide.image || '') ? 'no-referrer' : undefined}
                   onError={(e) => {
-                    (e.target as HTMLImageElement).src = DEFAULT_SLIDES[0].url!;
+                    (e.target as HTMLImageElement).style.visibility = 'hidden';
                   }}
                 />
               </motion.div>
@@ -211,48 +226,62 @@ const Home = () => {
 
         <div
           className={cn(
-            'relative z-10 flex min-h-[clamp(17rem,46svh,27.5rem)] flex-col justify-center px-5 pb-20 pt-14 sm:min-h-[clamp(18.5rem,48svh,31rem)] sm:pb-24 sm:pt-16 md:min-h-[clamp(20rem,50svh,35rem)] md:px-10 md:pb-24 md:pt-20 lg:min-h-[clamp(21.5rem,52svh,39rem)] lg:pb-28 lg:pt-20',
+            'absolute inset-x-0 z-10 flex flex-col px-5 md:px-10',
             isProductShowcaseSlide
-              ? 'items-stretch gap-6 sm:gap-8 lg:flex-row lg:items-center lg:gap-12 xl:gap-14'
-              : 'items-center text-center'
+              ? 'max-lg:top-[7.25rem] max-lg:bottom-[5.5rem] max-lg:justify-center lg:bottom-24 lg:top-[7rem] lg:justify-center'
+              : 'bottom-14 top-14 justify-center sm:bottom-16 sm:top-16 md:bottom-20 md:top-20 lg:bottom-28 lg:top-20'
           )}
         >
           <AnimatePresence mode="wait">
             {activeSlide && (
               <motion.div
                 key={activeSlide.id ?? currentSlide}
-                initial={{ opacity: 0, y: 16 }}
+                initial={allowSlideTransition ? { opacity: 0, y: 16 } : false}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -12 }}
                 transition={{ duration: 0.45 }}
                 className={cn(
-                  'w-full',
+                  'flex w-full min-h-0 max-lg:flex-1',
                   isProductShowcaseSlide
-                    ? 'mx-auto flex max-w-7xl flex-col gap-6 sm:gap-8 lg:flex-row lg:items-center lg:gap-12 xl:gap-16'
-                    : 'max-w-5xl text-center'
+                    ? 'mx-auto flex max-w-7xl flex-col items-center max-lg:justify-center max-lg:gap-1.5 max-lg:px-1 lg:flex-row lg:items-center lg:justify-between lg:gap-12 xl:gap-16'
+                    : 'max-w-5xl flex-1 items-center justify-center text-center'
                 )}
               >
-                <div className={cn('shrink-0', isProductShowcaseSlide && 'lg:max-w-md lg:text-start')}>
+                <div
+                  className={cn(
+                    'shrink-0',
+                    isProductShowcaseSlide &&
+                      'w-full max-lg:px-10 max-lg:text-center lg:max-w-md lg:text-start',
+                    isProductShowcaseSlide && (isRTL ? 'lg:pr-16' : 'lg:pl-16')
+                  )}
+                >
                   <p
                     className={cn(
-                      'mb-3 text-[10px] font-bold uppercase tracking-[0.55em] text-white/85 sm:mb-4 md:mb-5 md:text-[11px]',
-                      !isProductShowcaseSlide && 'text-center',
-                      isProductShowcaseSlide && 'lg:text-start'
+                      'text-[10px] font-bold uppercase tracking-[0.55em] text-white/85 md:text-[11px]',
+                      !isProductShowcaseSlide && 'mb-3 text-center sm:mb-4',
+                      isProductShowcaseSlide &&
+                        'mb-3 max-lg:mb-1 max-lg:text-center max-lg:text-[9px] max-lg:tracking-[0.4em] sm:mb-4 lg:text-start'
                     )}
                   >
                     {heroSubtitle(activeSlide)}
                   </p>
                   <h1
                     className={cn(
-                      'mb-5 text-5xl font-light leading-[0.95] tracking-tight text-white drop-shadow-lg sm:mb-7 sm:text-6xl md:mb-8 md:text-7xl lg:text-8xl',
+                      'font-light leading-[0.95] tracking-tight text-white drop-shadow-lg',
                       isRTL ? 'font-arabic' : 'font-serif',
-                      !isProductShowcaseSlide && 'mb-6 text-center sm:mb-8 xl:text-9xl',
-                      isProductShowcaseSlide && 'lg:mb-8'
+                      !isProductShowcaseSlide &&
+                        'mb-5 text-center text-5xl sm:mb-7 sm:text-6xl md:mb-8 md:text-7xl lg:text-8xl xl:text-9xl',
+                      isProductShowcaseSlide &&
+                        'mb-0 whitespace-nowrap text-[1.65rem] max-lg:text-center sm:text-4xl md:text-5xl lg:mb-8 lg:text-7xl lg:text-start xl:text-8xl'
                     )}
                   >
                     {heroTitle(activeSlide)}
                   </h1>
-                  <div className={cn(isProductShowcaseSlide && 'flex justify-center lg:justify-start')}>
+                  <div
+                    className={cn(
+                      isProductShowcaseSlide && 'hidden justify-center lg:flex lg:justify-start'
+                    )}
+                  >
                     <Link
                       to="/catalog"
                       className={cn(
@@ -268,18 +297,19 @@ const Home = () => {
                 </div>
 
                 {isProductShowcaseSlide && (
-                  <div className="min-w-0 flex-1">
+                  <div className="flex w-full min-w-0 max-lg:shrink-0 max-lg:items-center max-lg:justify-center lg:max-w-[58%] lg:flex-1 lg:items-center lg:justify-center">
                     <div
                       className={cn(
-                        'flex gap-4 overflow-x-auto pb-2 no-scrollbar md:gap-6',
-                        isRTL && 'flex-row-reverse',
-                        showcaseProducts.length === 0 && 'min-h-[13rem] md:min-h-[15rem]'
+                        'flex w-full items-end justify-center gap-2 max-lg:snap-x max-lg:snap-mandatory max-lg:overflow-x-auto max-lg:px-2 max-lg:no-scrollbar sm:gap-2.5 md:gap-3 lg:gap-5 lg:overflow-visible',
+                        showcaseProducts.length > 3 &&
+                          'max-lg:justify-start lg:justify-start lg:overflow-x-auto lg:no-scrollbar',
+                        isRTL && 'flex-row-reverse'
                       )}
                     >
                       {showcaseProducts.map((product) => (
                         <div
                           key={`${activeSlide.id}-${product.id}`}
-                          className="w-[9.5rem] shrink-0 sm:w-40 md:w-44"
+                          className="w-[4.85rem] shrink-0 snap-center sm:w-20 md:w-[6.5rem] lg:w-[7rem]"
                         >
                           <ProductCard product={product} variant="hero" autoPlay />
                         </div>
@@ -287,47 +317,67 @@ const Home = () => {
                     </div>
                   </div>
                 )}
+
+                {isProductShowcaseSlide && (
+                  <div className="mt-3 flex w-full shrink-0 justify-center max-lg:mt-1 lg:hidden">
+                    <Link
+                      to="/catalog"
+                      className={cn(
+                        'inline-block rounded-full bg-white px-9 py-2.5 font-bold text-catchy-dark shadow-xl transition-transform hover:scale-[1.03] hover:bg-catchy hover:text-white',
+                        isRTL
+                          ? 'font-arabic text-sm font-semibold tracking-wide'
+                          : 'text-[11px] uppercase tracking-[0.35em]'
+                      )}
+                    >
+                      {t('home.shopNow')}
+                    </Link>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        <div className="absolute inset-y-0 left-2 right-2 z-20 flex items-center justify-between md:left-6 md:right-6 pointer-events-none">
-          <button
-            type="button"
-            aria-label="Previous"
-            onClick={() => paginate(-1)}
-            className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white backdrop-blur-md transition hover:bg-white/20 md:h-12 md:w-12"
-          >
-            <ChevronLeft className={cn('h-6 w-6', isRTL && 'rotate-180')} strokeWidth={1.5} />
-          </button>
-          <button
-            type="button"
-            aria-label="Next"
-            onClick={() => paginate(1)}
-            className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white backdrop-blur-md transition hover:bg-white/20 md:h-12 md:w-12"
-          >
-            <ChevronRight className={cn('h-6 w-6', isRTL && 'rotate-180')} strokeWidth={1.5} />
-          </button>
-        </div>
-
-        <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 gap-2 sm:bottom-5 md:bottom-7">
-          {normSlides.map((s, i) => (
+        {heroVisible && (
+          <div className="absolute inset-y-0 left-2 right-2 z-20 flex items-center justify-between pointer-events-none md:left-6 md:right-6">
             <button
-              key={s.id ?? `dot-${i}`}
               type="button"
-              aria-label={`Slide ${i + 1}`}
-              onClick={() => {
-                setDirection(i > currentSlide ? 1 : -1);
-                setCurrentSlide(i);
-              }}
-              className={cn(
-                'h-2 rounded-full transition-all duration-300',
-                i === currentSlide ? 'w-9 bg-catchy shadow-[0_0_20px_rgba(56,142,93,0.7)]' : 'w-2 bg-white/35 hover:bg-white/60'
-              )}
-            />
-          ))}
-        </div>
+              aria-label="Previous"
+              onClick={() => paginate(-1)}
+              className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white backdrop-blur-md transition hover:bg-white/20 md:h-12 md:w-12"
+            >
+              <ChevronLeft className={cn('h-6 w-6', isRTL && 'rotate-180')} strokeWidth={1.5} />
+            </button>
+            <button
+              type="button"
+              aria-label="Next"
+              onClick={() => paginate(1)}
+              className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white backdrop-blur-md transition hover:bg-white/20 md:h-12 md:w-12"
+            >
+              <ChevronRight className={cn('h-6 w-6', isRTL && 'rotate-180')} strokeWidth={1.5} />
+            </button>
+          </div>
+        )}
+
+        {heroVisible && (
+          <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 gap-2 sm:bottom-5 md:bottom-7">
+            {normSlides.map((s, i) => (
+              <button
+                key={s.id ?? `dot-${i}`}
+                type="button"
+                aria-label={`Slide ${i + 1}`}
+                onClick={() => {
+                  setDirection(i > currentSlide ? 1 : -1);
+                  setCurrentSlide(i);
+                }}
+                className={cn(
+                  'h-2 rounded-full transition-all duration-300',
+                  i === currentSlide ? 'w-9 bg-catchy shadow-[0_0_20px_rgba(56,142,93,0.7)]' : 'w-2 bg-white/35 hover:bg-white/60'
+                )}
+              />
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Featured collections — icon grid + editorial heading (classic layout) */}

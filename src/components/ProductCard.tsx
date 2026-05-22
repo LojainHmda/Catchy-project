@@ -75,26 +75,40 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, variant = 'default',
       <Link to={`/product/${product.id}`} className="block">
         <div className={cn(
           "relative aspect-[3/4] overflow-hidden bg-neutral-100",
-          isHero && "rounded-2xl mb-4 bg-neutral-900/50 border border-white/10 shadow-xl backdrop-blur-sm",
+          isHero && "mb-1 overflow-visible bg-transparent",
           isCompact && "mb-2.5 rounded-xl ring-1 ring-black/[0.04]",
           !isHero && !isCompact && "mb-4 rounded-2xl"
         )}>
-          <div className="absolute inset-0 overflow-hidden">
+          <div className={cn("absolute", isHero ? "inset-0 overflow-visible" : "inset-0 overflow-hidden")}>
             {isHero ? (
-              <div className="w-full h-full bg-neutral-100 flex items-center justify-center">
-                <img
-                  src={images[0] || PRODUCT_IMAGE_PLACEHOLDER}
-                  alt={product.name}
-                  className="w-full h-full object-cover"
-                  referrerPolicy={isRemoteImageUrl(images[0] || '') ? 'no-referrer' : undefined}
-                  onError={(e) => {
-                    const el = e.currentTarget;
-                    const src = el.currentSrc || el.src;
-                    if (src.startsWith('data:')) return;
-                    el.onerror = null;
-                    el.src = PRODUCT_IMAGE_PLACEHOLDER;
-                  }}
-                />
+              <div className="relative flex h-full w-full items-center justify-center">
+                <div className="relative h-[92%] w-[92%] overflow-hidden rounded-xl ring-1 ring-white/[0.16] shadow-[0_8px_28px_-10px_rgba(0,0,0,0.55)] transition-[box-shadow,ring-color,transform] duration-500 group-hover:ring-white/30 group-hover:shadow-[0_12px_36px_-10px_rgba(0,0,0,0.62)] group-hover:-translate-y-0.5">
+                  <img
+                    src={images[0] || PRODUCT_IMAGE_PLACEHOLDER}
+                    alt={product.name}
+                    className="h-full w-full object-cover [mask-image:radial-gradient(ellipse_88%_88%_at_50%_50%,#000_58%,transparent_100%)] [-webkit-mask-image:radial-gradient(ellipse_88%_88%_at_50%_50%,#000_58%,transparent_100%)]"
+                    referrerPolicy={isRemoteImageUrl(images[0] || '') ? 'no-referrer' : undefined}
+                    onError={(e) => {
+                      const el = e.currentTarget;
+                      const src = el.currentSrc || el.src;
+                      if (src.startsWith('data:')) return;
+                      el.onerror = null;
+                      el.src = PRODUCT_IMAGE_PLACEHOLDER;
+                    }}
+                  />
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-white/[0.1]"
+                  />
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 rounded-xl bg-gradient-to-b from-white/[0.07] via-transparent to-black/10 opacity-80"
+                  />
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 rounded-xl bg-catchy/0 transition-colors duration-500 group-hover:bg-catchy/[0.06]"
+                  />
+                </div>
               </div>
             ) : (
               <motion.div 
@@ -127,26 +141,26 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, variant = 'default',
           {/* Overlay Hover Effect */}
           <div className={cn(
             "absolute inset-0 pointer-events-none transition-opacity duration-500",
-            isCompact ? "bg-catchy-dark/0 group-hover:bg-catchy-dark/[0.04]" : "bg-black/5 opacity-0 group-hover:opacity-100"
+            isCompact ? "bg-catchy-dark/0 group-hover:bg-catchy-dark/[0.04]" : !isHero && "bg-black/5 opacity-0 group-hover:opacity-100"
           )} />
           
         </div>
       </Link>
       <div className={cn(
-        "space-y-1",
-        isHero ? "px-1 text-center" : isCompact ? "px-0" : "px-1"
+        isHero ? "space-y-0 px-0.5 text-center" : "space-y-1",
+        isCompact ? "px-0" : !isHero && "px-1"
       )}>
         <h3 className={cn(
           "font-sans transition-colors",
-          isHero && "text-xs font-medium text-white group-hover:text-catchy",
+          isHero && "text-[10px] font-medium leading-tight text-white group-hover:text-catchy",
           isCompact && "text-[13px] font-semibold leading-snug tracking-tight text-catchy-dark group-hover:text-catchy md:text-sm",
           !isHero && !isCompact && "text-sm font-medium text-gray-900"
         )}>
-          <Link to={`/product/${product.id}`} className={cn("block", isCompact ? "line-clamp-2" : "truncate")}>{product.name}</Link>
+          <Link to={`/product/${product.id}`} className={cn("block", isCompact ? "line-clamp-2" : isHero ? "line-clamp-2" : "truncate")}>{product.name}</Link>
         </h3>
         <p className={cn(
           "font-sans tabular-nums tracking-tight",
-          isHero && "text-xs font-bold text-white/60",
+          isHero && "text-[9px] font-bold text-white/60",
           isCompact && "text-xs font-bold text-catchy-dark/85",
           !isHero && !isCompact && "text-xs font-semibold text-catchy-dark"
         )}>£{product.price}</p>
