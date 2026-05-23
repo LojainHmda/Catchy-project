@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { useLanguage } from '../context/LanguageContext';
 import { cn } from '../lib/utils';
+import CatchyLogo from './CatchyLogo';
 
 const Navbar = () => {
   const location = useLocation();
@@ -36,46 +37,36 @@ const Navbar = () => {
   );
   const desktopNavLinkClass = cn(
     linkClass,
-    language === 'en' && 'text-xs tracking-[0.06em] md:tracking-[0.08em] lg:text-sm lg:tracking-[0.1em]'
+    language === 'en' && 'text-xs tracking-[0.08em] sm:text-sm sm:tracking-[0.1em]'
   );
-
-  const logoTypeClass = 'text-2xl leading-none md:text-[1.75rem]';
-  const logoLinkBase = cn(
-    'relative z-10 min-w-0 shrink-0 items-baseline gap-0.5 leading-none',
-    logoTypeClass
-  );
-  const logoMarkClass =
-    'catchy-logo-mark relative inline-block shrink-0 font-sans font-semibold uppercase tracking-normal text-catchy-dark before:absolute before:left-1/2 before:top-1/2 before:-z-10 before:size-[1.12em] before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-full before:bg-catchy before:shadow-sm before:content-[""]';
-  const logoWordClass =
-    'catchy-logo-word font-sans font-semibold uppercase leading-none text-catchy-dark';
 
   const iconTapClass = cn(
     'inline-flex shrink-0 items-center justify-center rounded-full transition-colors touch-manipulation',
-    'min-h-[44px] min-w-[44px] p-0 md:min-h-0 md:min-w-0 md:p-2'
+    'min-h-[44px] min-w-[44px] p-0 sm:min-h-0 sm:min-w-0 sm:p-2'
   );
 
   return (
     <div
       className={cn(
-        'left-0 right-0 z-[100] w-full min-w-0 max-w-[100vw] max-md:overflow-x-hidden',
+        'left-0 right-0 z-[100] w-full min-w-0 max-w-[100vw] max-sm:overflow-x-hidden',
         isHome ? 'fixed top-0' : 'sticky top-0'
       )}
     >
       <nav
         dir={isRTL ? 'rtl' : 'ltr'}
         className={cn(
-          'w-full min-w-0 touch-manipulation max-md:transition-none md:transition-all md:duration-500',
-          'py-4 pt-[max(1rem,env(safe-area-inset-top,0px))] md:py-5',
-          'pl-[max(1.25rem,env(safe-area-inset-left,0px))] pr-[max(1.25rem,env(safe-area-inset-right,0px))] md:px-10 lg:px-14',
-          'md:grid md:grid-cols-[1fr_auto_1fr] md:items-center',
+          'w-full min-w-0 touch-manipulation max-sm:transition-none sm:transition-all sm:duration-500',
+          'py-4 pt-[max(1rem,env(safe-area-inset-top,0px))] sm:py-5',
+          'pl-[max(1.25rem,env(safe-area-inset-left,0px))] pr-[max(1.25rem,env(safe-area-inset-right,0px))] sm:px-10 lg:px-14',
+          'sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-center',
           onLight
             ? 'bg-transparent'
-            : 'border-b border-black/[0.06] bg-white/95 text-catchy-dark shadow-sm max-md:bg-white max-md:backdrop-blur-none md:backdrop-blur-md'
+            : 'border-b border-black/[0.06] bg-white/95 text-catchy-dark shadow-sm max-sm:bg-white max-sm:backdrop-blur-none sm:backdrop-blur-md'
         )}
       >
         {/* Mobile — fixed physical layout (LTR) so AR/EN match: utils left, logo absolutely centered, cart right */}
         <div
-          className="relative flex w-full items-center justify-between gap-x-2 md:hidden"
+          className="relative flex w-full items-center justify-between gap-x-2 sm:hidden"
           dir="ltr"
         >
           <div className="flex min-w-0 items-center gap-1.5">
@@ -134,17 +125,7 @@ const Navbar = () => {
             </div>
           </div>
 
-          <Link
-            to="/"
-            dir="ltr"
-            className={cn(
-              logoLinkBase,
-              'pointer-events-auto absolute left-1/2 top-1/2 z-10 inline-flex -translate-x-1/2 -translate-y-1/2'
-            )}
-          >
-            <span className={logoMarkClass}>C</span>
-            <span className={logoWordClass}>ATCHY</span>
-          </Link>
+          <CatchyLogo className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2" />
 
           <div className="flex shrink-0 items-center justify-end">
             <button
@@ -172,22 +153,12 @@ const Navbar = () => {
           </div>
         </div>
 
-        <Link
-          to="/"
-          dir="ltr"
-          className={cn(
-            logoLinkBase,
-            'hidden md:col-start-2 md:row-start-1 md:inline-flex md:justify-self-center'
-          )}
-        >
-          <span className={logoMarkClass}>C</span>
-          <span className={logoWordClass}>ATCHY</span>
-        </Link>
+        <CatchyLogo className="relative z-10 hidden sm:col-start-2 sm:row-start-1 sm:inline-flex sm:justify-self-center" />
 
         <div
           className={cn(
-            'hidden items-center md:col-start-1 md:row-start-1 md:flex md:justify-self-start rtl:gap-x-reverse',
-            language === 'en' ? 'gap-1.5 md:gap-2 lg:gap-3 xl:gap-4' : 'gap-8 lg:gap-12'
+            'hidden items-center sm:col-start-1 sm:row-start-1 sm:flex sm:justify-self-start rtl:gap-x-reverse',
+            language === 'en' ? 'gap-2 sm:gap-3' : 'gap-8 sm:gap-12'
           )}
         >
           <Link to="/catalog" className={cn(desktopNavLinkClass, 'inline-flex items-center gap-1')}>
@@ -207,7 +178,7 @@ const Navbar = () => {
 
         <div
           className={cn(
-            'hidden shrink-0 items-center gap-3 sm:gap-4 md:col-start-3 md:row-start-1 md:flex md:justify-self-end md:gap-6 rtl:gap-x-reverse'
+            'hidden shrink-0 items-center gap-3 sm:col-start-3 sm:row-start-1 sm:flex sm:justify-self-end sm:gap-6 rtl:gap-x-reverse'
           )}
         >
           <button
@@ -215,7 +186,7 @@ const Navbar = () => {
             onClick={openCart}
             className={cn(
               iconTapClass,
-              'relative hidden shrink-0 md:inline-flex',
+              'relative hidden shrink-0 sm:inline-flex',
               onLight ? 'text-white hover:bg-white/10' : 'text-catchy-dark hover:bg-gray-100'
             )}
             aria-label={t('nav.cart')}
@@ -237,20 +208,20 @@ const Navbar = () => {
             <Link
               to="/admin"
               className={cn(
-                'shrink-0 whitespace-nowrap py-2 text-[11px] font-semibold uppercase tracking-[0.2em] transition-colors md:py-0',
+                'shrink-0 whitespace-nowrap py-2 text-[11px] font-semibold uppercase tracking-[0.2em] transition-colors sm:py-0',
                 linkClass
               )}
             >
               {t('nav.dashboard')}
             </Link>
           )}
-          <div className="flex shrink-0 items-center gap-2 md:gap-2.5">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
             <button
               type="button"
               onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')}
               className={cn(
-                'touch-manipulation rounded-full border px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition-colors md:py-1.5',
-                'min-h-[40px] min-w-[44px] md:min-h-0 md:min-w-0',
+                'touch-manipulation rounded-full border px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition-colors sm:py-1.5',
+                'min-h-[40px] min-w-[44px] sm:min-h-0 sm:min-w-0',
                 onLight
                   ? 'border-white/30 bg-white/10 text-white hover:bg-white/20'
                   : 'border-catchy/25 bg-catchy/5 text-catchy-dark hover:bg-catchy/10'
@@ -263,7 +234,7 @@ const Navbar = () => {
                 type="button"
                 onClick={logout}
                 className={cn(
-                  'touch-manipulation whitespace-nowrap py-2 text-[11px] font-semibold uppercase tracking-[0.2em] transition-colors md:py-0',
+                  'touch-manipulation whitespace-nowrap py-2 text-[11px] font-semibold uppercase tracking-[0.2em] transition-colors sm:py-0',
                   linkClass
                 )}
               >
@@ -273,7 +244,7 @@ const Navbar = () => {
               <Link
                 to="/login"
                 className={cn(
-                  'touch-manipulation whitespace-nowrap py-2 text-[11px] font-semibold uppercase tracking-[0.2em] transition-colors md:py-0',
+                  'touch-manipulation whitespace-nowrap py-2 text-[11px] font-semibold uppercase tracking-[0.2em] transition-colors sm:py-0',
                   linkClass
                 )}
               >

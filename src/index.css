@@ -142,12 +142,38 @@
 
 /* Unlayered: navbar logo must render identically in EN and AR on every screen.
  * Beats the @layer base [dir="rtl"] * letter-spacing reset (unlayered !important wins all layers). */
-.catchy-logo-word {
-  letter-spacing: 0.08em !important;
-  font-family: var(--font-sans) !important;
+.catchy-logo {
+  font-size: 1.625rem;
+  line-height: 1;
+  text-decoration: none;
 }
+
 .catchy-logo-mark {
-  letter-spacing: normal !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.3em;
+  height: 1.3em;
+  margin-inline-end: 0.05em;
+  border-radius: 9999px;
+  background-color: var(--color-catchy);
+  color: #fff;
   font-family: var(--font-sans) !important;
-  margin-inline-end: 0.25em !important;
+  font-size: 0.7em;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: normal !important;
+  text-transform: lowercase;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.catchy-logo-word {
+  font-family: var(--font-sans) !important;
+  font-size: 1em;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.1em !important;
+  color: var(--color-catchy-dark);
+  text-transform: uppercase;
 }

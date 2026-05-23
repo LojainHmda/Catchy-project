@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '../context/LanguageContext';
 import { cn } from '../lib/utils';
+import CatchyLogo from './CatchyLogo';
 
 const Footer = () => {
   const { t, isRTL } = useLanguage();
@@ -10,19 +11,7 @@ const Footer = () => {
       <div className="mx-auto max-w-6xl">
         <div className="grid grid-cols-1 items-start gap-5 md:grid-cols-12 md:gap-6">
           <div className={cn('md:col-span-5', isRTL && 'flex flex-col items-start')}>
-            <div dir="ltr" className={cn('mb-2 flex items-center gap-1', isRTL && 'ml-auto')}>
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-catchy text-[10px] font-medium text-white">
-                C
-              </div>
-              <span
-                className={cn(
-                  'text-lg tracking-[0.12em] text-catchy',
-                  isRTL ? 'font-arabic' : 'font-serif'
-                )}
-              >
-                ATCHY
-              </span>
-            </div>
+            <CatchyLogo className={cn('mb-2', isRTL && 'ml-auto')} />
             <p
               dir={isRTL ? 'rtl' : undefined}
               className={cn(

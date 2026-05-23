@@ -226,9 +226,9 @@ const Home = () => {
 
         <div
           className={cn(
-            'absolute inset-x-0 z-10 flex flex-col px-5 md:px-10',
+            'absolute inset-x-0 z-10 flex flex-col px-5 sm:px-10',
             isProductShowcaseSlide
-              ? 'max-md:top-[7.25rem] max-md:bottom-[5.5rem] max-md:justify-center md:bottom-24 md:top-[7rem] md:justify-center'
+              ? 'max-sm:top-[7.25rem] max-sm:bottom-[5.5rem] max-sm:justify-center sm:bottom-24 sm:top-[7rem] sm:justify-center'
               : 'bottom-14 top-14 justify-center sm:bottom-16 sm:top-16 md:bottom-20 md:top-20 lg:bottom-28 lg:top-20'
           )}
         >
@@ -241,9 +241,9 @@ const Home = () => {
                 exit={{ opacity: 0, y: -12 }}
                 transition={{ duration: 0.45 }}
                 className={cn(
-                  'flex w-full min-h-0 max-md:flex-1',
+                  'flex w-full min-h-0 max-sm:flex-1',
                   isProductShowcaseSlide
-                    ? 'mx-auto flex max-w-7xl flex-col items-center max-md:justify-center max-md:gap-1.5 max-md:px-1 md:flex-row md:items-center md:justify-between md:gap-8 lg:gap-12 xl:gap-16'
+                    ? 'mx-auto flex max-w-7xl flex-col items-center max-sm:justify-center max-sm:gap-1.5 max-sm:px-1 sm:flex-row sm:items-center sm:justify-between sm:gap-12'
                     : 'max-w-5xl flex-1 items-center justify-center text-center'
                 )}
               >
@@ -251,20 +251,15 @@ const Home = () => {
                   className={cn(
                     'shrink-0',
                     isProductShowcaseSlide &&
-                      'w-full max-md:px-10 max-md:text-center md:max-w-md md:text-start',
-                    isProductShowcaseSlide && (isRTL ? 'md:pr-16' : 'md:pl-16')
+                      'w-full max-sm:px-10 max-sm:text-center sm:max-w-md sm:text-start',
+                    isProductShowcaseSlide && (isRTL ? 'sm:pr-16' : 'sm:pl-16')
                   )}
                 >
-                  <p
-                    className={cn(
-                      'text-[10px] font-bold uppercase tracking-[0.55em] text-white/85 md:text-[11px]',
-                      !isProductShowcaseSlide && 'mb-3 text-center sm:mb-4',
-                      isProductShowcaseSlide &&
-                        'mb-3 max-md:mb-1 max-md:text-center max-md:text-[9px] max-md:tracking-[0.4em] sm:mb-4 md:text-start'
-                    )}
-                  >
-                    {heroSubtitle(activeSlide)}
-                  </p>
+                  {!isProductShowcaseSlide && (
+                    <p className="mb-3 text-center text-[10px] font-bold uppercase tracking-[0.55em] text-white/85 sm:mb-4 md:text-[11px]">
+                      {heroSubtitle(activeSlide)}
+                    </p>
+                  )}
                   <h1
                     className={cn(
                       'font-light leading-[0.95] tracking-tight text-white drop-shadow-lg',
@@ -272,14 +267,14 @@ const Home = () => {
                       !isProductShowcaseSlide &&
                         'mb-5 text-center text-5xl sm:mb-7 sm:text-6xl md:mb-8 md:text-7xl lg:text-8xl xl:text-9xl',
                       isProductShowcaseSlide &&
-                        'mb-0 whitespace-nowrap text-[1.65rem] max-md:text-center sm:text-4xl md:mb-8 md:text-5xl md:text-start lg:text-7xl xl:text-8xl'
+                        'mb-0 whitespace-nowrap text-[1.65rem] max-sm:text-center sm:mb-8 sm:text-start sm:text-7xl'
                     )}
                   >
                     {heroTitle(activeSlide)}
                   </h1>
                   <div
                     className={cn(
-                      isProductShowcaseSlide && 'hidden justify-center md:flex md:justify-start'
+                      isProductShowcaseSlide && 'hidden justify-center sm:flex sm:justify-start'
                     )}
                   >
                     <Link
@@ -297,19 +292,19 @@ const Home = () => {
                 </div>
 
                 {isProductShowcaseSlide && (
-                  <div className="flex w-full min-w-0 max-md:shrink-0 max-md:items-center max-md:justify-center md:max-w-[58%] md:flex-1 md:items-center md:justify-center">
+                  <div className="flex w-full min-w-0 max-sm:shrink-0 max-sm:items-center max-sm:justify-center sm:max-w-[58%] sm:flex-1 sm:items-center sm:justify-center">
                     <div
                       className={cn(
-                        'flex w-full items-end justify-center gap-2 max-md:snap-x max-md:snap-mandatory max-md:overflow-x-auto max-md:px-2 max-md:no-scrollbar sm:gap-2.5 md:gap-5 md:overflow-visible',
+                        'flex w-full items-end justify-center gap-2 max-sm:snap-x max-sm:snap-mandatory max-sm:overflow-x-auto max-sm:px-2 max-sm:no-scrollbar sm:gap-5 sm:overflow-visible',
                         showcaseProducts.length > 3 &&
-                          'max-md:justify-start md:justify-start md:overflow-x-auto md:no-scrollbar',
+                          'max-sm:justify-start sm:justify-start sm:overflow-x-auto sm:no-scrollbar',
                         isRTL && 'flex-row-reverse'
                       )}
                     >
                       {showcaseProducts.map((product) => (
                         <div
                           key={`${activeSlide.id}-${product.id}`}
-                          className="w-[4.85rem] shrink-0 snap-center sm:w-20 md:w-[6.5rem] lg:w-[7rem]"
+                          className="w-[4.85rem] shrink-0 snap-center max-sm:snap-center sm:w-[7rem]"
                         >
                           <ProductCard product={product} variant="hero" autoPlay />
                         </div>
@@ -319,7 +314,7 @@ const Home = () => {
                 )}
 
                 {isProductShowcaseSlide && (
-                  <div className="mt-3 flex w-full shrink-0 justify-center max-md:mt-1 md:hidden">
+                  <div className="mt-3 flex w-full shrink-0 justify-center max-sm:mt-1 sm:hidden">
                     <Link
                       to="/catalog"
                       className={cn(
