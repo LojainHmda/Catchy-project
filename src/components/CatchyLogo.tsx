@@ -16,7 +16,7 @@ const CatchyLogo: React.FC<CatchyLogoProps> = ({ className, to = '/' }) => {
       className={cn('catchy-logo pointer-events-auto inline-flex shrink-0 items-center', className)}
     >
       <span className="catchy-logo-mark" aria-hidden="true">
-        c
+        C
       </span>
       <span className="catchy-logo-word">ATCHY</span>
     </Link>

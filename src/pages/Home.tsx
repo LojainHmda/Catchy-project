@@ -412,7 +412,7 @@ const Home = () => {
             <div
               className={cn(
                 'grid grid-cols-2 justify-items-center md:grid-cols-4',
-                'gap-x-6 gap-y-10 sm:gap-x-10 sm:gap-y-12 md:gap-x-14 md:gap-y-16 lg:gap-x-[4.25rem] lg:gap-y-[4.5rem]'
+                'gap-x-6 gap-y-5 sm:gap-x-10 sm:gap-y-8 md:gap-x-14 md:gap-y-16 lg:gap-x-[4.25rem] lg:gap-y-[4.5rem]'
               )}
             >
               {HOME_FEATURED_CATEGORIES.map((cat) => {

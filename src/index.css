@@ -109,6 +109,23 @@
       transform: scale(1.05);
     }
   }
+
+  /* Active slide dot — sweeps left-to-right over the slide duration */
+  .hero-dot-fill {
+    animation: hero-dot-fill 6.5s linear forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-dot-fill {
+      animation: none;
+      transform: scaleX(1);
+    }
+  }
+}
+
+@keyframes hero-dot-fill {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
 }
 
 @keyframes slowZoom {
@@ -164,7 +181,6 @@
   font-weight: 600;
   line-height: 1;
   letter-spacing: normal !important;
-  text-transform: lowercase;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
 
