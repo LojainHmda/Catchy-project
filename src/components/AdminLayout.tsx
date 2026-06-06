@@ -11,6 +11,7 @@ import {
   ClipboardList,
   Image as ImageIcon,
   Store,
+  MessageCircle,
   Menu,
   X,
 } from 'lucide-react';
@@ -61,6 +62,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { icon: ClipboardList, label: 'Stock', path: '/admin/stock' },
     { icon: ShoppingCart, label: 'Orders', path: '/admin/orders' },
     { icon: Users, label: 'Customers', path: '/admin/customers' },
+    { icon: MessageCircle, label: 'WhatsApp', path: '/admin/whatsapp' },
     { icon: Settings, label: 'Settings', path: '/admin/settings' },
   ];
 

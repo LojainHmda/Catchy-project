@@ -15,7 +15,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$ProjectId = 'catchy-496207'
+$ProjectId = 'gen-lang-client-0007443599'  # Catchy01 (marei.eyad@gmail.com); app's .env points here
 $Region = 'us-central1'
 $Service = 'catchy-web'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -37,7 +37,9 @@ function Get-DotEnvPairs {
     'VITE_FIREBASE_APP_ID',
     'VITE_ADMIN_EMAIL',
     'VITE_ADMIN_PASSWORD',
-    'VITE_OWNER_EMAILS'
+    'VITE_OWNER_EMAILS',
+    'WHATSAPP_API_TOKEN',
+    'WHATSAPP_WEBHOOK_SECRET'
   )
   $map = @{}
   $raw = [System.IO.File]::ReadAllText($Path)
@@ -75,12 +77,27 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
   --project $ProjectId | Out-Null
 
 Set-Location $RepoRoot
+
+# Runtime env vars for the Express server (kept out of the image; injected at deploy time).
+# WHATSAPP_FIRESTORE_PROJECT tells the webhook which Firestore to write inbound messages into
+# (must match the project the app reads from = VITE_FIREBASE_PROJECT_ID).
+$runtimePairs = @()
+foreach ($k in @('WHATSAPP_API_TOKEN', 'WHATSAPP_WEBHOOK_SECRET')) {
+  if ($m[$k]) { $runtimePairs += "$k=$($m[$k])" }
+}
+if ($m['VITE_FIREBASE_PROJECT_ID']) {
+  $runtimePairs += "WHATSAPP_FIRESTORE_PROJECT=$($m['VITE_FIREBASE_PROJECT_ID'])"
+}
+# Use a custom delimiter (@) so values containing '=' or ',' (e.g. base64 tokens) are safe.
+$runtimeEnv = '^@^' + ($runtimePairs -join '@')
+
 Write-Host "Building on Cloud Build and deploying $Service to $Region (project $ProjectId)..."
 gcloud run deploy $Service `
   --project $ProjectId `
   --region $Region `
   --source . `
   --allow-unauthenticated `
+  --set-env-vars $runtimeEnv `
   --quiet
 
 Write-Host "Cloud Run deploy finished."

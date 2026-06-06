@@ -57,5 +57,11 @@ service cloud.firestore {
     match /orders/{id} {
       allow read, write: if signedIn();
     }
+
+    // WhatsApp conversation log. Admins read/write from the admin UI; inbound
+    // messages are written server-side by the webhook (Admin SDK bypasses rules).
+    match /whatsapp_messages/{id} {
+      allow read, write: if isOwner();
+    }
   }
 }

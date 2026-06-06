@@ -16,11 +16,13 @@ import AdminHero from './pages/AdminHero';
 import AdminCategoryTiles from './pages/AdminCategoryTiles';
 import AdminCustomers from './pages/AdminCustomers';
 import AdminOrders from './pages/AdminOrders';
+import AdminWhatsApp from './pages/AdminWhatsApp';
 import AdminLayout from './components/AdminLayout';
 import Login from './pages/Login';
 import Cart from './pages/Cart';
 import CartDrawer from './components/CartDrawer';
 import Footer from './components/Footer';
+import BottomNav from './components/BottomNav';
 
 const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, role, loading } = useAuth();
@@ -41,6 +43,7 @@ const AppContent = () => {
         <Route path="/admin/stock" element={<AdminRoute><AdminStock /></AdminRoute>} />
         <Route path="/admin/orders" element={<AdminRoute><AdminOrders /></AdminRoute>} />
         <Route path="/admin/customers" element={<AdminRoute><AdminCustomers /></AdminRoute>} />
+        <Route path="/admin/whatsapp" element={<AdminRoute><AdminWhatsApp /></AdminRoute>} />
         <Route path="/admin/settings" element={<AdminRoute><div className="p-10 text-center">Settings Coming Soon</div></AdminRoute>} />
 
         {/* Public Routes */}
@@ -59,6 +62,7 @@ const AppContent = () => {
             </main>
             <Footer />
             <CartDrawer />
+            <BottomNav />
           </>
         } />
       </Routes>

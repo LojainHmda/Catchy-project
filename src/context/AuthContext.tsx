@@ -88,7 +88,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [sessionResolving, setSessionResolving] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (!currentUser) {
         setSessionResolving(false);
         setUser(null);
@@ -97,8 +97,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      setSessionResolving(true);
-      setLoading(true);
       const u: User = {
         uid: currentUser.uid,
         email: currentUser.email,
@@ -110,48 +108,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isSyntheticAdminFirebaseEmail(currentUser.email) ||
         isDemoAdminFirebaseEmail(currentUser.email);
 
-      const profileRef = doc(db, 'users', currentUser.uid);
-      const profileDeadlineMs = 12_000;
+      // Resolve the session immediately from Auth — never block the app (and the
+      // cart, which waits on `loading`) on Firestore. Admins-by-email are admin now.
+      setUser(u);
+      setRole(treatAsAdmin ? 'admin' : 'customer');
+      setSessionResolving(false);
+      setLoading(false);
 
-      try {
-        const userDoc = await Promise.race([
-          getDoc(profileRef),
-          new Promise<never>((_, reject) => {
-            setTimeout(() => reject(new Error('firestore-profile-timeout')), profileDeadlineMs);
-          }),
-        ]);
-        if (userDoc.exists) {
-          const data = userDoc.data() as { role?: string };
-          const fetchedRole = data.role;
-          const assignedRole = treatAsAdmin ? 'admin' : fetchedRole;
-          if (treatAsAdmin && fetchedRole !== 'admin') {
-            await setDoc(doc(db, 'users', currentUser.uid), { role: 'admin' }, { merge: true });
+      // Sync the Firestore user profile in the background (read stored role for
+      // non-admins, persist admin role). Failures here never affect the session.
+      void (async () => {
+        try {
+          const profileRef = doc(db, 'users', currentUser.uid);
+          const userDoc = await getDoc(profileRef);
+          if (userDoc.exists()) {
+            const fetchedRole = (userDoc.data() as { role?: string }).role;
+            if (treatAsAdmin && fetchedRole !== 'admin') {
+              await setDoc(profileRef, { role: 'admin' }, { merge: true });
+            } else if (!treatAsAdmin && (fetchedRole === 'admin' || fetchedRole === 'customer')) {
+              setRole(fetchedRole);
+            }
+          } else {
+            await setDoc(
+              profileRef,
+              { email: currentUser.email, role: treatAsAdmin ? 'admin' : 'customer', displayName: currentUser.displayName },
+              { merge: true }
+            );
           }
-          const r = assignedRole === 'admin' || assignedRole === 'customer' ? assignedRole : 'customer';
-          setUser(u);
-          setRole(r);
-        } else {
-          const newRole = treatAsAdmin ? 'admin' : 'customer';
-          await setDoc(
-            doc(db, 'users', currentUser.uid),
-            {
-              email: currentUser.email,
-              role: newRole,
-              displayName: currentUser.displayName,
-            },
-            { merge: true }
-          );
-          setUser(u);
-          setRole(newRole);
+        } catch {
+          // Provisional role from Auth already applied; ignore Firestore hiccups.
         }
-      } catch {
-        // Firestore blocked or offline — still set session from Auth email so admin@gmail.com can reach /admin.
-        setUser(u);
-        setRole(treatAsAdmin ? 'admin' : 'customer');
-      } finally {
-        setSessionResolving(false);
-        setLoading(false);
-      }
+      })();
     });
 
     return () => unsubscribe();
