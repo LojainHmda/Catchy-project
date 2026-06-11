@@ -10,6 +10,7 @@ export interface CatalogProductCardProps {
     price: number;
     images?: string[];
     image?: string;
+    sizes?: string[];
   };
   /** When set and greater than `price`, shows as sale with strikethrough compare price. */
   compareAtPrice?: number | null;
@@ -61,12 +62,19 @@ const CatalogProductCard: React.FC<CatalogProductCardProps> = ({
               {product.name}
             </span>
           </Link>
-          <span className="shrink-0 text-xs font-bold tabular-nums text-catchy-dark sm:text-[13px]">£{product.price}</span>
+          <span className="shrink-0 text-xs font-bold tabular-nums text-catchy-dark sm:text-[13px]">ILS {product.price}</span>
         </div>
         <div dir="ltr" className="flex flex-row items-center justify-between gap-1.5 text-[11px] leading-tight text-gray-500">
-          <span>{colorsLine}</span>
+          <div className="flex flex-wrap items-center gap-0.5">
+            {colorsLine && <span className="mr-0.5">{colorsLine}</span>}
+            {Array.isArray(product.sizes) && product.sizes.map((s) => (
+              <span key={s} className="rounded bg-gray-100 px-1 py-px text-[9px] font-bold text-gray-500 leading-tight">
+                {s}
+              </span>
+            ))}
+          </div>
           {onSale && compareAtPrice != null && (
-            <span className="tabular-nums text-gray-400 line-through">£{compareAtPrice}</span>
+            <span className="tabular-nums text-gray-400 line-through">ILS {compareAtPrice}</span>
           )}
         </div>
       </div>

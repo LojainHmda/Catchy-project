@@ -13,6 +13,7 @@ interface ProductCardProps {
     image?: string;
     category: string;
     stock: number;
+    sizes?: string[];
   };
   variant?: 'default' | 'hero' | 'compact';
   autoPlay?: boolean;
@@ -107,7 +108,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, variant = 'default',
                       {product.name}
                     </h3>
                     <p className="font-sans text-[8px] font-bold tabular-nums tracking-tight text-white/60 sm:text-[9px]">
-                      £{product.price}
+                      ILS {product.price}
                     </p>
                   </div>
                 </div>
@@ -160,11 +161,22 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, variant = 'default',
         )}>
           <Link to={`/product/${product.id}`} className={cn("block", isCompact ? "line-clamp-2" : "truncate")}>{product.name}</Link>
         </h3>
-        <p className={cn(
-          "font-sans tabular-nums tracking-tight",
-          isCompact && "text-xs font-bold text-catchy-dark/85",
-          !isCompact && "text-xs font-semibold text-catchy-dark"
-        )}>£{product.price}</p>
+        <div className="flex flex-wrap items-center gap-1">
+          <p className={cn(
+            "font-sans tabular-nums tracking-tight",
+            isCompact && "text-xs font-bold text-catchy-dark/85",
+            !isCompact && "text-xs font-semibold text-catchy-dark"
+          )}>ILS {product.price}</p>
+          {Array.isArray(product.sizes) && product.sizes.length > 0 && (
+            <div className="flex flex-wrap gap-0.5">
+              {product.sizes.map((s) => (
+                <span key={s} className="rounded bg-surface-container px-1 py-px text-[9px] font-bold text-on-surface-variant leading-tight">
+                  {s}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       )}
     </div>

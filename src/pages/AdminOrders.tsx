@@ -1,149 +1,53 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Search, Loader2 } from 'lucide-react';
-import { db, collection, getDocs, query, orderBy, updateDoc, doc } from '../firebase';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Search, Loader2, RefreshCw, X } from 'lucide-react';
+import { toast } from 'sonner';
+import OrderLineItemsList from '../components/orders/OrderLineItemsList';
+import OrderStatusBadge from '../components/orders/OrderStatusBadge';
+import { useOrdersList } from '../hooks/useOrdersList';
+import {
+  formatOrderDate,
+  formatOrderDateTime,
+  formatOrderMoney,
+  shortOrderId,
+  updateOrderStatus,
+} from '../lib/orders';
+import { ORDER_STATUSES, type OrderStatus } from '../types/order';
 import { cn } from '../lib/utils';
 
-type OrderItem = { name?: string; quantity?: number; price?: number };
-type OrderRecord = {
-  id: string;
-  userId: string;
-  customerEmail: string | null;
-  customerName: string | null;
-  status: string;
-  total: number;
-  createdAt: Date | null;
-  items: OrderItem[];
-};
+type StatusFilter = 'all' | OrderStatus;
 
-type StatusFilter = 'all' | 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
-
-const STATUS_OPTIONS = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'] as const;
-
-function toDate(value: unknown): Date | null {
-  if (value && typeof value === 'object' && 'toDate' in value) {
-    const maybe = value as { toDate?: () => Date };
-    if (typeof maybe.toDate === 'function') return maybe.toDate();
-  }
-  if (value instanceof Date) return value;
-  return null;
-}
-
-function formatDate(d: Date | null): string {
-  if (!d) return '—';
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
-function formatDateTime(d: Date | null): string {
-  if (!d) return '—';
-  return d.toLocaleString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function formatMoney(n: number): string {
-  return `£${n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function shortId(id: string): string {
-  return id.length > 8 ? `#${id.slice(0, 8).toUpperCase()}` : `#${id}`;
-}
-
-function normalizeStatus(raw: unknown): string {
-  const s = String(raw ?? 'pending').toLowerCase();
-  return STATUS_OPTIONS.includes(s as (typeof STATUS_OPTIONS)[number]) ? s : 'pending';
-}
+const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  ...ORDER_STATUSES.map((status) => ({
+    key: status as StatusFilter,
+    label: status.charAt(0).toUpperCase() + status.slice(1),
+  })),
+];
 
 const AdminOrders = () => {
-  const [orders, setOrders] = useState<OrderRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { orders, loading, refreshing, reload, patchOrder } = useOrdersList('admin');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [savingStatus, setSavingStatus] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [ordersSnap, usersSnap] = await Promise.all([
-        getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'))),
-        getDocs(collection(db, 'users')),
-      ]);
-
-      const users = new Map<string, { email: string | null; displayName: string | null }>();
-      usersSnap.docs.forEach((d) => {
-        const data = d.data();
-        users.set(d.id, {
-          email: (data.email as string) ?? null,
-          displayName: (data.displayName as string) ?? null,
-        });
-      });
-
-      const rows: OrderRecord[] = ordersSnap.docs.map((docSnap) => {
-        const data = docSnap.data();
-        const uid = String(data.userId ?? '');
-        const profile = users.get(uid);
-        const rawItems = data.items;
-        const items = Array.isArray(rawItems)
-          ? rawItems.map((it) =>
-              typeof it === 'object' && it !== null
-                ? {
-                    name: (it as OrderItem).name,
-                    quantity: Number((it as OrderItem).quantity) || 1,
-                    price: Number((it as OrderItem).price) || 0,
-                  }
-                : { name: String(it), quantity: 1, price: 0 }
-            )
-          : [];
-
-        return {
-          id: docSnap.id,
-          userId: uid,
-          customerEmail: profile?.email ?? (data.email as string) ?? null,
-          customerName: profile?.displayName ?? (data.customerName as string) ?? null,
-          status: normalizeStatus(data.status),
-          total: Number(data.total) || 0,
-          createdAt: toDate(data.createdAt),
-          items,
-        };
-      });
-
-      setOrders(rows);
-      setSelectedId((prev) => prev ?? rows[0]?.id ?? null);
-    } catch (error) {
-      console.error('Error loading orders:', error);
-      try {
-        const fallback = await getDocs(collection(db, 'orders'));
-        const rows: OrderRecord[] = fallback.docs.map((docSnap) => {
-          const data = docSnap.data();
-          return {
-            id: docSnap.id,
-            userId: String(data.userId ?? ''),
-            customerEmail: null,
-            customerName: null,
-            status: normalizeStatus(data.status),
-            total: Number(data.total) || 0,
-            createdAt: toDate(data.createdAt),
-            items: [],
-          };
-        });
-        rows.sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
-        setOrders(rows);
-        setSelectedId((prev) => prev ?? rows[0]?.id ?? null);
-      } catch {
-        setOrders([]);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const highlightId = searchParams.get('order');
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!orders.length) {
+      setSelectedId(null);
+      return;
+    }
+
+    if (highlightId && orders.some((o) => o.id === highlightId)) {
+      setSelectedId(highlightId);
+      return;
+    }
+
+    setSelectedId((prev) => (prev && orders.some((o) => o.id === prev) ? prev : null));
+  }, [highlightId, orders]);
 
   const filtered = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
@@ -154,7 +58,9 @@ const AdminOrders = () => {
         o.id.toLowerCase().includes(q) ||
         o.userId.toLowerCase().includes(q) ||
         (o.customerEmail?.toLowerCase().includes(q) ?? false) ||
-        (o.customerName?.toLowerCase().includes(q) ?? false)
+        (o.customerName?.toLowerCase().includes(q) ?? false) ||
+        (o.customerPhone?.toLowerCase().includes(q) ?? false) ||
+        (o.deliveryAddress?.toLowerCase().includes(q) ?? false)
       );
     });
   }, [orders, searchTerm, statusFilter]);
@@ -178,32 +84,56 @@ const AdminOrders = () => {
     return map;
   }, [orders]);
 
-  const updateStatus = async (orderId: string, status: string) => {
+  const handleStatusChange = async (orderId: string, status: OrderStatus) => {
+    const previous = orders.find((o) => o.id === orderId)?.status;
+    patchOrder(orderId, { status });
     setSavingStatus(true);
     try {
-      await updateDoc(doc(db, 'orders', orderId), { status });
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status } : o)));
+      await updateOrderStatus(orderId, status);
+      toast.success('Order status updated');
     } catch (error) {
+      if (previous) patchOrder(orderId, { status: previous });
       console.error('Failed to update order status:', error);
+      toast.error('Could not update order status');
     } finally {
       setSavingStatus(false);
     }
   };
 
-  const filters: { key: StatusFilter; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'pending', label: 'Pending' },
-    { key: 'processing', label: 'Processing' },
-    { key: 'shipped', label: 'Shipped' },
-    { key: 'delivered', label: 'Delivered' },
-    { key: 'cancelled', label: 'Cancelled' },
-  ];
+  const selectOrder = (id: string) => {
+    setSelectedId((prev) => (prev === id ? null : id));
+    if (highlightId) {
+      searchParams.delete('order');
+      setSearchParams(searchParams, { replace: true });
+    }
+  };
+
+  const closeDetail = () => {
+    setSelectedId(null);
+    if (highlightId) {
+      searchParams.delete('order');
+      setSearchParams(searchParams, { replace: true });
+    }
+  };
 
   return (
     <div className="min-w-0">
       <header className="border-b border-gray-200 pb-4">
-        <h1 className="text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">Orders</h1>
-        <p className="mt-0.5 text-sm text-gray-500">Track and fulfil customer purchases.</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">Orders</h1>
+            <p className="mt-0.5 text-sm text-gray-500">Track and fulfil customer purchases.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => reload(true)}
+            disabled={loading || refreshing}
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={cn(refreshing && 'animate-spin')} />
+            Refresh
+          </button>
+        </div>
         <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
           <div className="flex gap-1.5">
             <dt className="text-gray-500">Orders</dt>
@@ -211,7 +141,7 @@ const AdminOrders = () => {
           </div>
           <div className="flex gap-1.5">
             <dt className="text-gray-500">Revenue</dt>
-            <dd className="font-medium tabular-nums text-gray-900">{formatMoney(summary.revenue)}</dd>
+            <dd className="font-medium tabular-nums text-gray-900">{formatOrderMoney(summary.revenue)}</dd>
           </div>
           <div className="flex gap-1.5">
             <dt className="text-gray-500">Pending</dt>
@@ -234,16 +164,14 @@ const AdminOrders = () => {
               />
             </div>
             <div className="flex flex-wrap gap-1">
-              {filters.map((f) => (
+              {STATUS_FILTERS.map((f) => (
                 <button
                   key={f.key}
                   type="button"
                   onClick={() => setStatusFilter(f.key)}
                   className={cn(
                     'h-8 rounded-md px-2.5 text-xs font-medium transition-colors',
-                    statusFilter === f.key
-                      ? 'bg-gray-900 text-white'
-                      : 'text-gray-600 hover:bg-gray-100'
+                    statusFilter === f.key ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
                   )}
                 >
                   {f.label}
@@ -255,8 +183,13 @@ const AdminOrders = () => {
             </div>
           </div>
 
-          <div className="mt-0 overflow-hidden rounded-md border border-gray-200 bg-white">
-            {loading ? (
+          <div className="relative mt-0 overflow-hidden rounded-md border border-gray-200 bg-white">
+            {refreshing ? (
+              <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-0.5 overflow-hidden bg-gray-100">
+                <div className="h-full w-1/3 animate-pulse bg-catchy/60" />
+              </div>
+            ) : null}
+            {loading && orders.length === 0 ? (
               <div className="flex items-center justify-center gap-2 py-12 text-sm text-gray-500">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading…
@@ -280,45 +213,26 @@ const AdminOrders = () => {
                       {filtered.map((row) => (
                         <tr
                           key={row.id}
-                          onClick={() => setSelectedId(row.id)}
+                          onClick={() => selectOrder(row.id)}
                           className={cn(
                             'cursor-pointer transition-colors',
-                            selectedId === row.id ? 'bg-gray-50' : 'hover:bg-gray-50/60'
+                            selectedId === row.id ? 'bg-catchy/5' : 'hover:bg-gray-50/60',
+                            highlightId === row.id && 'ring-1 ring-inset ring-catchy/30'
                           )}
                         >
-                          <td className="px-4 py-2.5 font-mono text-xs text-gray-900">
-                            {shortId(row.id)}
-                          </td>
+                          <td className="px-4 py-2.5 font-mono text-xs text-gray-900">{shortOrderId(row.id)}</td>
                           <td className="max-w-[12rem] px-4 py-2.5">
-                            <p className="truncate font-medium text-gray-900">
-                              {row.customerName || 'Guest'}
-                            </p>
-                            <p className="truncate text-xs text-gray-500">
-                              {row.customerEmail || row.userId || '—'}
-                            </p>
+                            <p className="truncate font-medium text-gray-900">{row.customerName || 'Guest'}</p>
+                            <p className="truncate text-xs text-gray-500">{row.customerEmail || row.userId || '—'}</p>
                           </td>
                           <td className="whitespace-nowrap px-4 py-2.5 text-xs text-gray-600">
-                            {formatDate(row.createdAt)}
+                            {formatOrderDate(row.createdAt)}
                           </td>
                           <td className="px-4 py-2.5">
-                            <span className="inline-flex items-center gap-1.5 text-xs font-medium capitalize text-gray-700">
-                              <span
-                                className={cn(
-                                  'h-1.5 w-1.5 rounded-full',
-                                  row.status === 'delivered'
-                                    ? 'bg-gray-900'
-                                    : row.status === 'cancelled'
-                                      ? 'bg-gray-300'
-                                      : row.status === 'pending'
-                                        ? 'bg-gray-500'
-                                        : 'bg-gray-600'
-                                )}
-                              />
-                              {row.status}
-                            </span>
+                            <OrderStatusBadge status={row.status} showDot={false} className="px-2 py-0.5" />
                           </td>
                           <td className="px-4 py-2.5 text-right font-medium tabular-nums text-gray-900">
-                            {formatMoney(row.total)}
+                            {formatOrderMoney(row.total)}
                           </td>
                         </tr>
                       ))}
@@ -331,23 +245,23 @@ const AdminOrders = () => {
                     <li key={row.id}>
                       <button
                         type="button"
-                        onClick={() => setSelectedId(row.id)}
+                        onClick={() => selectOrder(row.id)}
                         className={cn(
                           'flex w-full items-center justify-between gap-3 px-4 py-3 text-left',
-                          selectedId === row.id && 'bg-gray-50'
+                          selectedId === row.id && 'bg-catchy/5'
                         )}
                       >
                         <div className="min-w-0">
-                          <p className="font-mono text-xs text-gray-900">{shortId(row.id)}</p>
+                          <p className="font-mono text-xs text-gray-900">{shortOrderId(row.id)}</p>
                           <p className="truncate text-xs text-gray-500">
                             {row.customerName || row.customerEmail || 'Guest'}
                           </p>
                         </div>
                         <div className="shrink-0 text-right">
                           <p className="text-sm font-medium tabular-nums text-gray-900">
-                            {formatMoney(row.total)}
+                            {formatOrderMoney(row.total)}
                           </p>
-                          <p className="text-xs capitalize text-gray-500">{row.status}</p>
+                          <OrderStatusBadge status={row.status} showDot={false} className="mt-1 px-2 py-0.5" />
                         </div>
                       </button>
                     </li>
@@ -358,25 +272,46 @@ const AdminOrders = () => {
           </div>
         </div>
 
-        <aside className="w-full shrink-0 border border-gray-200 bg-white lg:w-72 xl:w-80">
-          {selected ? (
+        {selected ? (
+          <aside className="w-full shrink-0 border border-gray-200 bg-white lg:w-80 xl:w-96">
             <div className="p-4">
               <div className="flex items-start justify-between gap-2 border-b border-gray-100 pb-3">
-                <div>
-                  <p className="font-mono text-sm font-medium text-gray-900">{shortId(selected.id)}</p>
-                  <p className="mt-0.5 text-xs text-gray-500">{formatDateTime(selected.createdAt)}</p>
+                <div className="min-w-0">
+                  <p className="font-mono text-sm font-medium text-gray-900">{shortOrderId(selected.id)}</p>
+                  <p className="mt-0.5 text-xs text-gray-500">{formatOrderDateTime(selected.createdAt)}</p>
                 </div>
-                <p className="text-sm font-semibold tabular-nums text-gray-900">
-                  {formatMoney(selected.total)}
-                </p>
+                <div className="flex shrink-0 items-start gap-2">
+                  <p className="text-sm font-semibold tabular-nums text-gray-900">{formatOrderMoney(selected.total)}</p>
+                  <button
+                    type="button"
+                    onClick={closeDetail}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                    aria-label="Close order details"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
               </div>
 
               <div className="border-b border-gray-100 py-3">
                 <p className="text-xs font-medium text-gray-500">Customer</p>
                 <p className="mt-0.5 text-sm font-medium text-gray-900">
                   {selected.customerName || 'Guest'}
+                  {selected.isGuest ? (
+                    <span className="ms-2 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700">
+                      Guest
+                    </span>
+                  ) : null}
                 </p>
-                <p className="text-xs text-gray-600">{selected.customerEmail || selected.userId}</p>
+                {selected.customerPhone ? (
+                  <p className="text-xs text-gray-600" dir="ltr">
+                    {selected.customerPhone}
+                  </p>
+                ) : null}
+                <p className="text-xs text-gray-600">{selected.customerEmail || (selected.isGuest ? '—' : selected.userId)}</p>
+                {selected.deliveryAddress ? (
+                  <p className="mt-2 text-xs leading-relaxed text-gray-700">{selected.deliveryAddress}</p>
+                ) : null}
               </div>
 
               <div className="border-b border-gray-100 py-3">
@@ -387,10 +322,10 @@ const AdminOrders = () => {
                   id="order-status"
                   value={selected.status}
                   disabled={savingStatus}
-                  onChange={(e) => updateStatus(selected.id, e.target.value)}
-                  className="mt-1 h-8 w-full rounded-md border border-gray-200 bg-white px-2 text-sm text-gray-900 outline-none focus:border-gray-400"
+                  onChange={(e) => handleStatusChange(selected.id, e.target.value as OrderStatus)}
+                  className="mt-1 h-9 w-full rounded-md border border-gray-200 bg-white px-2 text-sm text-gray-900 outline-none focus:border-gray-400"
                 >
-                  {STATUS_OPTIONS.map((s) => (
+                  {ORDER_STATUSES.map((s) => (
                     <option key={s} value={s}>
                       {s.charAt(0).toUpperCase() + s.slice(1)}
                     </option>
@@ -399,33 +334,14 @@ const AdminOrders = () => {
               </div>
 
               <div className="pt-3">
-                <p className="text-xs font-medium text-gray-500">Line items</p>
-                {selected.items.length > 0 ? (
-                  <ul className="mt-2 space-y-2">
-                    {selected.items.map((item, i) => (
-                      <li
-                        key={`${item.name}-${i}`}
-                        className="flex justify-between gap-2 text-xs text-gray-700"
-                      >
-                        <span className="min-w-0 truncate">
-                          {item.quantity && item.quantity > 1 ? `${item.quantity}× ` : ''}
-                          {item.name || 'Item'}
-                        </span>
-                        <span className="shrink-0 tabular-nums text-gray-900">
-                          {formatMoney((item.price ?? 0) * (item.quantity ?? 1))}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-1 text-xs text-gray-500">No line items recorded.</p>
-                )}
+                <p className="mb-3 text-xs font-medium text-gray-500">
+                  Line items ({selected.itemCount})
+                </p>
+                <OrderLineItemsList items={selected.items} compact linkProducts />
               </div>
             </div>
-          ) : (
-            <p className="p-4 text-sm text-gray-500">Select an order to view details.</p>
-          )}
-        </aside>
+          </aside>
+        ) : null}
       </div>
     </div>
   );

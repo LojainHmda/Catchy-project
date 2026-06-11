@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { LogIn, User, Lock, Loader2, ChevronLeft } from 'lucide-react';
@@ -65,6 +65,9 @@ const inputClass = (isRTL: boolean) =>
   );
 
 const Login = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
   const { user, role, login, loginWithCredentials, signUpWithCredentials, loading, sessionResolving } = useAuth();
   const { t, isRTL } = useLanguage();
   const [mode, setMode] = useState<AuthMode>('signin');
@@ -79,9 +82,12 @@ const Login = () => {
 
   useEffect(() => {
     if (!loading && !sessionResolving && user && role !== null) {
-      window.location.replace('/');
+      const fallback = role === 'admin' ? '/admin' : '/';
+      const destination =
+        returnTo && returnTo.startsWith('/') && !returnTo.startsWith('/admin') ? returnTo : fallback;
+      navigate(destination, { replace: true });
     }
-  }, [loading, sessionResolving, user, role]);
+  }, [loading, sessionResolving, navigate, returnTo, role, user]);
 
   if (!loading && !sessionResolving && user && role !== null) {
     return null;

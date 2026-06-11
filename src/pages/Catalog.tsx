@@ -382,14 +382,13 @@ const Catalog = () => {
                   <div className="grid grid-cols-2 justify-items-center gap-x-4 gap-y-4 sm:grid-cols-3 lg:grid-cols-4 lg:gap-x-5 lg:gap-y-5">
                     {pagedProducts.map((product) => {
                       const meta = getCatalogSaleMeta(product);
-                      const colorsLine = t('catalog.colorsCount').replace('{n}', String(meta.nColors));
                       return (
                         <CatalogProductCard
                           key={product.id}
                           product={product}
                           compareAtPrice={meta.compareAt}
                           saleLabel={t('catalog.sale')}
-                          colorsLine={colorsLine}
+                          colorsLine=""
                         />
                       );
                     })}

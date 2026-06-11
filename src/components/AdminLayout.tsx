@@ -14,6 +14,7 @@ import {
   MessageCircle,
   Menu,
   X,
+  Film,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
@@ -58,6 +59,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { icon: LayoutDashboard, label: 'Dashboard', path: '/admin' },
     { icon: Store, label: 'Shop Page', path: '/' },
     { icon: ImageIcon, label: 'Hero Reels', path: '/admin/hero' },
+    { icon: Film, label: 'Hero Video', path: '/admin/hero-video' },
     { icon: Package, label: 'Products', path: '/admin/products' },
     { icon: ClipboardList, label: 'Stock', path: '/admin/stock' },
     { icon: ShoppingCart, label: 'Orders', path: '/admin/orders' },
@@ -95,7 +97,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           className="flex min-w-0 flex-1 items-center gap-2.5"
           onClick={closeMobileNav}
         >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#4CAF50] text-base font-bold text-white shadow-md shadow-[#4CAF50]/25">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-catchy text-base font-bold text-white shadow-md shadow-catchy/25">
             C
           </div>
           <span className="truncate text-lg font-black tracking-tight text-gray-900">ADMIN</span>
@@ -124,7 +126,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       >
         <div className="flex items-center justify-between border-b border-gray-50 p-5 md:p-8 md:pb-8">
           <Link to="/" className="flex min-w-0 items-center gap-3" onClick={closeMobileNav}>
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#4CAF50] text-xl font-bold text-white shadow-lg shadow-[#4CAF50]/20">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-catchy text-xl font-bold text-white shadow-lg shadow-catchy/20">
               C
             </div>
             <span className="text-xl font-black tracking-tight text-gray-900 md:text-2xl">ADMIN</span>
@@ -150,7 +152,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 className={cn(
                   'flex min-h-[48px] items-center justify-between rounded-2xl px-4 py-3 text-sm font-bold transition-all duration-200 group touch-manipulation md:py-3.5',
                   isActive
-                    ? 'bg-[#4CAF50] text-white shadow-lg shadow-[#4CAF50]/20'
+                    ? 'bg-catchy text-white shadow-lg shadow-catchy/20'
                     : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 active:bg-gray-100'
                 )}
               >
@@ -186,7 +188,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       <main
         className={cn(
           'min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto',
-          location.pathname === '/admin/hero'
+          location.pathname === '/admin/hero' || location.pathname === '/admin/products'
             ? 'p-4 sm:p-5 md:p-6'
             : 'p-4 sm:p-6 md:p-10'
         )}

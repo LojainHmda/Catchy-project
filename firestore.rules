@@ -39,9 +39,28 @@ service cloud.firestore {
       allow delete: if isOwner();
     }
 
+    function isWholeStock(value) {
+      return value is int;
+    }
+
+    function customerCheckoutStockDecrement() {
+      let keys = request.resource.data.diff(resource.data).affectedKeys();
+      let priorStock = resource.data.keys().hasAny(['stock'])
+        ? resource.data.stock
+        : 0;
+      return signedIn()
+        && isWholeStock(request.resource.data.stock)
+        && isWholeStock(priorStock)
+        && request.resource.data.stock >= 0
+        && request.resource.data.stock < priorStock
+        && (keys.hasOnly(['stock']) || keys.hasOnly(['stock', 'sizeStock']));
+    }
+
     match /products/{id} {
       allow read: if true;
-      allow write: if isOwner();
+      allow create, delete: if isOwner();
+      // Admins manage catalog; customers may only decrement stock (and per-size map) at checkout
+      allow update: if isOwner() || customerCheckoutStockDecrement();
     }
 
     match /hero_slides/{id} {
@@ -55,7 +74,14 @@ service cloud.firestore {
     }
 
     match /orders/{id} {
-      allow read, write: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      // Guest orders are created server-side; confirmation page may read them without sign-in.
+      allow read: if resource.data.isGuest == true
+        || (signedIn() && (resource.data.userId == request.auth.uid || isOwner()));
+      allow update: if isOwner();
+      allow delete: if isOwner();
     }
 
     // WhatsApp conversation log. Admins read/write from the admin UI; inbound

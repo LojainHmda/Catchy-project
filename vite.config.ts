@@ -10,6 +10,60 @@ const WHATSAPP_BROKER_URL = 'https://api.whatsappbiz.com/v1/public/message/';
  * seeing the token. Runs inside the Vite dev server (Node). For production this
  * same logic must move to a real backend (Cloud Functions / Cloud Run).
  */
+let devFirestore: any = null;
+
+async function getDevFirestore(env: Record<string, string>) {
+  if (devFirestore) return devFirestore;
+  try {
+    const {initializeApp, applicationDefault, getApps} = await import('firebase-admin/app');
+    const {getFirestore} = await import('firebase-admin/firestore');
+    if (getApps().length === 0) {
+      initializeApp({
+        credential: applicationDefault(),
+        projectId: env.VITE_FIREBASE_PROJECT_ID || 'catchy-496207',
+      });
+    }
+    devFirestore = getFirestore();
+    return devFirestore;
+  } catch (err: any) {
+    console.error('[dev-checkout] Firestore unavailable:', err?.message || err);
+    return null;
+  }
+}
+
+function guestCheckoutDevApi(env: Record<string, string>) {
+  return {
+    name: 'guest-checkout-dev-api',
+    configureServer(server: any) {
+      server.middlewares.use('/api/orders/checkout', (req: any, res: any) => {
+        const json = (status: number, payload: unknown) => {
+          res.statusCode = status;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(payload));
+        };
+        if (req.method !== 'POST') return json(405, {ok: false, code: 'UNKNOWN', message: 'Method Not Allowed'});
+
+        let body = '';
+        req.on('data', (chunk: Buffer) => (body += chunk));
+        req.on('end', async () => {
+          try {
+            const parsed = JSON.parse(body || '{}');
+            const db = await getDevFirestore(env);
+            if (!db) {
+              return json(503, {ok: false, code: 'UNKNOWN', message: 'Checkout is temporarily unavailable.'});
+            }
+            const {processGuestCheckout} = await import('./server/lib/checkoutOrder.js');
+            const result = await processGuestCheckout(db, parsed);
+            json(result.ok ? 200 : 400, result);
+          } catch (err: any) {
+            json(500, {ok: false, code: 'UNKNOWN', message: err?.message || 'Could not place your order.'});
+          }
+        });
+      });
+    },
+  };
+}
+
 function whatsappDevApi(env: Record<string, string>) {
   return {
     name: 'whatsapp-dev-api',
@@ -59,7 +113,7 @@ function whatsappDevApi(env: Record<string, string>) {
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
-    plugins: [react(), tailwindcss(), whatsappDevApi(env)],
+    plugins: [react(), tailwindcss(), guestCheckoutDevApi(env), whatsappDevApi(env)],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },

@@ -63,6 +63,24 @@ function verifyWebhookSignature(req, secret) {
   return norm.toLowerCase() === hex.toLowerCase() || norm === b64;
 }
 
+// ── Guest checkout (Admin SDK — no sign-in required) ──
+app.post('/api/orders/checkout', async (req, res) => {
+  const { items, delivery } = req.body || {};
+  const db = await getFirestore();
+  if (!db) {
+    return res.status(503).json({ ok: false, code: 'UNKNOWN', message: 'Checkout is temporarily unavailable.' });
+  }
+
+  try {
+    const { processGuestCheckout } = await import('./lib/checkoutOrder.js');
+    const result = await processGuestCheckout(db, { items, delivery });
+    res.status(result.ok ? 200 : 400).json(result);
+  } catch (err) {
+    console.error('[checkout] unhandled:', err?.message || err);
+    res.status(500).json({ ok: false, code: 'UNKNOWN', message: 'Could not place your order. Please try again.' });
+  }
+});
+
 // ── Send a text message (token stays here, never reaches the browser) ──
 app.post('/api/whatsapp/send', async (req, res) => {
   const { fullPhoneNumber, message } = req.body || {};

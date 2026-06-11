@@ -44,7 +44,7 @@ jobs:
           VITE_ADMIN_PASSWORD: ${{ secrets.VITE_ADMIN_PASSWORD }}
           VITE_OWNER_EMAILS: ${{ secrets.VITE_OWNER_EMAILS }}
 
-      - name: Deploy hosting
-        run: npx firebase-tools@13 deploy --only hosting --project "${{ secrets.FIREBASE_PROJECT_ID }}" --non-interactive
+      - name: Deploy Firestore rules and hosting
+        run: npx firebase-tools@13 deploy --only firestore,hosting --project "${{ secrets.FIREBASE_PROJECT_ID }}" --non-interactive
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}

@@ -1,4 +1,5 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
+import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import {
   getAuth,
   GoogleAuthProvider,
@@ -72,6 +73,12 @@ try {
 export const auth = getAuth(app);
 export { db };
 
+// Storage is optional — wrap so a missing bucket never breaks the rest of the app
+let _storage: ReturnType<typeof getStorage> | null = null;
+try { _storage = getStorage(app); } catch { /* Storage not configured */ }
+export const storage = _storage as ReturnType<typeof getStorage>;
+export { storageRef, uploadBytesResumable, getDownloadURL, deleteObject };
+
 export {
   collection,
   doc,
@@ -88,6 +95,7 @@ export {
   limit,
   startAfter,
   serverTimestamp,
+  runTransaction,
   GoogleAuthProvider,
   signInWithPopup,
   signOut,

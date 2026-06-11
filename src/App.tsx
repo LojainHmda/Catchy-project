@@ -1,4 +1,5 @@
 import React from 'react';
+import { Loader2 } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import './lib/heroSlidesCache';
@@ -13,6 +14,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import AdminProducts from './pages/AdminProducts';
 import AdminStock from './pages/AdminStock';
 import AdminHero from './pages/AdminHero';
+import AdminHeroVideo from './pages/AdminHeroVideo';
 import AdminCategoryTiles from './pages/AdminCategoryTiles';
 import AdminCustomers from './pages/AdminCustomers';
 import AdminOrders from './pages/AdminOrders';
@@ -20,14 +22,23 @@ import AdminWhatsApp from './pages/AdminWhatsApp';
 import AdminLayout from './components/AdminLayout';
 import Login from './pages/Login';
 import Cart from './pages/Cart';
+import Orders from './pages/Orders';
+import OrderDetail from './pages/OrderDetail';
+import OrderConfirmation from './pages/OrderConfirmation';
 import CartDrawer from './components/CartDrawer';
 import Footer from './components/Footer';
 import BottomNav from './components/BottomNav';
 
 const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, role, loading } = useAuth();
-  if (loading) return null;
-  if (!user || role !== 'admin') return <Navigate to="/login" />;
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50/50">
+        <Loader2 className="h-7 w-7 animate-spin text-gray-400" aria-label="Loading" />
+      </div>
+    );
+  }
+  if (!user || role !== 'admin') return <Navigate to="/login" replace />;
   return <AdminLayout>{children}</AdminLayout>;
 };
 
@@ -38,6 +49,7 @@ const AppContent = () => {
         {/* Admin Routes */}
         <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
         <Route path="/admin/hero" element={<AdminRoute><AdminHero /></AdminRoute>} />
+        <Route path="/admin/hero-video" element={<AdminRoute><AdminHeroVideo /></AdminRoute>} />
         <Route path="/admin/category-tiles" element={<AdminRoute><AdminCategoryTiles /></AdminRoute>} />
         <Route path="/admin/products" element={<AdminRoute><AdminProducts /></AdminRoute>} />
         <Route path="/admin/stock" element={<AdminRoute><AdminStock /></AdminRoute>} />
@@ -57,6 +69,9 @@ const AppContent = () => {
                 <Route path="/product/:id" element={<ProductDetail />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/cart" element={<Cart />} />
+                <Route path="/orders" element={<Orders />} />
+                <Route path="/orders/confirmation/:orderId" element={<OrderConfirmation />} />
+                <Route path="/orders/:orderId" element={<OrderDetail />} />
                 <Route path="*" element={<Navigate to="/" />} />
               </Routes>
             </main>

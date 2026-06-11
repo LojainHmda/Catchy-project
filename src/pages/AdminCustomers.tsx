@@ -32,7 +32,7 @@ function formatDate(d: Date | null): string {
 }
 
 function formatMoney(n: number): string {
-  return `£${n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `ILS ${n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 const AdminCustomers = () => {

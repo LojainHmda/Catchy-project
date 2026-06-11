@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { db, collection, getDocs, query, orderBy, limit, doc, getDoc } from '../firebase';
+import { db, collection, getDocs, query, orderBy, limit, doc, onSnapshot } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
 import { cn } from '../lib/utils';
 import { CATEGORY_ICONS, CATEGORY_KEYS } from '../constants';
@@ -34,30 +34,65 @@ const CATEGORY_BAR = [
   { key: 'Coordinates', ar: 'كوردينيت'   },
 ] as const;
 
-const HeroMedia = ({ fallbackImage }: { fallbackImage: string }) => {
-  const [videoError, setVideoError] = useState(false);
+const HERO_MEDIA_CLASS =
+  'absolute inset-0 h-full w-full object-cover object-center ' +
+  'sm:left-1/2 sm:top-1/2 sm:h-auto sm:w-auto sm:min-h-full sm:min-w-full sm:-translate-x-1/2 sm:-translate-y-1/2';
 
-  if (!videoError) {
+const HeroMedia = ({
+  videoSrc,
+  fallbackImage,
+  onAspectRatio,
+}: {
+  videoSrc: string;
+  fallbackImage: string;
+  onAspectRatio?: (ratio: string) => void;
+}) => {
+  const [activeSrc, setActiveSrc] = useState(videoSrc);
+  const [useFallback, setUseFallback] = useState(false);
+
+  const reportAspectRatio = (width: number, height: number) => {
+    if (width > 0 && height > 0) onAspectRatio?.(`${width} / ${height}`);
+  };
+
+  // When the admin sets a new video, swap to it; if it fails, fall back to the local default
+  useEffect(() => {
+    setActiveSrc(videoSrc);
+    setUseFallback(false);
+  }, [videoSrc]);
+
+  if (useFallback) {
     return (
-      <video
-        src={HERO_VIDEO}
-        autoPlay
-        muted
-        loop
-        playsInline
-        className="absolute inset-0 w-full h-full object-cover"
-        onError={() => setVideoError(true)}
-      />
+      <div className="absolute inset-0 overflow-hidden" dir="ltr">
+        <img
+          src={fallbackImage}
+          alt="Hero"
+          className={HERO_MEDIA_CLASS}
+          onLoad={(e) => {
+            const img = e.currentTarget;
+            reportAspectRatio(img.naturalWidth, img.naturalHeight);
+          }}
+          onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_HERO_IMAGE; }}
+        />
+      </div>
     );
   }
 
   return (
-    <img
-      src={fallbackImage}
-      alt="Hero"
-      className="absolute inset-0 w-full h-full object-cover"
-      onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_HERO_IMAGE; }}
-    />
+    <div className="absolute inset-0 overflow-hidden" dir="ltr">
+      <video
+        src={activeSrc}
+        autoPlay
+        muted
+        loop
+        playsInline
+        className={HERO_MEDIA_CLASS}
+        onLoadedMetadata={(e) => {
+          const video = e.currentTarget;
+          reportAspectRatio(video.videoWidth, video.videoHeight);
+        }}
+        onError={() => setUseFallback(true)}
+      />
+    </div>
   );
 };
 
@@ -66,14 +101,28 @@ const Home = () => {
   const navigate = useNavigate();
   const isAr = language === 'ar';
 
+  const [heroVideoSrc, setHeroVideoSrc] = useState(HERO_VIDEO);
   const [heroSlides, setHeroSlides] = useState<HeroSlide[]>(() => readCachedHeroSlides());
   const [heroSlidesReady, setHeroSlidesReady] = useState(
     () => normalizeHeroSlides(readCachedHeroSlides()).length > 0
   );
   const [newArrivals, setNewArrivals] = useState<any[]>([]);
+  const [heroAspect, setHeroAspect] = useState('16 / 9');
 
   const normSlides = useMemo(() => normalizeHeroSlides(heroSlides), [heroSlides]);
   const heroImage = normSlides[0]?.url || normSlides[0]?.image || DEFAULT_HERO_IMAGE;
+
+  useEffect(() => {
+    const ref = doc(db, 'site_settings', 'hero');
+    return onSnapshot(
+      ref,
+      (snap) => {
+        const url = snap.exists() ? (snap.data().videoUrl as string | null) : null;
+        setHeroVideoSrc(url && url.trim() ? url : HERO_VIDEO);
+      },
+      () => { /* Firestore error — keep the local default video */ }
+    );
+  }, []);
 
   useEffect(() => subscribeHeroSlides((slides, ready) => {
     setHeroSlides(slides);
@@ -92,20 +141,27 @@ const Home = () => {
 
   return (
     <div
-      className="min-h-screen pb-24"
+      className="min-h-screen overflow-x-hidden pb-24 sm:pb-0"
       style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-on-surface)' }}
       dir={isRTL ? 'rtl' : 'ltr'}
     >
       {/* ── Hero ── */}
-      <section className="relative w-full overflow-hidden" style={{ height: '90svh' }}>
+      <section
+        className="hero-section relative w-full max-w-full overflow-hidden sm:h-[90svh]"
+        style={{ '--hero-ar': heroAspect } as React.CSSProperties}
+      >
         {/* Full-screen video */}
-        <HeroMedia fallbackImage={heroImage} />
+        <HeroMedia
+          videoSrc={heroVideoSrc}
+          fallbackImage={heroImage}
+          onAspectRatio={setHeroAspect}
+        />
 
         {/* Overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
 
         {/* Text content */}
-        <div className="absolute inset-0 flex flex-col items-center justify-end pb-20 px-5 text-center">
+        <div className="absolute inset-0 flex flex-col items-center justify-end px-5 pb-8 text-center sm:pb-20">
           <h1
             className={cn('text-4xl leading-tight mb-3 text-white drop-shadow-lg', isAr ? 'font-arabic' : '')}
             style={!isAr ? { fontFamily: 'var(--font-display)' } : undefined}
@@ -133,7 +189,7 @@ const Home = () => {
       </section>
 
       {/* ── Latest Arrivals (pulled up over hero to cover the video watermark) ── */}
-      <section className="relative z-10 -mt-16 rounded-t-[2rem] bg-surface px-5 pt-10 mb-12">
+      <section className="relative z-10 -mt-8 rounded-t-[2rem] bg-surface px-5 pt-10 mb-12 sm:-mt-16">
         <h2
           className={cn('text-xl text-primary text-center mb-8', isAr ? 'font-arabic' : '')}
           style={!isAr ? { fontFamily: 'var(--font-display)' } : undefined}
@@ -170,9 +226,20 @@ const Home = () => {
                   >
                     {product.name}
                   </p>
-                  <p className="mt-0.5 text-xs text-primary" style={{ fontFamily: 'var(--font-body)' }}>
-                    {product.price} {isAr ? 'ر.س' : 'SAR'}
-                  </p>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                    <span className="text-xs text-primary" style={{ fontFamily: 'var(--font-body)' }}>
+                      {product.price} ILS
+                    </span>
+                    {Array.isArray((product as any).sizes) && (product as any).sizes.length > 0 && (
+                      <div className="flex flex-wrap gap-0.5">
+                        {(product as any).sizes.map((s: string) => (
+                          <span key={s} className="rounded bg-surface-container px-1 py-px text-[9px] font-bold text-on-surface-variant leading-tight">
+                            {s}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </Link>
             ))}

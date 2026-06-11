@@ -1,11 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { db, collection, getDocs, query, orderBy, limit, addDoc, serverTimestamp } from '../firebase';
-import { Package, ShoppingCart, Users, TrendingUp, ArrowUpRight, ArrowDownRight, Database, Loader2, Image as ImageIcon } from 'lucide-react';
+import { db, collection, getDocs, query, orderBy, limit, addDoc, serverTimestamp, doc, getDoc, setDoc } from '../firebase';
+import { Package, ShoppingCart, Users, TrendingUp, ArrowUpRight, ArrowDownRight, Database, Loader2, Image as ImageIcon, Megaphone } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
+
+const FONT_OPTIONS = [
+  { label: 'Inter',        value: 'Inter, sans-serif' },
+  { label: 'Bodoni Moda', value: '"Bodoni Moda", serif' },
+  { label: 'Cairo',        value: 'Cairo, sans-serif' },
+  { label: 'Sans-Serif',   value: 'sans-serif' },
+  { label: 'Serif',        value: 'serif' },
+  { label: 'Monospace',    value: 'monospace' },
+];
 
 const AdminDashboard = () => {
   const [stats, setStats] = useState({
@@ -17,7 +26,68 @@ const AdminDashboard = () => {
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSeeding, setIsSeeding] = useState(false);
+  const [tickerEnabled, setTickerEnabled] = useState(true);
+  const [tickerLoading, setTickerLoading] = useState(true);
+  const [tickerSaving, setTickerSaving] = useState(false);
+  const [bannerText, setBannerText] = useState('   ◆   عروض وتخفيضات   ◆   Offers & Discounts');
+  const [bannerBgColor, setBannerBgColor] = useState('#0a150c');
+  const [bannerTextColor, setBannerTextColor] = useState('#ffffff');
+  const [bannerFontSize, setBannerFontSize] = useState(10);
+  const [bannerFontFamily, setBannerFontFamily] = useState('Inter, sans-serif');
+  const [bannerSaving, setBannerSaving] = useState(false);
   const { loading: authLoading, role } = useAuth();
+
+  useEffect(() => {
+    getDoc(doc(db, 'site_settings', 'site'))
+      .then((snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          setTickerEnabled(d.tickerBannerEnabled !== false);
+          if (d.tickerBannerText) setBannerText(d.tickerBannerText);
+          if (d.tickerBannerBackgroundColor) setBannerBgColor(d.tickerBannerBackgroundColor);
+          if (d.tickerBannerTextColor) setBannerTextColor(d.tickerBannerTextColor);
+          if (d.tickerBannerFontSize) setBannerFontSize(Number(d.tickerBannerFontSize));
+          if (d.tickerBannerFontFamily) setBannerFontFamily(d.tickerBannerFontFamily);
+        }
+      })
+      .finally(() => setTickerLoading(false));
+  }, []);
+
+  const handleTickerToggle = async () => {
+    const next = !tickerEnabled;
+    setTickerSaving(true);
+    try {
+      await setDoc(doc(db, 'site_settings', 'site'), { tickerBannerEnabled: next }, { merge: true });
+      setTickerEnabled(next);
+      toast.success(next ? 'Banner enabled' : 'Banner hidden');
+    } catch {
+      toast.error('Failed to save setting');
+    } finally {
+      setTickerSaving(false);
+    }
+  };
+
+  const handleBannerSave = async () => {
+    setBannerSaving(true);
+    try {
+      await setDoc(
+        doc(db, 'site_settings', 'site'),
+        {
+          tickerBannerText: bannerText,
+          tickerBannerBackgroundColor: bannerBgColor,
+          tickerBannerTextColor: bannerTextColor,
+          tickerBannerFontSize: bannerFontSize,
+          tickerBannerFontFamily: bannerFontFamily,
+        },
+        { merge: true }
+      );
+      toast.success('Banner settings saved — changes are live instantly');
+    } catch {
+      toast.error('Failed to save banner settings');
+    } finally {
+      setBannerSaving(false);
+    }
+  };
 
   const seedData = async () => {
     setIsSeeding(true);
@@ -206,7 +276,7 @@ const AdminDashboard = () => {
   }, [authLoading, role]);
 
   const statCards = [
-    { label: 'Total Revenue', value: `£${stats.revenue.toLocaleString()}`, icon: TrendingUp, color: 'bg-emerald-500', trend: '+12.5%', isUp: true },
+    { label: 'Total Revenue', value: `ILS ${stats.revenue.toLocaleString()}`, icon: TrendingUp, color: 'bg-emerald-500', trend: '+12.5%', isUp: true },
     { label: 'Total Orders', value: stats.orders, icon: ShoppingCart, color: 'bg-blue-500', trend: '+5.2%', isUp: true, path: '/admin/orders' },
     { label: 'Total Products', value: stats.products, icon: Package, color: 'bg-purple-500', trend: '-2.1%', isUp: false, path: '/admin/products' },
     { label: 'Total Customers', value: stats.users, icon: Users, color: 'bg-orange-500', trend: '+8.4%', isUp: true, path: '/admin/customers' },
@@ -267,6 +337,176 @@ const AdminDashboard = () => {
         ))}
       </div>
 
+      {/* Site Settings — Ticker Banner Editor */}
+      <div className="min-w-0 rounded-3xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6 md:p-8">
+        <h2 className="mb-6 text-xl font-black tracking-tight text-gray-900 sm:text-2xl">Site Settings</h2>
+
+        {/* Toggle row */}
+        <div className="mb-6 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#0a150c] text-white">
+              <Megaphone size={20} />
+            </div>
+            <div>
+              <p className="text-sm font-black text-gray-900">Offers Ticker Banner</p>
+              <p className="text-xs font-medium text-gray-400">Scrolling banner shown below the navigation bar</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold text-gray-400">{tickerEnabled ? 'Visible' : 'Hidden'}</span>
+            <button
+              type="button"
+              disabled={tickerLoading || tickerSaving}
+              onClick={handleTickerToggle}
+              className={cn(
+                'relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50',
+                tickerEnabled ? 'bg-catchy' : 'bg-gray-200'
+              )}
+              aria-label="Toggle ticker banner"
+            >
+              <span
+                className={cn(
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition-transform duration-200',
+                  tickerEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                )}
+              />
+            </button>
+          </div>
+        </div>
+
+        {/* Live Preview */}
+        <div className="mb-6">
+          <p className="mb-2 text-xs font-black uppercase tracking-widest text-gray-400">Live Preview</p>
+          <div
+            className="overflow-hidden rounded-xl py-2.5 text-center"
+            style={{
+              backgroundColor: bannerBgColor,
+              color: bannerTextColor,
+              fontSize: `${bannerFontSize}px`,
+              letterSpacing: '0.2em',
+              textTransform: 'uppercase',
+              fontWeight: 300,
+              fontFamily: bannerFontFamily,
+            }}
+          >
+            {bannerText || '  ◆  Banner Text Preview  ◆  '}
+          </div>
+        </div>
+
+        <div className="space-y-5">
+          {/* Banner text */}
+          <div>
+            <label className="mb-1.5 block text-xs font-black uppercase tracking-widest text-gray-500">
+              Banner Text
+            </label>
+            <input
+              type="text"
+              value={bannerText}
+              onChange={(e) => setBannerText(e.target.value)}
+              placeholder="  ◆  عروض وتخفيضات  ◆  Offers & Discounts"
+              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-300 focus:border-catchy focus:outline-none focus:ring-1 focus:ring-catchy"
+            />
+            <p className="mt-1 text-[11px] text-gray-400">This segment is repeated across the full banner. Use ◆ as a separator.</p>
+          </div>
+
+          {/* Color + font size row */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {/* Background color */}
+            <div>
+              <label className="mb-1.5 block text-xs font-black uppercase tracking-widest text-gray-500">
+                Background Color
+              </label>
+              <div className="flex items-center gap-2.5 rounded-xl border border-gray-200 bg-white px-3 py-2">
+                <input
+                  type="color"
+                  value={bannerBgColor}
+                  onChange={(e) => setBannerBgColor(e.target.value)}
+                  className="h-7 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
+                  title="Pick background color"
+                />
+                <span className="font-mono text-xs text-gray-500">{bannerBgColor}</span>
+              </div>
+            </div>
+
+            {/* Text color */}
+            <div>
+              <label className="mb-1.5 block text-xs font-black uppercase tracking-widest text-gray-500">
+                Text Color
+              </label>
+              <div className="flex items-center gap-2.5 rounded-xl border border-gray-200 bg-white px-3 py-2">
+                <input
+                  type="color"
+                  value={bannerTextColor}
+                  onChange={(e) => setBannerTextColor(e.target.value)}
+                  className="h-7 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
+                  title="Pick text color"
+                />
+                <span className="font-mono text-xs text-gray-500">{bannerTextColor}</span>
+              </div>
+            </div>
+
+            {/* Font size */}
+            <div>
+              <label className="mb-1.5 flex items-center justify-between text-xs font-black uppercase tracking-widest text-gray-500">
+                Font Size
+                <span className="ml-1 font-mono text-catchy">{bannerFontSize}px</span>
+              </label>
+              <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-3">
+                <span className="text-[9px] font-bold text-gray-400">A</span>
+                <input
+                  type="range"
+                  min={9}
+                  max={16}
+                  step={1}
+                  value={bannerFontSize}
+                  onChange={(e) => setBannerFontSize(Number(e.target.value))}
+                  className="flex-1 cursor-pointer accent-catchy"
+                />
+                <span className="text-xs font-bold text-gray-400">A</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Font family */}
+          <div>
+            <label className="mb-2 block text-xs font-black uppercase tracking-widest text-gray-500">
+              Font Family
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {FONT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setBannerFontFamily(opt.value)}
+                  style={{ fontFamily: opt.value }}
+                  className={cn(
+                    'rounded-xl border px-4 py-2 text-sm transition-all',
+                    bannerFontFamily === opt.value
+                      ? 'border-catchy bg-catchy text-white shadow-sm'
+                      : 'border-gray-200 bg-white text-gray-700 hover:border-catchy hover:text-catchy'
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Save button */}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handleBannerSave}
+              disabled={bannerSaving}
+              className="flex items-center gap-2 rounded-2xl bg-catchy px-6 py-3 text-xs font-black uppercase tracking-widest text-white shadow-md shadow-catchy/20 transition-all hover:bg-catchy-dark disabled:opacity-50"
+            >
+              {bannerSaving ? <Loader2 size={15} className="animate-spin" /> : <Megaphone size={15} />}
+              {bannerSaving ? 'Saving…' : 'Save Banner Settings'}
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Recent Activity */}
       <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-10">
         <div className="min-w-0 overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm lg:col-span-2">
@@ -274,7 +514,7 @@ const AdminDashboard = () => {
             <h2 className="text-xl font-black tracking-tight text-gray-900 sm:text-2xl">Recent Orders</h2>
             <button
               type="button"
-              className="self-start text-sm font-bold text-[#4CAF50] hover:underline sm:self-auto touch-manipulation min-h-[44px] px-1"
+              className="self-start text-sm font-bold text-catchy hover:underline sm:self-auto touch-manipulation min-h-[44px] px-1"
             >
               View All
             </button>
@@ -302,7 +542,7 @@ const AdminDashboard = () => {
                   </div>
                   <p className="break-all text-sm font-medium text-gray-600">{String(order.userId ?? '—')}</p>
                   <div className="flex items-center justify-between gap-2 text-sm">
-                    <span className="font-black text-gray-900">£{order.total}</span>
+                    <span className="font-black text-gray-900">ILS {order.total}</span>
                     <span className="text-xs text-gray-400">
                       {order.createdAt?.toDate ? order.createdAt.toDate().toLocaleDateString() : 'N/A'}
                     </span>
@@ -348,7 +588,7 @@ const AdminDashboard = () => {
                           {order.status}
                         </span>
                       </td>
-                      <td className="px-4 py-4 font-black text-gray-900 md:px-8 md:py-6">£{order.total}</td>
+                      <td className="px-4 py-4 font-black text-gray-900 md:px-8 md:py-6">ILS {order.total}</td>
                       <td className="px-4 py-4 font-medium text-gray-400 md:px-8 md:py-6">
                         {order.createdAt?.toDate ? order.createdAt.toDate().toLocaleDateString() : 'N/A'}
                       </td>

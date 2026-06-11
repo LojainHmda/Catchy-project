@@ -15,7 +15,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$ProjectId = 'gen-lang-client-0007443599'  # Catchy01 (marei.eyad@gmail.com); app's .env points here
+$ProjectId = 'catchy-496207'  # GCP project 423659149456 → https://catchy-web-423659149456.us-central1.run.app
 $Region = 'us-central1'
 $Service = 'catchy-web'
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path

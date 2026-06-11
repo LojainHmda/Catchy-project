@@ -1,17 +1,23 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { cn } from '../lib/utils';
 
 const BottomNav = () => {
   const location = useLocation();
+  const { user } = useAuth();
   const { isRTL } = useLanguage();
 
   const active = (path: string) => location.pathname === path;
+  const accountPath = user ? '/orders' : '/login';
+  const accountActive = user
+    ? location.pathname.startsWith('/orders')
+    : location.pathname === '/login';
 
   return (
     <nav
-      className="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-5 py-3 bg-surface/90 backdrop-blur-md border-t border-outline-variant/30"
+      className="fixed bottom-0 left-0 z-50 flex w-full justify-around items-center border-t border-outline-variant/30 bg-surface/90 px-5 py-3 backdrop-blur-md sm:hidden"
       dir={isRTL ? 'rtl' : 'ltr'}
     >
       <Link
@@ -44,13 +50,18 @@ const BottomNav = () => {
       </button>
 
       <Link
-        to="/login"
+        to={accountPath}
         className={cn(
           'flex flex-col items-center justify-center transition-colors p-2',
-          active('/login') ? 'text-primary' : 'text-on-surface-variant'
+          accountActive ? 'text-primary' : 'text-on-surface-variant'
         )}
       >
-        <span className="material-symbols-outlined">person</span>
+        <span
+          className="material-symbols-outlined"
+          style={{ fontVariationSettings: accountActive ? "'FILL' 1" : "'FILL' 0" }}
+        >
+          person
+        </span>
       </Link>
     </nav>
   );

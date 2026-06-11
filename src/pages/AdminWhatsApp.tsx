@@ -166,7 +166,7 @@ const AdminWhatsApp = () => {
           <button
             type="button"
             onClick={() => setComposeOpen(true)}
-            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[#4CAF50] px-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#43a047]"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-catchy px-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-catchy-dark"
           >
             <Plus size={16} /> New
           </button>
@@ -208,7 +208,7 @@ const AdminWhatsApp = () => {
                       activePhone === c.phone && 'bg-green-50/60'
                     )}
                   >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#4CAF50]/10 text-[#4CAF50]">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-catchy/10 text-catchy">
                       <MessageCircle size={18} />
                     </span>
                     <span className="min-w-0 flex-1">
@@ -261,7 +261,7 @@ const AdminWhatsApp = () => {
                       className={cn(
                         'max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-sm',
                         m.direction === 'out'
-                          ? 'rounded-br-sm bg-[#4CAF50] text-white'
+                          ? 'rounded-br-sm bg-catchy text-white'
                           : 'rounded-bl-sm bg-white text-gray-900'
                       )}
                     >
@@ -293,13 +293,13 @@ const AdminWhatsApp = () => {
                   }}
                   rows={1}
                   placeholder="Type a message…"
-                  className="max-h-32 min-h-[40px] flex-1 resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 outline-none focus:border-[#4CAF50]"
+                  className="max-h-32 min-h-[40px] flex-1 resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 outline-none focus:border-catchy"
                 />
                 <button
                   type="button"
                   onClick={send}
                   disabled={sending || !draft.trim()}
-                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#4CAF50] text-white shadow-sm transition-colors hover:bg-[#43a047] disabled:opacity-50"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-catchy text-white shadow-sm transition-colors hover:bg-catchy-dark disabled:opacity-50"
                   aria-label="Send"
                 >
                   {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send size={18} />}
@@ -331,13 +331,13 @@ const AdminWhatsApp = () => {
               onKeyDown={(e) => e.key === 'Enter' && startConversation()}
               placeholder="e.g. 971585164944"
               inputMode="tel"
-              className="mt-1 h-10 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-900 outline-none focus:border-[#4CAF50]"
+              className="mt-1 h-10 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-900 outline-none focus:border-catchy"
             />
             <button
               type="button"
               onClick={startConversation}
               disabled={!normalizePhone(newPhone)}
-              className="mt-4 h-10 w-full rounded-lg bg-[#4CAF50] text-sm font-medium text-white transition-colors hover:bg-[#43a047] disabled:opacity-50"
+              className="mt-4 h-10 w-full rounded-lg bg-catchy text-sm font-medium text-white transition-colors hover:bg-catchy-dark disabled:opacity-50"
             >
               Start conversation
             </button>

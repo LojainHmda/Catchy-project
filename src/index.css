@@ -8,52 +8,52 @@
   --font-display: "Libre Caslon Text", serif;
   --font-body: "Manrope", sans-serif;
 
-  /* Legacy */
-  --color-catchy: #388e5d;
-  --color-catchy-dark: #1a1a1a;
+  /* Brand — synced with src/lib/brand.ts (client primary: #42aa77) */
+  --color-catchy: #42aa77;
+  --color-catchy-dark: #358f62;
 
-  /* New design palette */
-  --color-primary: #44615f;
+  /* Material-style palette (derived from brand primary) */
+  --color-primary: #42aa77;
   --color-on-primary: #ffffff;
-  --color-primary-container: #5d7a77;
-  --color-on-primary-container: #f3fffd;
-  --color-primary-fixed: #c9e9e5;
-  --color-primary-fixed-dim: #adcdc9;
-  --color-inverse-primary: #adcdc9;
-  --color-surface: #f4fbfa;
-  --color-surface-dim: #d4dbdb;
-  --color-surface-bright: #f4fbfa;
-  --color-surface-container: #e8efef;
-  --color-surface-container-low: #eef5f4;
-  --color-surface-container-high: #e3eae9;
-  --color-surface-container-highest: #dde4e3;
+  --color-primary-container: #5bba8c;
+  --color-on-primary-container: #e8f7ef;
+  --color-primary-fixed: #b8e8d0;
+  --color-primary-fixed-dim: #8fd4b0;
+  --color-inverse-primary: #8fd4b0;
+  --color-surface: #f2faf6;
+  --color-surface-dim: #c8ddd2;
+  --color-surface-bright: #f2faf6;
+  --color-surface-container: #e0f0e8;
+  --color-surface-container-low: #e8f5ee;
+  --color-surface-container-high: #d4e8de;
+  --color-surface-container-highest: #c8e0d4;
   --color-surface-container-lowest: #ffffff;
-  --color-surface-variant: #dde4e3;
-  --color-on-surface: #161d1d;
-  --color-on-surface-variant: #414847;
-  --color-inverse-surface: #2b3232;
-  --color-inverse-on-surface: #ebf2f2;
-  --color-secondary: #605e5a;
+  --color-surface-variant: #c8e0d4;
+  --color-on-surface: #1a3d2f;
+  --color-on-surface-variant: #3d5c4c;
+  --color-inverse-surface: #1f4032;
+  --color-inverse-on-surface: #e8f5ee;
+  --color-secondary: #4a6b5c;
   --color-on-secondary: #ffffff;
-  --color-secondary-container: #e6e2dd;
-  --color-secondary-fixed: #e6e2dd;
-  --color-secondary-fixed-dim: #c9c6c1;
-  --color-on-secondary-container: #666460;
-  --color-on-secondary-fixed: #1c1c19;
-  --color-on-secondary-fixed-variant: #484743;
-  --color-tertiary: #68594a;
+  --color-secondary-container: #d4e8de;
+  --color-secondary-fixed: #d4e8de;
+  --color-secondary-fixed-dim: #b4d0c0;
+  --color-on-secondary-container: #3d5c4c;
+  --color-on-secondary-fixed: #1a3d2f;
+  --color-on-secondary-fixed-variant: #384840;
+  --color-tertiary: #5a6040;
   --color-on-tertiary: #ffffff;
-  --color-tertiary-container: #827261;
-  --color-tertiary-fixed: #f4dfcb;
-  --color-tertiary-fixed-dim: #d7c3b0;
-  --color-on-tertiary-fixed: #241a0e;
-  --color-on-tertiary-fixed-variant: #524436;
-  --color-on-tertiary-container: #fffbff;
-  --color-outline: #717877;
-  --color-outline-variant: #c1c8c6;
-  --color-background: #f4fbfa;
-  --color-on-background: #161d1d;
-  --color-surface-tint: #476461;
+  --color-tertiary-container: #747860;
+  --color-tertiary-fixed: #e8f0c8;
+  --color-tertiary-fixed-dim: #ccd4b0;
+  --color-on-tertiary-fixed: #1a1e08;
+  --color-on-tertiary-fixed-variant: #484c2e;
+  --color-on-tertiary-container: #f8fff0;
+  --color-outline: #6aab88;
+  --color-outline-variant: #b0d4c0;
+  --color-background: #f2faf6;
+  --color-on-background: #1a3d2f;
+  --color-surface-tint: #42aa77;
   --color-error: #ba1a1a;
   --color-on-error: #ffffff;
   --color-error-container: #ffdad6;
@@ -128,6 +128,20 @@
     scrollbar-width: none;
   }
   
+  /* Phone-only hero: video aspect ratio + taller min-height */
+  .hero-section {
+    aspect-ratio: var(--hero-ar, 16 / 9);
+    min-height: 48svh;
+  }
+
+  /* Tablet + desktop: same full-height cinematic hero as large screens */
+  @media (min-width: 640px) {
+    .hero-section {
+      aspect-ratio: auto;
+      min-height: 0;
+    }
+  }
+
   .hero-overlay {
     background: linear-gradient(to bottom, rgba(0,0,0,0.2) 0%, transparent 60%, rgba(0,0,0,0.4) 100%);
   }
@@ -142,9 +156,9 @@
 
   .hero-mesh {
     background:
-      radial-gradient(ellipse 100% 80% at 50% -15%, rgba(56, 142, 93, 0.35), transparent 55%),
+      radial-gradient(ellipse 100% 80% at 50% -15%, rgba(66, 170, 119, 0.35), transparent 55%),
       radial-gradient(ellipse 50% 45% at 85% 40%, rgba(255, 255, 255, 0.12), transparent 50%),
-      radial-gradient(ellipse 45% 40% at 10% 65%, rgba(56, 142, 93, 0.2), transparent 50%);
+      radial-gradient(ellipse 45% 40% at 10% 65%, rgba(66, 170, 119, 0.2), transparent 50%);
   }
 
   .hero-grid-pattern {

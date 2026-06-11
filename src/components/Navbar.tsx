@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { useLanguage } from '../context/LanguageContext';
 import { cn } from '../lib/utils';
+import TickerBanner from './TickerBanner';
 
 const Navbar = () => {
   const location = useLocation();
@@ -23,6 +24,8 @@ const Navbar = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const isHome = location.pathname === '/';
+
   const navLinks = [
     { href: '/',        ar: 'الرئيسية',    en: 'Home' },
     { href: '/catalog', ar: 'المجموعات',  en: 'Collections' },
@@ -39,22 +42,23 @@ const Navbar = () => {
         style={{ fontFamily: 'var(--font-body)' }}
       >
         <span className="material-symbols-outlined align-middle mx-1" style={{ fontSize: '14px' }}>local_shipping</span>
-        {isAr ? 'توصيل مجاني للطلبيات فوق 300 ريال' : 'Free shipping on orders over 300 SAR'}
+        {isAr ? 'توصيل مجاني للطلبيات فوق 300 شيكل' : 'Free shipping on orders over 300 ILS'}
       </div>
 
       {/* Desktop header */}
       <header
         className={cn(
-          'sticky top-0 z-50 bg-white transition-shadow duration-300 hidden md:block',
+          'sticky top-0 z-50 bg-white transition-shadow duration-300 hidden sm:block',
           scrolled && 'shadow-sm'
         )}
+        dir={isRTL ? 'rtl' : 'ltr'}
       >
-        <div className="grid grid-cols-3 items-center px-10 py-4 max-w-screen-xl mx-auto">
-          {/* Left: cart + search */}
-          <div className="flex items-center gap-5">
+        <div className="relative mx-auto flex h-[4.25rem] max-w-screen-xl items-center px-6 lg:px-10">
+          {/* Start: cart + search */}
+          <div className="z-10 flex w-[38%] min-w-0 items-center gap-4 lg:w-[40%] lg:gap-5">
             <button
               onClick={openCart}
-              className="relative flex items-center gap-1 hover:opacity-70 transition-opacity"
+              className="relative flex shrink-0 items-center gap-1 hover:opacity-70 transition-opacity"
               aria-label={t('nav.cart')}
             >
               <span className="material-symbols-outlined text-on-surface" style={{ fontSize: '22px' }}>shopping_bag</span>
@@ -62,33 +66,28 @@ const Navbar = () => {
                 {cartCount}
               </span>
             </button>
-            <Link to="/catalog" aria-label="Search" className="hover:opacity-70 transition-opacity">
+            <Link to="/catalog" aria-label="Search" className="shrink-0 hover:opacity-70 transition-opacity">
               <span className="material-symbols-outlined text-on-surface" style={{ fontSize: '22px' }}>search</span>
             </Link>
           </div>
 
-          {/* Center: logo */}
-          <div className="flex justify-center">
-            <Link
-              to="/"
-              className="text-2xl tracking-[0.25em] text-primary select-none"
-              style={{ fontFamily: 'var(--font-display)' }}
-            >
-              CATCHY
-            </Link>
-          </div>
-
-          {/* Right: nav links */}
-          <nav
-            className="flex items-center justify-end gap-6"
-            dir={isRTL ? 'rtl' : 'ltr'}
+          {/* Center: logo — pinned so side nav never overlaps */}
+          <Link
+            to="/"
+            className="absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 px-3 text-2xl tracking-[0.25em] text-primary select-none"
+            style={{ fontFamily: 'var(--font-display)' }}
           >
+            CATCHY
+          </Link>
+
+          {/* End: nav links */}
+          <nav className="z-10 ms-auto flex w-[38%] min-w-0 items-center justify-start gap-2 overflow-hidden lg:w-[40%] lg:gap-4">
             {navLinks.map((link) => (
               <Link
                 key={link.ar}
                 to={link.href}
                 className={cn(
-                  'text-sm transition-colors hover:text-primary pb-0.5',
+                  'shrink-0 whitespace-nowrap text-sm transition-colors hover:text-primary pb-0.5',
                   location.pathname === link.href && link.href !== '/'
                     ? 'text-primary border-b border-primary'
                     : link.href === '/' && location.pathname === '/'
@@ -101,13 +100,17 @@ const Navbar = () => {
               </Link>
             ))}
             {user && role === 'admin' && (
-              <Link to="/admin" className="text-sm text-on-surface-variant hover:text-primary transition-colors" style={{ fontFamily: 'var(--font-body)' }}>
+              <Link
+                to="/admin"
+                className="shrink-0 whitespace-nowrap text-sm text-on-surface-variant hover:text-primary transition-colors"
+                style={{ fontFamily: 'var(--font-body)' }}
+              >
                 {t('nav.dashboard')}
               </Link>
             )}
             <button
               onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')}
-              className="text-xs border border-outline-variant rounded-full px-3 py-1 text-on-surface-variant hover:text-primary transition-colors"
+              className="shrink-0 rounded-full border border-outline-variant px-3 py-1 text-xs text-on-surface-variant hover:text-primary transition-colors"
               style={{ fontFamily: 'var(--font-body)' }}
             >
               {isAr ? 'EN' : 'ع'}
@@ -119,7 +122,7 @@ const Navbar = () => {
       {/* Mobile header */}
       <header
         className={cn(
-          'sticky top-0 z-50 bg-white transition-shadow duration-300 flex md:hidden justify-between items-center px-5 py-4',
+          'sticky top-0 z-50 bg-white transition-shadow duration-300 flex sm:hidden justify-between items-center px-5 py-4',
           scrolled && 'shadow-sm'
         )}
         dir={isRTL ? 'rtl' : 'ltr'}
@@ -145,9 +148,11 @@ const Navbar = () => {
         </div>
       </header>
 
+      {isHome ? <TickerBanner /> : null}
+
       {/* Mobile drawer */}
       {menuOpen && (
-        <div className="fixed inset-0 z-[200] flex md:hidden" dir={isRTL ? 'rtl' : 'ltr'}>
+        <div className="fixed inset-0 z-[200] flex sm:hidden" dir={isRTL ? 'rtl' : 'ltr'}>
           <div className="absolute inset-0 bg-black/40" onClick={() => setMenuOpen(false)} />
           <div className={cn('relative z-10 flex w-72 flex-col bg-white px-6 py-8 shadow-xl h-full', isRTL ? 'mr-auto' : 'ml-auto')}>
             <button onClick={() => setMenuOpen(false)} className="mb-8 self-start">
