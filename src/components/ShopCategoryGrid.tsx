@@ -36,6 +36,11 @@ export const SHOP_TILES: { category: string; image: string }[] = [
     image:
       'https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&q=85&w=900',
   },
+  {
+    category: 'Coordinates',
+    image:
+      'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=85&w=900',
+  },
 ];
 
 function normalizeCategory(c?: string) {

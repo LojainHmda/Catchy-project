@@ -19,8 +19,23 @@ import {
   stockForSelection,
   type SizeStock,
 } from '../productInventory';
+import { isCoordinateCartId, coordinateLookIdFromCart, validateCoordinateItemSizes, coordinateAvailableSets, formatCoordinateItemSizes } from '../coordinateCart';
+import { resolveCoordinate } from '../coordinateResolve';
+import { getShippingCost } from '../shippingZones';
 import { OrderError } from './orderErrors';
 import { firstProductImageUrl, parseOrderDocument, sanitizeStoredImageUrl } from './orderUtils';
+import { primaryCoordinateImage } from '../coordinateImages';
+
+const PRODUCTS_COLLECTION = 'products';
+const COORDINATE_LOOKS_COLLECTION = 'coordinate_looks';
+
+type DocSnap = Awaited<ReturnType<typeof getDoc>>;
+type WorkingInventory = { sizeStock: SizeStock; stock: number; sized: boolean };
+
+type CoordinateBundle = {
+  lookSnap: DocSnap;
+  resolved: NonNullable<ReturnType<typeof resolveCoordinate>>;
+};
 
 function readProductStockField(data: Record<string, unknown>): number | null {
   const raw = data.stock;
@@ -44,64 +59,166 @@ function firebaseErrorCode(error: unknown): string {
     : '';
 }
 
-type InventoryUpdate = {
-  productId: string;
-  stock: number;
-  sizeStock?: SizeStock;
-  sized: boolean;
-};
-
-async function applyInventoryUpdates(updates: InventoryUpdate[]): Promise<void> {
+async function applyInventoryUpdates(
+  updates: { productId: string; stock: number; sizeStock?: SizeStock; sized: boolean }[]
+): Promise<void> {
   for (const update of updates) {
     const payload: Record<string, unknown> = { stock: update.stock };
     if (update.sized && update.sizeStock) {
       payload.sizeStock = update.sizeStock;
     }
-    await updateDoc(doc(db, 'products', update.productId), payload);
+    await updateDoc(doc(db, PRODUCTS_COLLECTION, update.productId), payload);
   }
+}
+
+async function prepareCheckoutContext(cartItems: CartLineItem[]) {
+  const regularIds = [...new Set(cartItems.filter((i) => !isCoordinateCartId(i.id)).map((i) => i.id))];
+  const coordCartIds = [...new Set(cartItems.filter((i) => isCoordinateCartId(i.id)).map((i) => i.id))];
+
+  const productSnaps = new Map<string, DocSnap>();
+  await Promise.all(
+    regularIds.map(async (id) => {
+      productSnaps.set(id, await getDoc(doc(db, PRODUCTS_COLLECTION, id)));
+    })
+  );
+
+  const coordinateBundles = new Map<string, CoordinateBundle>();
+  await Promise.all(
+    coordCartIds.map(async (cartId) => {
+      const lookId = coordinateLookIdFromCart(cartId);
+      const lookSnap = await getDoc(doc(db, COORDINATE_LOOKS_COLLECTION, lookId));
+      if (!lookSnap.exists()) {
+        throw new OrderError('PRODUCT_MISSING', 'A coordinate set in your bag is no longer available.');
+      }
+      const lookData = lookSnap.data() as Record<string, unknown>;
+      const productIds = (lookData.productIds as string[]) ?? [];
+      const products: Record<string, unknown>[] = [];
+      for (const pid of productIds) {
+        if (!productSnaps.has(pid)) {
+          productSnaps.set(pid, await getDoc(doc(db, PRODUCTS_COLLECTION, pid)));
+        }
+        const snap = productSnaps.get(pid)!;
+        if (snap.exists()) products.push({ id: snap.id, ...snap.data() });
+      }
+
+      const resolved = resolveCoordinate(
+        {
+          productIds,
+          price: Number(lookData.price),
+          priceAutoSync: lookData.priceAutoSync !== false,
+        },
+        products
+      );
+      if (!resolved) {
+        throw new OrderError('PRODUCT_MISSING', 'Items in a coordinate set are no longer available.');
+      }
+      coordinateBundles.set(cartId, { lookSnap, resolved });
+    })
+  );
+
+  return { productSnaps, coordinateBundles };
 }
 
 function buildCheckoutPayload(
   cartItems: CartLineItem[],
-  productSnaps: Map<string, Awaited<ReturnType<typeof getDoc>>>
+  productSnaps: Map<string, DocSnap>,
+  coordinateBundles: Map<string, CoordinateBundle>
 ) {
-  const uniqueProductIds = [...new Set(cartItems.map((item) => item.id))];
+  const workingByProductId = new Map<string, WorkingInventory>();
+  const initialSnapsByProductId = new Map<string, DocSnap>();
+  const qtyRemovedByProductId = new Map<string, number>();
 
-  type WorkingInventory = { sizeStock: SizeStock; stock: number; sized: boolean };
-  const workingByProduct = new Map<string, WorkingInventory>();
-
-  for (const productId of uniqueProductIds) {
-    const snap = productSnaps.get(productId);
-    if (!snap?.exists()) {
-      const missing = cartItems.find((item) => item.id === productId);
-      throw new OrderError(
-        'PRODUCT_MISSING',
-        'A product in your bag is no longer available.',
-        missing?.name
-      );
+  const initWorking = (productId: string, snap: DocSnap) => {
+    if (workingByProductId.has(productId)) return;
+    if (!snap.exists()) {
+      throw new OrderError('PRODUCT_MISSING', 'A product in your bag is no longer available.');
     }
-
-    const data = snap.data() ?? {};
-    const { sizeStock, stock } = resolveProductInventory(data);
-    workingByProduct.set(productId, {
-      sizeStock,
+    const { sizeStock, stock } = resolveProductInventory(snap.data() ?? {});
+    workingByProductId.set(productId, {
+      sizeStock: { ...sizeStock },
       stock,
       sized: hasSizedInventory(sizeStock),
     });
-  }
+    initialSnapsByProductId.set(productId, snap);
+  };
+
+  for (const [id, snap] of productSnaps) initWorking(id, snap);
+
+  const bumpRemoved = (productId: string, qty: number) => {
+    qtyRemovedByProductId.set(productId, (qtyRemovedByProductId.get(productId) ?? 0) + qty);
+  };
 
   const lineItems = cartItems.map((cartItem) => {
+    if (isCoordinateCartId(cartItem.id)) {
+      const bundle = coordinateBundles.get(cartItem.id);
+      if (!bundle) {
+        throw new OrderError('PRODUCT_MISSING', `"${cartItem.name}" is no longer available.`, cartItem.name);
+      }
+      const { resolved, lookSnap } = bundle;
+      const itemSizes = cartItem.itemSizes ?? {};
+      const sizeError = validateCoordinateItemSizes(resolved.products, itemSizes);
+      if (sizeError) {
+        throw new OrderError('OUT_OF_STOCK', sizeError, cartItem.name);
+      }
+
+      const available = coordinateAvailableSets(resolved.products, itemSizes);
+      if (available < cartItem.quantity) {
+        throw new OrderError(
+          'OUT_OF_STOCK',
+          `Only ${available} left in stock for "${cartItem.name}".`,
+          cartItem.name
+        );
+      }
+
+      for (const product of resolved.products) {
+        const pid = String(product.id ?? '');
+        if (!pid) continue;
+        const working = workingByProductId.get(pid)!;
+        const perItemSize = itemSizes[pid]?.trim() || null;
+        try {
+          const next = decrementInventory(
+            working.sizeStock,
+            working.stock,
+            perItemSize,
+            cartItem.quantity
+          );
+          workingByProductId.set(pid, { ...next, sized: working.sized });
+          bumpRemoved(pid, cartItem.quantity);
+        } catch {
+          throw new OrderError('OUT_OF_STOCK', `Not enough stock for "${cartItem.name}".`, cartItem.name);
+        }
+      }
+
+      const lookData = (lookSnap.data() ?? {}) as Record<string, unknown>;
+      const sizeSummary = formatCoordinateItemSizes(itemSizes, resolved.products);
+      const lineName = sizeSummary ? `${cartItem.name} (${sizeSummary})` : cartItem.name;
+      const image =
+        sanitizeStoredImageUrl(cartItem.image) ||
+        sanitizeStoredImageUrl(
+          primaryCoordinateImage(lookData as { productIds?: string[]; image?: string; images?: string[] }, resolved.products)
+        );
+
+      return {
+        productId: cartItem.id,
+        name: lineName,
+        price: resolved.price,
+        quantity: cartItem.quantity,
+        image,
+        size: sizeSummary || null,
+        itemSizes,
+      };
+    }
+
     const snap = productSnaps.get(cartItem.id);
-    const data = (snap?.data() ?? {}) as Record<string, unknown>;
+    if (!snap?.exists()) {
+      throw new OrderError('PRODUCT_MISSING', `"${cartItem.name}" is no longer available.`, cartItem.name);
+    }
+    const data = snap.data() ?? {};
     const price = Number(data.price ?? cartItem.price);
-    const working = workingByProduct.get(cartItem.id)!;
+    const working = workingByProductId.get(cartItem.id)!;
 
     if (working.sized && !cartItem.size) {
-      throw new OrderError(
-        'OUT_OF_STOCK',
-        `Select a size for "${cartItem.name}".`,
-        cartItem.name
-      );
+      throw new OrderError('OUT_OF_STOCK', `Select a size for "${cartItem.name}".`, cartItem.name);
     }
 
     const available = stockForSelection(working.sizeStock, working.stock, cartItem.size);
@@ -116,24 +233,16 @@ function buildCheckoutPayload(
 
     try {
       const next = decrementInventory(working.sizeStock, working.stock, cartItem.size, cartItem.quantity);
-      workingByProduct.set(cartItem.id, {
-        sizeStock: next.sizeStock,
-        stock: next.stock,
-        sized: working.sized,
-      });
+      workingByProductId.set(cartItem.id, { ...next, sized: working.sized });
+      bumpRemoved(cartItem.id, cartItem.quantity);
     } catch {
-      throw new OrderError(
-        'OUT_OF_STOCK',
-        `Not enough stock for "${cartItem.name}".`,
-        cartItem.name
-      );
+      throw new OrderError('OUT_OF_STOCK', `Not enough stock for "${cartItem.name}".`, cartItem.name);
     }
 
     const lineName = cartItem.size ? `${cartItem.name} (${cartItem.size})` : cartItem.name;
-
     const image =
       sanitizeStoredImageUrl(cartItem.image) ||
-      sanitizeStoredImageUrl(firstProductImageUrl(data));
+      sanitizeStoredImageUrl(firstProductImageUrl(data as Record<string, unknown>));
 
     return {
       productId: cartItem.id,
@@ -145,13 +254,11 @@ function buildCheckoutPayload(
     };
   });
 
-  const inventoryUpdates: InventoryUpdate[] = uniqueProductIds.map((productId) => {
-    const working = workingByProduct.get(productId)!;
-    const snap = productSnaps.get(productId)!;
-    const data = (snap.data() ?? {}) as Record<string, unknown>;
-    const qtyRemoved = cartItems
-      .filter((item) => item.id === productId)
-      .reduce((sum, item) => sum + item.quantity, 0);
+  const inventoryUpdates = [...qtyRemovedByProductId.keys()].map((productId) => {
+    const working = workingByProductId.get(productId)!;
+    const snap = initialSnapsByProductId.get(productId)!;
+    const data = (snap.data?.() ?? {}) as Record<string, unknown>;
+    const qtyRemoved = qtyRemovedByProductId.get(productId) ?? 0;
 
     return {
       productId,
@@ -178,22 +285,17 @@ export async function placeOrderFromCart(
     throw new OrderError('EMPTY_CART', 'Your bag is empty.');
   }
 
-  const uniqueProductIds = [...new Set(cartItems.map((item) => item.id))];
-  const productSnaps = new Map(
-    await Promise.all(
-      uniqueProductIds.map(async (id) => {
-        const snap = await getDoc(doc(db, 'products', id));
-        return [id, snap] as const;
-      })
-    )
-  );
-
-  const { lineItems, inventoryUpdates, total, itemCount } = buildCheckoutPayload(
+  const { productSnaps, coordinateBundles } = await prepareCheckoutContext(cartItems);
+  const { lineItems, inventoryUpdates, total: subtotal, itemCount } = buildCheckoutPayload(
     cartItems,
-    productSnaps
+    productSnaps,
+    coordinateBundles
   );
 
   const delivery = customer.delivery;
+  const shippingCost = delivery?.deliveryZone ? getShippingCost(delivery.deliveryZone) : 0;
+  const total = subtotal + shippingCost;
+
   const orderDoc = await addDoc(collection(db, 'orders'), {
     userId: customer.uid,
     isGuest: false,
@@ -201,7 +303,10 @@ export async function placeOrderFromCart(
     customerName: delivery?.customerName ?? customer.displayName,
     customerPhone: delivery?.customerPhone ?? null,
     deliveryAddress: delivery?.deliveryAddress ?? null,
+    deliveryZone: delivery?.deliveryZone ?? null,
     status: 'pending',
+    subtotal,
+    shippingCost,
     total,
     itemCount,
     items: lineItems,
@@ -248,4 +353,33 @@ export async function updateOrderStatus(orderId: string, status: string): Promis
     status,
     updatedAt: serverTimestamp(),
   });
+}
+
+export type OrderCustomerDetailsUpdate = {
+  customerName?: string | null;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
+  deliveryAddress?: string | null;
+};
+
+export async function updateOrderCustomerDetails(
+  orderId: string,
+  details: OrderCustomerDetailsUpdate
+): Promise<void> {
+  const payload: Record<string, unknown> = { updatedAt: serverTimestamp() };
+
+  if (details.customerName !== undefined) {
+    payload.customerName = details.customerName?.trim() || null;
+  }
+  if (details.customerPhone !== undefined) {
+    payload.customerPhone = details.customerPhone?.trim() || null;
+  }
+  if (details.customerEmail !== undefined) {
+    payload.email = details.customerEmail?.trim() || null;
+  }
+  if (details.deliveryAddress !== undefined) {
+    payload.deliveryAddress = details.deliveryAddress?.trim() || null;
+  }
+
+  await updateDoc(doc(db, 'orders', orderId), payload);
 }

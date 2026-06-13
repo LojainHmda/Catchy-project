@@ -8,6 +8,7 @@ import { useCheckout } from '../hooks/useCheckout';
 import CartOrderSummary from './orders/CartOrderSummary';
 import { formatOrderMoney } from '../lib/orders';
 import { sortedSizeStockEntries } from '../lib/productInventory';
+import { isCoordinateCartId, coordinateLookIdFromCart } from '../lib/coordinateCart';
 import { cn } from '../lib/utils';
 
 type CartProductGroup = {
@@ -129,7 +130,14 @@ const CartPanel: React.FC<CartPanelProps> = ({ variant, onClose }) => {
         <AnimatePresence mode="popLayout">
           {productGroups.map((group) => {
             const groupTotal = group.lines.reduce((sum, line) => sum + line.price * line.quantity, 0);
-            const showSizeRows = group.lines.length > 1 || Boolean(group.lines[0]?.size);
+            const isCoord = isCoordinateCartId(group.productId);
+            const productHref = isCoord
+              ? `/coordinate/${coordinateLookIdFromCart(group.productId)}`
+              : `/product/${group.productId}`;
+            const showSizeRows =
+              group.lines.length > 1 ||
+              Boolean(group.lines[0]?.size) ||
+              Boolean(group.lines[0]?.itemSizeSummary);
 
             return (
               <motion.div
@@ -144,7 +152,7 @@ const CartPanel: React.FC<CartPanelProps> = ({ variant, onClose }) => {
                 )}
               >
                 <Link
-                  to={`/product/${group.productId}`}
+                  to={productHref}
                   onClick={closeDrawer}
                   className={cn(
                     'shrink-0 overflow-hidden bg-gray-50',
@@ -160,7 +168,7 @@ const CartPanel: React.FC<CartPanelProps> = ({ variant, onClose }) => {
                 </Link>
 
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  <Link to={`/product/${group.productId}`} onClick={closeDrawer} className="min-w-0 hover:text-catchy">
+                  <Link to={productHref} onClick={closeDrawer} className="min-w-0 hover:text-catchy">
                     <h3
                       className={cn(
                         'font-semibold leading-tight text-gray-900',
@@ -250,8 +258,8 @@ const CartPanel: React.FC<CartPanelProps> = ({ variant, onClose }) => {
                           key={line.lineKey}
                           className="flex items-center justify-between gap-2 rounded-md border border-gray-100 bg-gray-50/60 px-2 py-1.5"
                         >
-                          <p className="min-w-[3.5rem] text-[10px] font-semibold uppercase tracking-wide text-gray-500">
-                            {line.size ?? t('cart.oneSize')}
+                          <p className="min-w-0 text-[10px] font-medium leading-snug text-gray-500">
+                            {line.itemSizeSummary ?? line.size ?? t('cart.oneSize')}
                           </p>
                           {qtyControls}
                         </div>
@@ -302,6 +310,7 @@ const CartPanel: React.FC<CartPanelProps> = ({ variant, onClose }) => {
           defaultDelivery={defaultDelivery}
           isSignedIn={isSignedIn}
           showEmailField={!isSignedIn}
+          showShippingRates={isDrawer}
         />
       </div>
     </div>

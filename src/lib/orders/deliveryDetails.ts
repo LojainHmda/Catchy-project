@@ -1,9 +1,11 @@
 import type { DeliveryDetails } from '../../types/order';
+import { isShippingZoneId } from '../shippingZones';
 
 export type DeliveryFormValues = {
   customerName: string;
   customerPhone: string;
   deliveryAddress: string;
+  deliveryZone: string;
   email: string;
 };
 
@@ -20,6 +22,7 @@ export function emptyDeliveryForm(email = ''): DeliveryFormValues {
     customerName: '',
     customerPhone: '',
     deliveryAddress: '',
+    deliveryZone: '',
     email,
   };
 }
@@ -34,6 +37,11 @@ export function validateDeliveryDetails(values: DeliveryFormValues): DeliveryVal
   const digits = customerPhone.replace(/\D/g, '');
   if (digits.length < 9 || digits.length > 15) {
     return { ok: false, field: 'customerPhone', messageKey: 'cart.deliveryPhoneInvalid' };
+  }
+
+  const deliveryZone = values.deliveryZone.trim();
+  if (!isShippingZoneId(deliveryZone)) {
+    return { ok: false, field: 'deliveryZone', messageKey: 'cart.deliveryZoneRequired' };
   }
 
   const deliveryAddress = values.deliveryAddress.trim();
@@ -52,6 +60,7 @@ export function validateDeliveryDetails(values: DeliveryFormValues): DeliveryVal
       customerName,
       customerPhone,
       deliveryAddress,
+      deliveryZone,
       email: email || null,
     },
   };

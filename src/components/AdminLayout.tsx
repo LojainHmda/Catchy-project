@@ -14,7 +14,9 @@ import {
   MessageCircle,
   Menu,
   X,
+  Percent,
   Film,
+  LayoutGrid,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
@@ -61,6 +63,8 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { icon: ImageIcon, label: 'Hero Reels', path: '/admin/hero' },
     { icon: Film, label: 'Hero Video', path: '/admin/hero-video' },
     { icon: Package, label: 'Products', path: '/admin/products' },
+    { icon: Percent, label: 'Discounts', path: '/admin/discounts' },
+    { icon: LayoutGrid, label: 'Coordinates', path: '/admin/coordinates' },
     { icon: ClipboardList, label: 'Stock', path: '/admin/stock' },
     { icon: ShoppingCart, label: 'Orders', path: '/admin/orders' },
     { icon: Users, label: 'Customers', path: '/admin/customers' },
@@ -188,7 +192,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       <main
         className={cn(
           'min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto',
-          location.pathname === '/admin/hero' || location.pathname === '/admin/products'
+          location.pathname === '/admin/hero' || location.pathname === '/admin/products' || location.pathname === '/admin/discounts' || location.pathname === '/admin/coordinates'
             ? 'p-4 sm:p-5 md:p-6'
             : 'p-4 sm:p-6 md:p-10'
         )}

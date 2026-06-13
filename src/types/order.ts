@@ -12,6 +12,8 @@ export type CartLineItem = {
   image: string;
   stock: number;
   size?: string | null;
+  /** Per-product size picks for coordinate sets (productId → size). */
+  itemSizes?: Record<string, string>;
   lineKey: string;
 };
 
@@ -23,12 +25,14 @@ export type OrderLineItem = {
   image: string;
   lineTotal: number;
   size?: string | null;
+  itemSizes?: Record<string, string>;
 };
 
 export type DeliveryDetails = {
   customerName: string;
   customerPhone: string;
   deliveryAddress: string;
+  deliveryZone: string;
   email?: string | null;
 };
 
@@ -47,7 +51,10 @@ export type OrderRecord = {
   customerName: string | null;
   customerPhone: string | null;
   deliveryAddress: string | null;
+  deliveryZone: string | null;
   status: OrderStatus;
+  subtotal: number;
+  shippingCost: number;
   total: number;
   itemCount: number;
   createdAt: Date | null;

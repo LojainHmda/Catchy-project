@@ -1,5 +1,6 @@
 import type { OrderLineItem, OrderRecord, OrderStatus } from '../../types/order';
 import { ORDER_STATUSES } from '../../types/order';
+import { getShippingCost } from '../shippingZones';
 
 export const ORDER_STATUS_FLOW: OrderStatus[] = ['pending', 'processing', 'shipped', 'delivered'];
 
@@ -109,6 +110,17 @@ export function parseOrderDocument(
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const userId = String(data.userId ?? '');
   const isGuest = data.isGuest === true || userId === 'guest';
+  const itemsSubtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
+  const subtotal = Number(data.subtotal) || itemsSubtotal;
+  const deliveryZone =
+    typeof data.deliveryZone === 'string' && data.deliveryZone.trim() ? data.deliveryZone.trim() : null;
+  const shippingCost =
+    Number.isFinite(Number(data.shippingCost)) && data.shippingCost !== null && data.shippingCost !== undefined
+      ? Number(data.shippingCost)
+      : deliveryZone
+        ? getShippingCost(deliveryZone)
+        : 0;
+  const total = Number(data.total) || subtotal + shippingCost;
 
   return {
     id,
@@ -119,8 +131,11 @@ export function parseOrderDocument(
       profile?.displayName ?? (typeof data.customerName === 'string' ? data.customerName : null),
     customerPhone: typeof data.customerPhone === 'string' ? data.customerPhone : null,
     deliveryAddress: typeof data.deliveryAddress === 'string' ? data.deliveryAddress : null,
+    deliveryZone,
     status: normalizeOrderStatus(data.status),
-    total: Number(data.total) || items.reduce((sum, item) => sum + item.lineTotal, 0),
+    subtotal,
+    shippingCost,
+    total,
     itemCount,
     createdAt: toDate(data.createdAt),
     items,

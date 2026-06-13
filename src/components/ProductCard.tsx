@@ -3,12 +3,17 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { coerceProductImages, isRemoteImageUrl, PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
+import { getCatalogSaleMeta } from '../lib/catalogSale';
+import { ProductSaleBadge } from './ProductPriceDisplay';
 
 interface ProductCardProps {
   product: {
     id: string;
     name: string;
     price: number;
+    compareAtPrice?: number;
+    onSale?: boolean;
+    sale?: boolean;
     images?: string[];
     image?: string;
     category: string;
@@ -22,6 +27,8 @@ interface ProductCardProps {
 const ProductCard: React.FC<ProductCardProps> = ({ product, variant = 'default', autoPlay = false }) => {
   const isHero = variant === 'hero';
   const isCompact = variant === 'compact';
+  const saleMeta = getCatalogSaleMeta(product);
+  const onSale = saleMeta.onSale;
 
   const images = React.useMemo(() => {
     const list = coerceProductImages(product);
@@ -146,6 +153,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, variant = 'default',
             "absolute inset-0 pointer-events-none transition-opacity duration-500",
             isCompact ? "bg-catchy-dark/0 group-hover:bg-catchy-dark/[0.04]" : !isHero && "bg-black/5 opacity-0 group-hover:opacity-100"
           )} />
+
+          {!isHero && onSale ? (
+            <ProductSaleBadge
+              label="Sale"
+              percent={saleMeta.discountPercent}
+              className="left-2 top-2"
+            />
+          ) : null}
           
         </div>
       </Link>
@@ -165,8 +180,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, variant = 'default',
           <p className={cn(
             "font-sans tabular-nums tracking-tight",
             isCompact && "text-xs font-bold text-catchy-dark/85",
-            !isCompact && "text-xs font-semibold text-catchy-dark"
+            !isCompact && "text-xs font-semibold text-catchy-dark",
+            onSale && "text-red-600"
           )}>ILS {product.price}</p>
+          {onSale && saleMeta.compareAt != null ? (
+            <p className="text-[10px] tabular-nums text-gray-400 line-through">ILS {saleMeta.compareAt}</p>
+          ) : null}
           {Array.isArray(product.sizes) && product.sizes.length > 0 && (
             <div className="flex flex-wrap gap-0.5">
               {product.sizes.map((s) => (

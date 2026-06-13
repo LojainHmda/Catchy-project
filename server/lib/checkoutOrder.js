@@ -98,6 +98,12 @@ function validateDelivery(delivery) {
     return { ok: false, code: 'DELIVERY_INVALID', message: 'Please enter your full delivery address.' };
   }
 
+  const deliveryZone = String(delivery?.deliveryZone ?? '').trim();
+  const validZones = ['west_bank', 'jerusalem', 'abu_ghosh', 'inside_israel'];
+  if (!validZones.includes(deliveryZone)) {
+    return { ok: false, code: 'DELIVERY_INVALID', message: 'Please select a delivery area.' };
+  }
+
   const email = String(delivery?.email ?? '').trim();
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { ok: false, code: 'DELIVERY_INVALID', message: 'Please enter a valid email address.' };
@@ -109,6 +115,7 @@ function validateDelivery(delivery) {
       customerName,
       customerPhone,
       deliveryAddress,
+      deliveryZone,
       email: email || null,
     },
   };
@@ -218,8 +225,16 @@ export async function processGuestCheckout(db, { items, delivery }) {
         };
       });
 
-      const total = lineItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+      const subtotal = lineItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
       const itemCount = lineItems.reduce((sum, item) => sum + item.quantity, 0);
+      const shippingCosts = {
+        west_bank: 20,
+        jerusalem: 50,
+        abu_ghosh: 30,
+        inside_israel: 70,
+      };
+      const shippingCost = shippingCosts[deliveryCheck.details.deliveryZone] ?? 0;
+      const total = subtotal + shippingCost;
 
       for (const productId of uniqueProductIds) {
         const working = workingByProduct.get(productId);
@@ -237,7 +252,10 @@ export async function processGuestCheckout(db, { items, delivery }) {
         customerName: deliveryCheck.details.customerName,
         customerPhone: deliveryCheck.details.customerPhone,
         deliveryAddress: deliveryCheck.details.deliveryAddress,
+        deliveryZone: deliveryCheck.details.deliveryZone,
         status: 'pending',
+        subtotal,
+        shippingCost,
         total,
         itemCount,
         items: lineItems,

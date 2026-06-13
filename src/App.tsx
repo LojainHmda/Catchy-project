@@ -12,6 +12,8 @@ import Catalog from './pages/Catalog';
 import ProductDetail from './pages/ProductDetail';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminProducts from './pages/AdminProducts';
+import AdminDiscounts from './pages/AdminDiscounts';
+import AdminCoordinates from './pages/AdminCoordinates';
 import AdminStock from './pages/AdminStock';
 import AdminHero from './pages/AdminHero';
 import AdminHeroVideo from './pages/AdminHeroVideo';
@@ -19,6 +21,7 @@ import AdminCategoryTiles from './pages/AdminCategoryTiles';
 import AdminCustomers from './pages/AdminCustomers';
 import AdminOrders from './pages/AdminOrders';
 import AdminWhatsApp from './pages/AdminWhatsApp';
+import CoordinateDetail from './pages/CoordinateDetail';
 import AdminLayout from './components/AdminLayout';
 import Login from './pages/Login';
 import Cart from './pages/Cart';
@@ -52,6 +55,8 @@ const AppContent = () => {
         <Route path="/admin/hero-video" element={<AdminRoute><AdminHeroVideo /></AdminRoute>} />
         <Route path="/admin/category-tiles" element={<AdminRoute><AdminCategoryTiles /></AdminRoute>} />
         <Route path="/admin/products" element={<AdminRoute><AdminProducts /></AdminRoute>} />
+        <Route path="/admin/discounts" element={<AdminRoute><AdminDiscounts /></AdminRoute>} />
+        <Route path="/admin/coordinates" element={<AdminRoute><AdminCoordinates /></AdminRoute>} />
         <Route path="/admin/stock" element={<AdminRoute><AdminStock /></AdminRoute>} />
         <Route path="/admin/orders" element={<AdminRoute><AdminOrders /></AdminRoute>} />
         <Route path="/admin/customers" element={<AdminRoute><AdminCustomers /></AdminRoute>} />
@@ -66,6 +71,7 @@ const AppContent = () => {
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/catalog" element={<Catalog />} />
+                <Route path="/coordinate/:id" element={<CoordinateDetail />} />
                 <Route path="/product/:id" element={<ProductDetail />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/cart" element={<Cart />} />

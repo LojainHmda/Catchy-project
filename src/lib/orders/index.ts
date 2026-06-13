@@ -31,5 +31,7 @@ export {
   fetchOrderById,
   fetchOrdersForUser,
   placeOrderFromCart,
+  updateOrderCustomerDetails,
   updateOrderStatus,
 } from './orderService';
+export type { OrderCustomerDetailsUpdate } from './orderService';

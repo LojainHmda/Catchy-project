@@ -1,366 +1,335 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Search, Loader2 } from 'lucide-react';
-import { db, collection, getDocs } from '../firebase';
+import React, { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Search, Loader2, RefreshCw } from 'lucide-react';
+import { useOrdersList } from '../hooks/useOrdersList';
+import { formatOrderDate, formatOrderMoney } from '../lib/orders';
+import {
+  aggregateOrderCustomers,
+  shippingZoneLabel,
+  zoneOrderCounts,
+  type OrderCustomerSummary,
+} from '../lib/orders/orderCustomerSummary';
+import { SHIPPING_ZONES } from '../lib/shippingZones';
 import { cn } from '../lib/utils';
 
-type CustomerRecord = {
-  id: string;
-  email: string | null;
-  displayName: string | null;
-  role: string;
-  createdAt: Date | null;
-  orderCount: number;
-  totalSpent: number;
-  lastOrderAt: Date | null;
-};
+type ZoneFilter = 'all' | string;
+type StatusFilter = 'all' | 'new' | 'in_progress' | 'shipped';
 
-type RoleFilter = 'all' | 'customer' | 'admin';
-type SortKey = 'recent' | 'spent' | 'orders' | 'name';
+const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'new', label: 'New' },
+  { key: 'in_progress', label: 'In progress' },
+  { key: 'shipped', label: 'Shipped' },
+];
 
-function toDate(value: unknown): Date | null {
-  if (value && typeof value === 'object' && 'toDate' in value) {
-    const maybe = value as { toDate?: () => Date };
-    if (typeof maybe.toDate === 'function') return maybe.toDate();
+function StatusCountBadge({
+  count,
+  label,
+  tone,
+}: {
+  count: number;
+  label: string;
+  tone: 'new' | 'progress' | 'shipped';
+}) {
+  if (!count) {
+    return (
+      <span className="inline-flex min-w-[2rem] justify-center text-xs tabular-nums text-gray-300" title={label}>
+        —
+      </span>
+    );
   }
-  if (value instanceof Date) return value;
-  return null;
+
+  const toneClass = {
+    new: 'bg-orange-50 text-orange-800 ring-orange-600/20',
+    progress: 'bg-amber-50 text-amber-800 ring-amber-600/20',
+    shipped: 'bg-blue-50 text-blue-700 ring-blue-600/20',
+  }[tone];
+
+  return (
+    <span
+      title={label}
+      className={cn(
+        'inline-flex min-w-[2rem] items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ring-1 ring-inset',
+        toneClass
+      )}
+    >
+      {count}
+    </span>
+  );
 }
 
-function formatDate(d: Date | null): string {
-  if (!d) return '—';
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
-function formatMoney(n: number): string {
-  return `ILS ${n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function locationDisplay(row: OrderCustomerSummary): { primary: string; secondary: string | null } {
+  const primary = row.zones.length ? row.zones.join(', ') : 'Unknown zone';
+  const secondary = row.latestAddress;
+  return { primary, secondary };
 }
 
 const AdminCustomers = () => {
-  const [customers, setCustomers] = useState<CustomerRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { orders, loading, refreshing, reload } = useOrdersList('admin');
   const [searchTerm, setSearchTerm] = useState('');
-  const [roleFilter, setRoleFilter] = useState<RoleFilter>('customer');
-  const [sortBy, setSortBy] = useState<SortKey>('recent');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [zoneFilter, setZoneFilter] = useState<ZoneFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [usersSnap, ordersSnap] = await Promise.all([
-        getDocs(collection(db, 'users')),
-        getDocs(collection(db, 'orders')),
-      ]);
+  const customers = useMemo(() => aggregateOrderCustomers(orders), [orders]);
 
-      const orderStats = new Map<
-        string,
-        { count: number; spent: number; lastOrderAt: Date | null }
-      >();
+  const zoneCounts = useMemo(() => zoneOrderCounts(orders), [orders]);
 
-      ordersSnap.docs.forEach((docSnap) => {
-        const data = docSnap.data();
-        const uid = String(data.userId ?? '');
-        if (!uid) return;
-        const total = Number(data.total) || 0;
-        const orderDate = toDate(data.createdAt);
-        const prev = orderStats.get(uid) ?? { count: 0, spent: 0, lastOrderAt: null };
-        const lastOrderAt =
-          prev.lastOrderAt && orderDate
-            ? prev.lastOrderAt > orderDate
-              ? prev.lastOrderAt
-              : orderDate
-            : prev.lastOrderAt ?? orderDate;
-        orderStats.set(uid, {
-          count: prev.count + 1,
-          spent: prev.spent + total,
-          lastOrderAt,
-        });
-      });
-
-      const rows: CustomerRecord[] = usersSnap.docs.map((docSnap) => {
-        const data = docSnap.data();
-        const stats = orderStats.get(docSnap.id);
-        return {
-          id: docSnap.id,
-          email: (data.email as string) ?? null,
-          displayName: (data.displayName as string) ?? null,
-          role: String(data.role ?? 'customer'),
-          createdAt: toDate(data.createdAt),
-          orderCount: stats?.count ?? 0,
-          totalSpent: stats?.spent ?? 0,
-          lastOrderAt: stats?.lastOrderAt ?? null,
-        };
-      });
-
-      setCustomers(rows);
-      setSelectedId((prev) => prev ?? rows[0]?.id ?? null);
-    } catch (error) {
-      console.error('Error loading customers:', error);
-      setCustomers([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const statusCounts = useMemo(() => {
+    return {
+      all: customers.length,
+      new: customers.filter((c) => c.newCount > 0).length,
+      in_progress: customers.filter((c) => c.inProgressCount > 0).length,
+      shipped: customers.filter((c) => c.shippedCount > 0).length,
+    };
+  }, [customers]);
 
   const filtered = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    let list = customers.filter((c) => {
-      if (roleFilter === 'customer' && c.role === 'admin') return false;
-      if (roleFilter === 'admin' && c.role !== 'admin') return false;
+
+    return customers.filter((row) => {
+      if (zoneFilter !== 'all' && !row.zones.includes(zoneFilter)) return false;
+
+      if (statusFilter === 'new' && row.newCount === 0) return false;
+      if (statusFilter === 'in_progress' && row.inProgressCount === 0) return false;
+      if (statusFilter === 'shipped' && row.shippedCount === 0) return false;
+
       if (!q) return true;
+
       return (
-        c.id.toLowerCase().includes(q) ||
-        (c.email?.toLowerCase().includes(q) ?? false) ||
-        (c.displayName?.toLowerCase().includes(q) ?? false)
+        row.name.toLowerCase().includes(q) ||
+        (row.phone?.toLowerCase().includes(q) ?? false) ||
+        (row.email?.toLowerCase().includes(q) ?? false) ||
+        (row.latestAddress?.toLowerCase().includes(q) ?? false) ||
+        row.zones.some((zone) => zone.toLowerCase().includes(q)) ||
+        row.deliveryLocations.some((loc) => loc.toLowerCase().includes(q))
       );
     });
-
-    list = [...list].sort((a, b) => {
-      if (sortBy === 'name') {
-        return (a.displayName || a.email || '').localeCompare(b.displayName || b.email || '');
-      }
-      if (sortBy === 'spent') return b.totalSpent - a.totalSpent;
-      if (sortBy === 'orders') return b.orderCount - a.orderCount;
-      return (b.lastOrderAt?.getTime() ?? 0) - (a.lastOrderAt?.getTime() ?? 0);
-    });
-
-    return list;
-  }, [customers, searchTerm, roleFilter, sortBy]);
-
-  const selected = useMemo(
-    () =>
-      filtered.find((c) => c.id === selectedId) ??
-      customers.find((c) => c.id === selectedId) ??
-      null,
-    [filtered, customers, selectedId]
-  );
+  }, [customers, searchTerm, zoneFilter, statusFilter]);
 
   const summary = useMemo(() => {
-    const shoppers = customers.filter((c) => c.role !== 'admin');
-    const active = shoppers.filter((c) => c.orderCount > 0).length;
-    const revenue = shoppers.reduce((sum, c) => sum + c.totalSpent, 0);
-    return { total: shoppers.length, active, revenue };
-  }, [customers]);
+    const withOrders = customers.length;
+    const newOrders = orders.filter((o) => o.status === 'pending').length;
+    const inProgress = orders.filter((o) => o.status === 'processing').length;
+    const shipped = orders.filter((o) => o.status === 'shipped').length;
+    const zones = new Set(
+      orders.map((o) => shippingZoneLabel(o.deliveryZone)).filter(Boolean)
+    ).size;
+    return { withOrders, newOrders, inProgress, shipped, zones };
+  }, [customers, orders]);
 
-  const roleCounts = useMemo(() => {
-    const all = customers.length;
-    const customer = customers.filter((c) => c.role !== 'admin').length;
-    const admin = customers.filter((c) => c.role === 'admin').length;
-    return { all, customer, admin };
-  }, [customers]);
-
-  const roleFilters: { key: RoleFilter; label: string; count: number }[] = [
-    { key: 'customer', label: 'Customers', count: roleCounts.customer },
-    { key: 'admin', label: 'Admins', count: roleCounts.admin },
-    { key: 'all', label: 'All', count: roleCounts.all },
+  const zoneFilters: { key: ZoneFilter; label: string; count?: number }[] = [
+    { key: 'all', label: 'All zones', count: zoneCounts.all },
+    ...SHIPPING_ZONES.map((zone) => ({
+      key: shippingZoneLabel(zone.id) as string,
+      label: shippingZoneLabel(zone.id) as string,
+      count: zoneCounts[shippingZoneLabel(zone.id) as string] ?? 0,
+    })),
   ];
 
   return (
-    <div className="min-w-0">
+    <div className="min-w-0" dir="ltr">
       <header className="border-b border-gray-200 pb-4">
-        <h1 className="text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">Customers</h1>
-        <p className="mt-0.5 text-sm text-gray-500">Profiles, orders, and lifetime value.</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">
+              Customer summary
+            </h1>
+            <p className="mt-0.5 text-sm text-gray-500">
+              Customers who placed orders — search by name, phone, or delivery area.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => reload(true)}
+            disabled={loading || refreshing}
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={cn(refreshing && 'animate-spin')} />
+            Refresh
+          </button>
+        </div>
         <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
           <div className="flex gap-1.5">
-            <dt className="text-gray-500">Total</dt>
-            <dd className="font-medium tabular-nums text-gray-900">{summary.total}</dd>
+            <dt className="text-gray-500">Customers</dt>
+            <dd className="font-medium tabular-nums text-gray-900">{summary.withOrders}</dd>
           </div>
           <div className="flex gap-1.5">
-            <dt className="text-gray-500">With orders</dt>
-            <dd className="font-medium tabular-nums text-gray-900">{summary.active}</dd>
+            <dt className="text-gray-500">New</dt>
+            <dd className="font-medium tabular-nums text-orange-700">{summary.newOrders}</dd>
           </div>
           <div className="flex gap-1.5">
-            <dt className="text-gray-500">Revenue</dt>
-            <dd className="font-medium tabular-nums text-gray-900">{formatMoney(summary.revenue)}</dd>
+            <dt className="text-gray-500">In progress</dt>
+            <dd className="font-medium tabular-nums text-amber-700">{summary.inProgress}</dd>
+          </div>
+          <div className="flex gap-1.5">
+            <dt className="text-gray-500">Shipped</dt>
+            <dd className="font-medium tabular-nums text-blue-700">{summary.shipped}</dd>
+          </div>
+          <div className="flex gap-1.5">
+            <dt className="text-gray-500">Delivery zones</dt>
+            <dd className="font-medium tabular-nums text-gray-900">{summary.zones}</dd>
           </div>
         </dl>
       </header>
 
-      <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-start">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-col gap-2 border-b border-gray-200 pb-3 sm:flex-row sm:items-center">
-            <div className="relative min-w-0 flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <input
-                type="search"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search name, email, ID…"
-                className="h-9 w-full rounded-md border border-gray-200 bg-white pl-9 pr-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-400 focus:ring-0"
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-1">
-              {roleFilters.map((f) => (
-                <button
-                  key={f.key}
-                  type="button"
-                  onClick={() => setRoleFilter(f.key)}
-                  className={cn(
-                    'h-8 rounded-md px-2.5 text-xs font-medium transition-colors',
-                    roleFilter === f.key
-                      ? 'bg-gray-900 text-white'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  )}
-                >
-                  {f.label}
-                  <span className="ml-1 tabular-nums opacity-70">{f.count}</span>
-                </button>
-              ))}
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as SortKey)}
-                className="h-8 rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 outline-none focus:border-gray-400"
-                aria-label="Sort customers"
-              >
-                <option value="recent">Last order</option>
-                <option value="spent">Lifetime value</option>
-                <option value="orders">Orders</option>
-                <option value="name">Name</option>
-              </select>
-            </div>
+      <div className="mt-4">
+        <div className="flex flex-col gap-2 border-b border-gray-200 pb-3">
+          <div className="relative min-w-0">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search name, phone, address, zone…"
+              className="h-9 w-full rounded-md border border-gray-200 bg-white pl-9 pr-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-400 focus:ring-0"
+            />
           </div>
-
-          <div className="mt-0 overflow-hidden rounded-md border border-gray-200 bg-white">
-            {loading ? (
-              <div className="flex items-center justify-center gap-2 py-12 text-sm text-gray-500">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading…
-              </div>
-            ) : filtered.length === 0 ? (
-              <p className="py-10 text-center text-sm text-gray-500">No customers match your filters.</p>
-            ) : (
-              <>
-                <div className="hidden overflow-x-auto md:block">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-200 text-xs font-medium text-gray-500">
-                        <th className="px-4 py-2.5 font-medium">Customer</th>
-                        <th className="px-4 py-2.5 font-medium">Role</th>
-                        <th className="px-4 py-2.5 font-medium">Orders</th>
-                        <th className="px-4 py-2.5 font-medium">LTV</th>
-                        <th className="px-4 py-2.5 font-medium">Last order</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {filtered.map((row) => (
-                        <tr
-                          key={row.id}
-                          onClick={() => setSelectedId(row.id)}
-                          className={cn(
-                            'cursor-pointer transition-colors',
-                            selectedId === row.id ? 'bg-gray-50' : 'hover:bg-gray-50/60'
-                          )}
-                        >
-                          <td className="max-w-[14rem] px-4 py-2.5">
-                            <p className="truncate font-medium text-gray-900">
-                              {row.displayName || 'Unnamed'}
-                            </p>
-                            <p className="truncate text-xs text-gray-500">
-                              {row.email || row.id}
-                            </p>
-                          </td>
-                          <td className="px-4 py-2.5 text-xs capitalize text-gray-600">
-                            {row.role}
-                          </td>
-                          <td className="px-4 py-2.5 tabular-nums text-gray-900">{row.orderCount}</td>
-                          <td className="px-4 py-2.5 font-medium tabular-nums text-gray-900">
-                            {formatMoney(row.totalSpent)}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-2.5 text-xs text-gray-600">
-                            {formatDate(row.lastOrderAt)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <ul className="divide-y divide-gray-100 md:hidden">
-                  {filtered.map((row) => (
-                    <li key={row.id}>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedId(row.id)}
-                        className={cn(
-                          'flex w-full items-center justify-between gap-3 px-4 py-3 text-left',
-                          selectedId === row.id && 'bg-gray-50'
-                        )}
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-gray-900">
-                            {row.displayName || 'Unnamed'}
-                          </p>
-                          <p className="truncate text-xs text-gray-500">{row.email}</p>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <p className="text-sm font-medium tabular-nums text-gray-900">
-                            {formatMoney(row.totalSpent)}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {row.orderCount} orders
-                          </p>
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
+          <div className="flex flex-wrap gap-1">
+            {STATUS_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setStatusFilter(f.key)}
+                className={cn(
+                  'h-8 rounded-md px-2.5 text-xs font-medium transition-colors',
+                  statusFilter === f.key ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
+                )}
+              >
+                {f.label}
+                <span className="ml-1 tabular-nums opacity-70">{statusCounts[f.key]}</span>
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {zoneFilters.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setZoneFilter(f.key)}
+                className={cn(
+                  'h-8 rounded-md px-2.5 text-xs font-medium transition-colors',
+                  zoneFilter === f.key
+                    ? 'bg-catchy text-white'
+                    : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                )}
+              >
+                {f.label}
+                {f.count != null ? (
+                  <span className="ml-1 tabular-nums opacity-80">{f.count}</span>
+                ) : null}
+              </button>
+            ))}
           </div>
         </div>
 
-        <aside className="w-full shrink-0 border border-gray-200 bg-white lg:w-72 xl:w-80">
-          {selected ? (
-            <div className="p-4">
-              <div className="border-b border-gray-100 pb-3">
-                <p className="text-sm font-medium text-gray-900">
-                  {selected.displayName || 'Unnamed customer'}
-                </p>
-                <p className="mt-0.5 break-all text-xs text-gray-500">
-                  {selected.email || 'No email'}
-                </p>
-                <p className="mt-1 text-xs capitalize text-gray-600">{selected.role}</p>
+        <div className="relative mt-0 overflow-hidden rounded-md border border-gray-200 bg-white">
+          {refreshing ? (
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-0.5 overflow-hidden bg-gray-100">
+              <div className="h-full w-1/3 animate-pulse bg-catchy/60" />
+            </div>
+          ) : null}
+          {loading && orders.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-sm text-gray-500">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading…
+            </div>
+          ) : filtered.length === 0 ? (
+            <p className="py-10 text-center text-sm text-gray-500">No customers match your filters.</p>
+          ) : (
+            <>
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full min-w-[760px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-xs font-medium text-gray-500">
+                      <th className="px-4 py-2.5 font-medium">Customer</th>
+                      <th className="px-4 py-2.5 font-medium">Phone</th>
+                      <th className="px-4 py-2.5 font-medium">Delivery location</th>
+                      <th className="px-4 py-2.5 text-center font-medium">New</th>
+                      <th className="px-4 py-2.5 text-center font-medium">In progress</th>
+                      <th className="px-4 py-2.5 text-center font-medium">Shipped</th>
+                      <th className="px-4 py-2.5 text-right font-medium">Orders</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filtered.map((row) => {
+                      const { primary, secondary } = locationDisplay(row);
+                      return (
+                        <tr key={row.key} className="transition-colors hover:bg-gray-50/60">
+                          <td className="max-w-[12rem] px-4 py-2.5">
+                            <p className="truncate font-medium text-gray-900">{row.name}</p>
+                            {row.email ? (
+                              <p className="truncate text-xs text-gray-500">{row.email}</p>
+                            ) : null}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-2.5 text-gray-900" dir="ltr">
+                            {row.phone || '—'}
+                          </td>
+                          <td className="max-w-[16rem] px-4 py-2.5">
+                            <p className="truncate font-medium text-gray-900">{primary}</p>
+                            {secondary ? (
+                              <p className="truncate text-xs text-gray-500">{secondary}</p>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
+                            <StatusCountBadge count={row.newCount} label="New orders" tone="new" />
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
+                            <StatusCountBadge count={row.inProgressCount} label="In progress" tone="progress" />
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
+                            <StatusCountBadge count={row.shippedCount} label="Shipped" tone="shipped" />
+                          </td>
+                          <td className="px-4 py-2.5 text-right">
+                            <Link
+                              to="/admin/orders"
+                              className="font-medium tabular-nums text-catchy hover:underline"
+                              title="View orders"
+                            >
+                              {row.orderCount}
+                            </Link>
+                            <p className="text-[11px] tabular-nums text-gray-500">
+                              {formatOrderMoney(row.totalSpent)}
+                            </p>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
 
-              <dl className="space-y-2 border-b border-gray-100 py-3 text-sm">
-                <div className="flex justify-between gap-2">
-                  <dt className="text-gray-500">Orders</dt>
-                  <dd className="font-medium tabular-nums text-gray-900">{selected.orderCount}</dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-gray-500">Lifetime value</dt>
-                  <dd className="font-medium tabular-nums text-gray-900">
-                    {formatMoney(selected.totalSpent)}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-gray-500">Last order</dt>
-                  <dd className="text-gray-700">{formatDate(selected.lastOrderAt)}</dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-gray-500">Joined</dt>
-                  <dd className="text-gray-700">{formatDate(selected.createdAt)}</dd>
-                </div>
-              </dl>
-
-              {selected.email ? (
-                <a
-                  href={`mailto:${selected.email}`}
-                  className="mt-3 block text-xs font-medium text-gray-900 underline-offset-2 hover:underline"
-                >
-                  {selected.email}
-                </a>
-              ) : null}
-
-              <p className="mt-3 break-all font-mono text-[10px] text-gray-400">{selected.id}</p>
-            </div>
-          ) : (
-            <p className="p-4 text-sm text-gray-500">Select a customer to view details.</p>
+              <ul className="divide-y divide-gray-100 md:hidden">
+                {filtered.map((row) => {
+                  const { primary, secondary } = locationDisplay(row);
+                  return (
+                    <li key={row.key} className="px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-gray-900">{row.name}</p>
+                          <p className="truncate text-xs text-gray-500" dir="ltr">
+                            {row.phone || 'No phone'}
+                          </p>
+                        </div>
+                        <Link to="/admin/orders" className="shrink-0 text-sm font-medium text-catchy">
+                          {row.orderCount} orders
+                        </Link>
+                      </div>
+                      <p className="mt-1 truncate text-xs font-medium text-gray-800">{primary}</p>
+                      {secondary ? (
+                        <p className="truncate text-xs text-gray-500">{secondary}</p>
+                      ) : null}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <StatusCountBadge count={row.newCount} label="New" tone="new" />
+                        <StatusCountBadge count={row.inProgressCount} label="In progress" tone="progress" />
+                        <StatusCountBadge count={row.shippedCount} label="Shipped" tone="shipped" />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
           )}
-        </aside>
+        </div>
       </div>
     </div>
   );

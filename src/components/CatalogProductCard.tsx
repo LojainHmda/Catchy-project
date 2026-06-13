@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { coerceProductImages, isRemoteImageUrl, PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
+import { ProductSaleBadge } from './ProductPriceDisplay';
 
 export interface CatalogProductCardProps {
   product: {
@@ -14,6 +15,7 @@ export interface CatalogProductCardProps {
   };
   /** When set and greater than `price`, shows as sale with strikethrough compare price. */
   compareAtPrice?: number | null;
+  discountPercent?: number;
   saleLabel: string;
   /** Pre-translated line, e.g. "3 colors" */
   colorsLine: string;
@@ -22,6 +24,7 @@ export interface CatalogProductCardProps {
 const CatalogProductCard: React.FC<CatalogProductCardProps> = ({
   product,
   compareAtPrice,
+  discountPercent,
   saleLabel,
   colorsLine,
 }) => {
@@ -34,9 +37,11 @@ const CatalogProductCard: React.FC<CatalogProductCardProps> = ({
       <Link to={`/product/${product.id}`} className="block">
         <div className="relative aspect-[5/6] overflow-hidden rounded-md bg-neutral-100 ring-1 ring-black/[0.04]">
           {onSale && (
-            <span className="absolute left-1.5 top-1.5 z-[1] bg-red-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
-              {saleLabel}
-            </span>
+            <ProductSaleBadge
+              label={saleLabel}
+              percent={discountPercent}
+              className="left-1.5 top-1.5"
+            />
           )}
           <img
             src={src}
@@ -62,7 +67,14 @@ const CatalogProductCard: React.FC<CatalogProductCardProps> = ({
               {product.name}
             </span>
           </Link>
-          <span className="shrink-0 text-xs font-bold tabular-nums text-catchy-dark sm:text-[13px]">ILS {product.price}</span>
+          <span
+            className={cn(
+              'shrink-0 text-xs font-bold tabular-nums sm:text-[13px]',
+              onSale ? 'text-red-600' : 'text-catchy-dark'
+            )}
+          >
+            ILS {product.price}
+          </span>
         </div>
         <div dir="ltr" className="flex flex-row items-center justify-between gap-1.5 text-[11px] leading-tight text-gray-500">
           <div className="flex flex-wrap items-center gap-0.5">

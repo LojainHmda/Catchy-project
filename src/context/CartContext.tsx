@@ -7,6 +7,15 @@ import {
   resolveProductInventory,
   stockForSelection,
 } from '../lib/productInventory';
+import {
+  isCoordinateCartId,
+  coordinateLookIdFromCart,
+  coordinateLineKey,
+  coordinateAvailableSets,
+  formatCoordinateItemSizes,
+} from '../lib/coordinateCart';
+import { resolveCoordinate } from '../lib/coordinateResolve';
+import { primaryCoordinateImage } from '../lib/coordinateImages';
 
 export interface CartItem {
   id: string;
@@ -16,6 +25,8 @@ export interface CartItem {
   image: string;
   stock: number;
   size?: string | null;
+  itemSizes?: Record<string, string>;
+  itemSizeSummary?: string;
   lineKey: string;
 }
 
@@ -46,6 +57,17 @@ function normalizeCartItem(raw: unknown): CartItem | null {
   const id = String(item.id ?? '');
   if (!id) return null;
   const size = typeof item.size === 'string' && item.size.trim() ? item.size : null;
+  const itemSizes =
+    item.itemSizes && typeof item.itemSizes === 'object' && !Array.isArray(item.itemSizes)
+      ? (item.itemSizes as Record<string, string>)
+      : undefined;
+  const isCoord = isCoordinateCartId(id);
+  const lineKey =
+    typeof item.lineKey === 'string'
+      ? item.lineKey
+      : isCoord && itemSizes
+        ? coordinateLineKey(coordinateLookIdFromCart(id), itemSizes)
+        : cartLineKey(id, size);
   return {
     id,
     name: String(item.name ?? 'Item'),
@@ -54,7 +76,9 @@ function normalizeCartItem(raw: unknown): CartItem | null {
     image: typeof item.image === 'string' ? item.image : '',
     stock: Math.max(0, Number(item.stock) || 0),
     size,
-    lineKey: typeof item.lineKey === 'string' ? item.lineKey : cartLineKey(id, size),
+    itemSizes,
+    itemSizeSummary: typeof item.itemSizeSummary === 'string' ? item.itemSizeSummary : undefined,
+    lineKey,
   };
 }
 
@@ -117,12 +141,31 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const addToCart = (product: any, quantity: number, size?: string | null) => {
     if (!cartReady || authLoading || !product?.id) return;
     const activeOwner = ownerIdRef.current;
+    const isCoord = isCoordinateCartId(product.id);
+    const itemSizes = (product.itemSizes as Record<string, string> | undefined) ?? undefined;
 
-    const { sizeStock, stock: totalStock } = resolveProductInventory(product);
-    const sized = hasSizedInventory(sizeStock);
-    const selectedSize = size?.trim() || null;
-    const available = stockForSelection(sizeStock, totalStock, selectedSize);
-    const lineKey = cartLineKey(product.id, selectedSize);
+    let lineKey: string;
+    let available: number;
+    let cartSize: string | null = null;
+
+    if (isCoord && itemSizes) {
+      lineKey = coordinateLineKey(coordinateLookIdFromCart(product.id), itemSizes);
+      available = Math.max(0, Number(product.stock) || 0);
+    } else {
+      const { sizeStock, stock: totalStock } = resolveProductInventory(product);
+      const sized = hasSizedInventory(sizeStock);
+      const selectedSize = size?.trim() || null;
+      available = stockForSelection(sizeStock, totalStock, selectedSize);
+      lineKey = cartLineKey(product.id, selectedSize);
+      cartSize = sized ? selectedSize : null;
+    }
+
+    const itemSizeSummary =
+      typeof product.itemSizeSummary === 'string'
+        ? product.itemSizeSummary
+        : isCoord && itemSizes
+          ? Object.values(itemSizes).join(' · ')
+          : undefined;
 
     setCart((prevCart) => {
       const existingItem = prevCart.find((item) => item.lineKey === lineKey);
@@ -143,9 +186,11 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
               name: product.name,
               price: product.price,
               quantity: Math.min(available, quantity),
-              image: product.images?.[0] || '',
+              image: product.images?.[0] || product.image || '',
               stock: available,
-              size: sized ? selectedSize : null,
+              size: cartSize,
+              itemSizes: isCoord ? itemSizes : undefined,
+              itemSizeSummary,
               lineKey,
             },
           ];
@@ -197,6 +242,54 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await Promise.all(
         current.map(async (item) => {
           try {
+            if (isCoordinateCartId(item.id)) {
+              const lookSnap = await getDoc(
+                doc(db, 'coordinate_looks', coordinateLookIdFromCart(item.id))
+              );
+              if (!lookSnap.exists()) return null;
+              const lookData = lookSnap.data() ?? {};
+              const productIds = (lookData.productIds as string[]) ?? [];
+              const products = (
+                await Promise.all(
+                  productIds.map(async (pid) => {
+                    const snap = await getDoc(doc(db, 'products', pid));
+                    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+                  })
+                )
+              ).filter(Boolean);
+              const resolved = resolveCoordinate(
+                {
+                  productIds,
+                  price: Number(lookData.price),
+                  priceAutoSync: lookData.priceAutoSync !== false,
+                },
+                products as Record<string, unknown>[]
+              );
+              if (!resolved) return null;
+              const itemSizes = item.itemSizes ?? {};
+              const available = coordinateAvailableSets(products as Record<string, unknown>[], itemSizes);
+              if (available <= 0) return null;
+              const image =
+                item.image ||
+                primaryCoordinateImage(
+                  { productIds, image: '', images: [] },
+                  products as Record<string, unknown>[]
+                );
+              const itemSizeSummary =
+                item.itemSizeSummary ||
+                (Object.keys(itemSizes).length
+                  ? formatCoordinateItemSizes(itemSizes, products as Record<string, unknown>[])
+                  : undefined);
+              return {
+                ...item,
+                price: resolved.price,
+                stock: available,
+                quantity: Math.min(item.quantity, available),
+                image,
+                itemSizeSummary,
+              };
+            }
+
             const snap = await getDoc(doc(db, 'products', item.id));
             if (!snap.exists()) return null;
             const { sizeStock, stock } = resolveProductInventory(snap.data() ?? {});

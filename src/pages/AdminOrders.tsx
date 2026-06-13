@@ -1,13 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Loader2, RefreshCw, X } from 'lucide-react';
+import { Search, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
-import OrderLineItemsList from '../components/orders/OrderLineItemsList';
+import AdminOrderDetailModal from '../components/orders/AdminOrderDetailModal';
 import OrderStatusBadge from '../components/orders/OrderStatusBadge';
 import { useOrdersList } from '../hooks/useOrdersList';
 import {
   formatOrderDate,
-  formatOrderDateTime,
   formatOrderMoney,
   shortOrderId,
   updateOrderStatus,
@@ -101,7 +100,7 @@ const AdminOrders = () => {
   };
 
   const selectOrder = (id: string) => {
-    setSelectedId((prev) => (prev === id ? null : id));
+    setSelectedId(id);
     if (highlightId) {
       searchParams.delete('order');
       setSearchParams(searchParams, { replace: true });
@@ -150,8 +149,8 @@ const AdminOrders = () => {
         </dl>
       </header>
 
-      <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-start">
-        <div className="min-w-0 flex-1">
+      <div className="mt-4">
+        <div className="min-w-0">
           <div className="flex flex-col gap-2 border-b border-gray-200 pb-3 sm:flex-row sm:items-center">
             <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -271,78 +270,16 @@ const AdminOrders = () => {
             )}
           </div>
         </div>
-
-        {selected ? (
-          <aside className="w-full shrink-0 border border-gray-200 bg-white lg:w-80 xl:w-96">
-            <div className="p-4">
-              <div className="flex items-start justify-between gap-2 border-b border-gray-100 pb-3">
-                <div className="min-w-0">
-                  <p className="font-mono text-sm font-medium text-gray-900">{shortOrderId(selected.id)}</p>
-                  <p className="mt-0.5 text-xs text-gray-500">{formatOrderDateTime(selected.createdAt)}</p>
-                </div>
-                <div className="flex shrink-0 items-start gap-2">
-                  <p className="text-sm font-semibold tabular-nums text-gray-900">{formatOrderMoney(selected.total)}</p>
-                  <button
-                    type="button"
-                    onClick={closeDetail}
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-                    aria-label="Close order details"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-              </div>
-
-              <div className="border-b border-gray-100 py-3">
-                <p className="text-xs font-medium text-gray-500">Customer</p>
-                <p className="mt-0.5 text-sm font-medium text-gray-900">
-                  {selected.customerName || 'Guest'}
-                  {selected.isGuest ? (
-                    <span className="ms-2 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700">
-                      Guest
-                    </span>
-                  ) : null}
-                </p>
-                {selected.customerPhone ? (
-                  <p className="text-xs text-gray-600" dir="ltr">
-                    {selected.customerPhone}
-                  </p>
-                ) : null}
-                <p className="text-xs text-gray-600">{selected.customerEmail || (selected.isGuest ? '—' : selected.userId)}</p>
-                {selected.deliveryAddress ? (
-                  <p className="mt-2 text-xs leading-relaxed text-gray-700">{selected.deliveryAddress}</p>
-                ) : null}
-              </div>
-
-              <div className="border-b border-gray-100 py-3">
-                <label htmlFor="order-status" className="text-xs font-medium text-gray-500">
-                  Status
-                </label>
-                <select
-                  id="order-status"
-                  value={selected.status}
-                  disabled={savingStatus}
-                  onChange={(e) => handleStatusChange(selected.id, e.target.value as OrderStatus)}
-                  className="mt-1 h-9 w-full rounded-md border border-gray-200 bg-white px-2 text-sm text-gray-900 outline-none focus:border-gray-400"
-                >
-                  {ORDER_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {s.charAt(0).toUpperCase() + s.slice(1)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="pt-3">
-                <p className="mb-3 text-xs font-medium text-gray-500">
-                  Line items ({selected.itemCount})
-                </p>
-                <OrderLineItemsList items={selected.items} compact linkProducts />
-              </div>
-            </div>
-          </aside>
-        ) : null}
       </div>
+
+      <AdminOrderDetailModal
+        open={!!selected}
+        order={selected}
+        onClose={closeDetail}
+        onStatusChange={handleStatusChange}
+        onCustomerPatch={patchOrder}
+        savingStatus={savingStatus}
+      />
     </div>
   );
 };

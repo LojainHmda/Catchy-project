@@ -7,6 +7,7 @@ import { useOrder } from '../hooks/useOrder';
 import OrderLineItemsList from '../components/orders/OrderLineItemsList';
 import OrderStatusBadge from '../components/orders/OrderStatusBadge';
 import OrderStatusTimeline from '../components/orders/OrderStatusTimeline';
+import OrderTotalsBreakdown from '../components/orders/OrderTotalsBreakdown';
 import { formatOrderDateTime, formatOrderMoney, shortOrderId } from '../lib/orders';
 import { cn } from '../lib/utils';
 
@@ -107,22 +108,11 @@ const OrderDetail = () => {
         </section>
 
         <section className="rounded-2xl border border-gray-100 bg-surface-container/40 p-5">
-          <dl className="space-y-2 text-sm">
-            <div className="flex justify-between gap-3">
-              <dt className={cn('text-gray-500', isRTL && 'font-arabic')}>{t('cart.subtotal')}</dt>
-              <dd className="font-semibold tabular-nums text-gray-900">{formatOrderMoney(order.total, locale)}</dd>
-            </div>
-            <div className="flex justify-between gap-3">
-              <dt className={cn('text-gray-500', isRTL && 'font-arabic')}>{t('cart.shipping')}</dt>
-              <dd className="font-semibold text-emerald-600">{t('cart.shippingFree')}</dd>
-            </div>
-            <div className="flex justify-between gap-3 border-t border-gray-200 pt-2">
-              <dt className={cn('font-medium text-gray-900', isRTL && 'font-arabic')}>{t('cart.total')}</dt>
-              <dd className="text-base font-black tabular-nums text-gray-900">
-                {formatOrderMoney(order.total, locale)}
-              </dd>
-            </div>
-          </dl>
+          <OrderTotalsBreakdown
+            subtotal={order.subtotal}
+            shippingCost={order.shippingCost}
+            total={order.total}
+          />
         </section>
       </div>
 

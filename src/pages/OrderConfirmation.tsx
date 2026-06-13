@@ -6,15 +6,15 @@ import { useLanguage } from '../context/LanguageContext';
 import { useOrder } from '../hooks/useOrder';
 import OrderLineItemsList from '../components/orders/OrderLineItemsList';
 import OrderStatusBadge from '../components/orders/OrderStatusBadge';
-import { formatOrderMoney, shortOrderId } from '../lib/orders';
+import OrderTotalsBreakdown from '../components/orders/OrderTotalsBreakdown';
+import { shortOrderId } from '../lib/orders';
 import { cn } from '../lib/utils';
 
 const OrderConfirmation = () => {
   const { orderId } = useParams<{ orderId: string }>();
   const { user, loading: authLoading } = useAuth();
-  const { t, isRTL, language } = useLanguage();
+  const { t, isRTL } = useLanguage();
   const { order, loading, error } = useOrder(orderId);
-  const locale = language === 'ar' ? 'ar' : 'en-GB';
 
   if (authLoading) {
     return (
@@ -79,11 +79,12 @@ const OrderConfirmation = () => {
           <OrderStatusBadge status={order.status} />
         </div>
 
-        <div className="mb-5 flex items-center justify-between">
-          <span className={cn('text-sm text-gray-500', isRTL && 'font-arabic')}>{t('cart.total')}</span>
-          <span className="text-xl font-black tabular-nums text-gray-900">
-            {formatOrderMoney(order.total, locale)}
-          </span>
+        <div className="mb-5 border-b border-gray-100 pb-4">
+          <OrderTotalsBreakdown
+            subtotal={order.subtotal}
+            shippingCost={order.shippingCost}
+            total={order.total}
+          />
         </div>
 
         {order.deliveryAddress ? (

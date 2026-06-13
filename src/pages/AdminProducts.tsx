@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { db, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, serverTimestamp } from '../firebase';
-import { Plus, Search, Edit2, Trash2, X, Upload, Package, Loader2, RefreshCw, ImageIcon } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, X, Upload, Package, Loader2, RefreshCw, ImageIcon, Tag, Percent } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLanguage } from '../context/LanguageContext';
 import { CATEGORY_KEYS, CATEGORY_ICONS } from '../constants';
@@ -18,6 +18,17 @@ import {
   totalFromSizeStock,
   type SizeRow,
 } from '../lib/productInventory';
+import {
+  applyPercentToPrice,
+  buildDiscountUpdate,
+  buildRemoveDiscountUpdate,
+  discountFormFromProduct,
+  getDiscountPercent,
+  isProductOnSale,
+  parsePriceInput,
+  resolveDiscountFromForm,
+} from '../lib/productDiscount';
+import type { DiscountFormState } from '../types/product';
 
 const MAX_PRODUCT_IMAGES = 6;
 const MAX_FILE_BEFORE_COMPRESS = 15 * 1024 * 1024; // 15MB — compressed before save
@@ -49,6 +60,13 @@ const AdminProducts = () => {
     videos: [] as string[],
     sizeRows: [] as SizeRow[],
     lifestyleImage: '',
+    discount: {
+      enabled: false,
+      mode: 'percent' as DiscountFormState['mode'],
+      percent: '20',
+      compareAtPrice: '',
+      salePrice: '',
+    },
   });
 
   const [formData, setFormData] = useState(emptyForm);
@@ -157,6 +175,21 @@ const AdminProducts = () => {
       return;
     }
 
+    let finalPrice = price;
+    let discountFields: Record<string, unknown> = {};
+
+    if (formData.discount.enabled) {
+      const resolved = resolveDiscountFromForm(formData.discount, price);
+      if (!resolved.ok) {
+        toast.error('Invalid discount', { description: resolved.message });
+        return;
+      }
+      finalPrice = resolved.salePrice;
+      discountFields = buildDiscountUpdate(resolved.compareAt, resolved.salePrice);
+    } else if (editingProduct && isProductOnSale(editingProduct)) {
+      discountFields = buildRemoveDiscountUpdate({ ...editingProduct, price });
+    }
+
     const { sizeStock, error: sizeError } = rowsToSizeStock(formData.sizeRows);
     if (sizeError) {
       toast.error('Invalid inventory', { description: sizeError });
@@ -182,8 +215,9 @@ const AdminProducts = () => {
       sizes,
       sizeStock,
       lifestyleImage: formData.lifestyleImage || '',
-      price,
+      price: finalPrice,
       stock,
+      ...discountFields,
       updatedAt: serverTimestamp(),
       createdAt: editingProduct ? editingProduct.createdAt : serverTimestamp(),
     };
@@ -297,12 +331,15 @@ const AdminProducts = () => {
     setFormData({
       name: product.name,
       description: product.description ?? '',
-      price: product.price?.toString() ?? '',
+      price: isProductOnSale(product)
+        ? String(Number(product.compareAtPrice))
+        : product.price?.toString() ?? '',
       category: product.category ?? '',
       images: coerceProductImages(product),
       videos: Array.isArray(product.videos) ? product.videos : [],
       sizeRows: rows.length ? rows : [newSizeRow('One Size', String(product.stock ?? 0))],
       lifestyleImage: typeof product.lifestyleImage === 'string' ? product.lifestyleImage : '',
+      discount: discountFormFromProduct(product),
     });
     setCustomSizeInput('');
     setIsModalOpen(true);
@@ -561,8 +598,24 @@ const AdminProducts = () => {
                         <td className="px-4 py-2.5">
                           <ProductSizeStockChips sizeStock={sizeStock} totalStock={stock} />
                         </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 text-right font-medium tabular-nums text-gray-900">
-                          ILS {Number(product.price).toLocaleString('en-GB', { minimumFractionDigits: 2 })}
+                        <td className="whitespace-nowrap px-4 py-2.5 text-right">
+                          {isProductOnSale(product) ? (
+                            <div className="text-right">
+                              <p className="font-medium tabular-nums text-red-600">
+                                ILS {Number(product.price).toLocaleString('en-GB', { minimumFractionDigits: 2 })}
+                              </p>
+                              <p className="text-xs tabular-nums text-gray-400 line-through">
+                                ILS {Number(product.compareAtPrice).toLocaleString('en-GB', { minimumFractionDigits: 2 })}
+                              </p>
+                              <span className="inline-flex rounded bg-red-50 px-1.5 py-px text-[10px] font-bold text-red-600">
+                                -{getDiscountPercent(Number(product.compareAtPrice), Number(product.price))}%
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="font-medium tabular-nums text-gray-900">
+                              ILS {Number(product.price).toLocaleString('en-GB', { minimumFractionDigits: 2 })}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-2.5">
                           <div className="flex items-center justify-end gap-1">
@@ -702,16 +755,183 @@ const AdminProducts = () => {
                       </select>
                     </div>
                     <div>
-                      <label className={LABEL}>Price (ILS)</label>
+                      <label className={LABEL}>
+                        {formData.discount.enabled ? 'Original price (ILS)' : 'Price (ILS)'}
+                      </label>
                       <input
                         required
                         type="number"
                         step="0.01"
                         value={formData.price}
-                        onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          setFormData((prev) => {
+                            const patch: typeof prev = { ...prev, price: next };
+                            if (prev.discount.enabled && prev.discount.mode === 'percent') {
+                              patch.discount = { ...prev.discount, compareAtPrice: next };
+                            }
+                            return patch;
+                          });
+                        }}
                         className={INPUT}
                         placeholder="0.00"
                       />
+                    </div>
+                    <div className="rounded-md border border-gray-200 bg-gray-50/80 p-3">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <label className="flex items-center gap-2 text-xs font-medium text-gray-700">
+                          <Tag size={14} className="text-catchy" />
+                          On sale
+                        </label>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={formData.discount.enabled}
+                          onClick={() =>
+                            setFormData((prev) => {
+                              const enabled = !prev.discount.enabled;
+                              const base = prev.price || prev.discount.compareAtPrice;
+                              return {
+                                ...prev,
+                                discount: {
+                                  ...prev.discount,
+                                  enabled,
+                                  compareAtPrice: enabled ? base : prev.discount.compareAtPrice,
+                                  salePrice:
+                                    enabled && prev.discount.mode === 'percent'
+                                      ? String(
+                                          applyPercentToPrice(
+                                            parsePriceInput(base) ?? 0,
+                                            parseFloat(prev.discount.percent) || 20
+                                          )
+                                        )
+                                      : prev.discount.salePrice,
+                                },
+                              };
+                            })
+                          }
+                          className={cn(
+                            'relative h-5 w-9 rounded-full transition-colors',
+                            formData.discount.enabled ? 'bg-catchy' : 'bg-gray-300'
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              'absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform',
+                              formData.discount.enabled ? 'translate-x-4' : 'translate-x-0.5'
+                            )}
+                          />
+                        </button>
+                      </div>
+                      {formData.discount.enabled ? (
+                        <div className="space-y-2">
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  discount: { ...prev.discount, mode: 'percent' },
+                                }))
+                              }
+                              className={cn(
+                                'inline-flex h-7 flex-1 items-center justify-center gap-1 rounded-md text-[11px] font-medium transition',
+                                formData.discount.mode === 'percent'
+                                  ? 'bg-white text-catchy shadow-sm ring-1 ring-catchy/30'
+                                  : 'text-gray-500 hover:bg-white/80'
+                              )}
+                            >
+                              <Percent size={12} />
+                              Percentage
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  discount: { ...prev.discount, mode: 'manual' },
+                                }))
+                              }
+                              className={cn(
+                                'inline-flex h-7 flex-1 items-center justify-center gap-1 rounded-md text-[11px] font-medium transition',
+                                formData.discount.mode === 'manual'
+                                  ? 'bg-white text-catchy shadow-sm ring-1 ring-catchy/30'
+                                  : 'text-gray-500 hover:bg-white/80'
+                              )}
+                            >
+                              Manual prices
+                            </button>
+                          </div>
+                          {formData.discount.mode === 'percent' ? (
+                            <div>
+                              <label className={LABEL}>Discount %</label>
+                              <input
+                                type="number"
+                                min={1}
+                                max={99}
+                                value={formData.discount.percent}
+                                onChange={(e) =>
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    discount: { ...prev.discount, percent: e.target.value },
+                                  }))
+                                }
+                                className={INPUT}
+                              />
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className={LABEL}>Original (ILS)</label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={formData.discount.compareAtPrice}
+                                  onChange={(e) =>
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      discount: { ...prev.discount, compareAtPrice: e.target.value },
+                                    }))
+                                  }
+                                  className={INPUT}
+                                />
+                              </div>
+                              <div>
+                                <label className={LABEL}>Sale price (ILS)</label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={formData.discount.salePrice}
+                                  onChange={(e) =>
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      discount: { ...prev.discount, salePrice: e.target.value },
+                                    }))
+                                  }
+                                  className={INPUT}
+                                />
+                              </div>
+                            </div>
+                          )}
+                          {(() => {
+                            const resolved = resolveDiscountFromForm(formData.discount, parseFloat(formData.price) || 0);
+                            if (!resolved.ok) return null;
+                            const pct = getDiscountPercent(resolved.compareAt, resolved.salePrice);
+                            return (
+                              <p className="rounded-md bg-white px-2 py-1.5 text-[11px] text-gray-600 ring-1 ring-gray-200">
+                                Customer pays{' '}
+                                <strong className="text-red-600">ILS {resolved.salePrice.toFixed(2)}</strong>
+                                {' · '}
+                                <span className="line-through">ILS {resolved.compareAt.toFixed(2)}</span>
+                                {' · '}
+                                <strong className="text-red-600">-{pct}%</strong>
+                              </p>
+                            );
+                          })()}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-gray-500">Enable to show a sale price on catalog and product pages.</p>
+                      )}
                     </div>
                     <div className="rounded-md border border-gray-200 bg-gray-50/60 p-3">
                       <div className="mb-2 flex items-center justify-between gap-2">

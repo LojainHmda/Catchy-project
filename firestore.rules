@@ -1,5 +1,5 @@
 rules_version = '2';
-// Collections used by this app: products, hero_slides, site_settings/*, users/{uid}, orders/{id}
+// Collections used by this app: products, hero_slides, coordinate_looks, site_settings/*, users/{uid}, orders/{id}
 // After enabling Firestore in the Firebase console, deploy: npm run firebase:deploy:firestore
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -31,6 +31,17 @@ service cloud.firestore {
       return authEmail().matches('(?i)^(lojain2077@gmail\\.com|marei\\.eyad@gmail\\.com)$')
         || isSyntheticShortcutAdmin()
         || isDemoAdminShortcut();
+    }
+
+    /** Signed-in admin from Firestore profile (matches AuthContext role sync). */
+    function isProfileAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isCatalogAdmin() {
+      return isOwner() || isProfileAdmin();
     }
 
     match /users/{userId} {
@@ -86,6 +97,11 @@ service cloud.firestore {
 
     // WhatsApp conversation log. Admins read/write from the admin UI; inbound
     // messages are written server-side by the webhook (Admin SDK bypasses rules).
+    match /coordinate_looks/{id} {
+      allow read: if true;
+      allow create, update, delete: if isCatalogAdmin();
+    }
+
     match /whatsapp_messages/{id} {
       allow read, write: if isOwner();
     }

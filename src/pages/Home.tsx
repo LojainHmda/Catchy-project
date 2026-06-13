@@ -160,8 +160,8 @@ const Home = () => {
         {/* Overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
 
-        {/* Text content */}
-        <div className="absolute inset-0 flex flex-col items-center justify-end px-5 pb-8 text-center sm:pb-20">
+        {/* Text content — extra bottom padding on mobile so CTA clears the pulled-up arrivals card */}
+        <div className="absolute inset-0 flex flex-col items-center justify-end px-5 pb-16 text-center sm:pb-20">
           <h1
             className={cn('text-4xl leading-tight mb-3 text-white drop-shadow-lg', isAr ? 'font-arabic' : '')}
             style={!isAr ? { fontFamily: 'var(--font-display)' } : undefined}
@@ -189,7 +189,7 @@ const Home = () => {
       </section>
 
       {/* ── Latest Arrivals (pulled up over hero to cover the video watermark) ── */}
-      <section className="relative z-10 -mt-8 rounded-t-[2rem] bg-surface px-5 pt-10 mb-12 sm:-mt-16">
+      <section className="relative z-10 -mt-5 rounded-t-[2rem] bg-surface px-5 pt-10 mb-12 sm:-mt-16">
         <h2
           className={cn('text-xl text-primary text-center mb-8', isAr ? 'font-arabic' : '')}
           style={!isAr ? { fontFamily: 'var(--font-display)' } : undefined}
