@@ -88,34 +88,32 @@
   }
 
   /*
-   * Mobile Arabic (Cairo): Tailwind tracking-* adds letter-spacing and breaks glyph joining
-   * (e.g. ط + ي). Desktop (md+) unchanged. Admin [dir="ltr"] subtree reverts so English UI stays the same.
+   * Arabic (Cairo): synthetic font-black (900) and letter-spacing break glyph joining / add kashida.
+   * Desktop + mobile. Admin [dir="ltr"] subtree reverts so English UI stays the same.
    */
-  @media (max-width: 767px) {
-    [dir="rtl"] {
-      font-feature-settings: "calt" 1, "liga" 1, "rlig" 1;
-      -webkit-font-feature-settings: "calt" 1, "liga" 1, "rlig" 1;
-      font-variant-ligatures: common-ligatures contextual;
-      font-kerning: auto;
-      text-rendering: auto;
-      letter-spacing: normal;
-      word-spacing: normal;
-    }
+  [dir="rtl"] {
+    font-feature-settings: "calt" 1, "liga" 1, "rlig" 1;
+    -webkit-font-feature-settings: "calt" 1, "liga" 1, "rlig" 1;
+    font-variant-ligatures: common-ligatures contextual;
+    font-kerning: auto;
+    text-rendering: auto;
+    letter-spacing: normal;
+    word-spacing: normal;
+  }
 
-    [dir="rtl"] * {
-      letter-spacing: normal !important;
-      word-spacing: normal !important;
-    }
+  [dir="rtl"] * {
+    letter-spacing: normal !important;
+    word-spacing: normal !important;
+  }
 
-    [dir="rtl"] [dir="ltr"],
-    [dir="rtl"] [dir="ltr"] * {
-      letter-spacing: revert !important;
-      word-spacing: revert !important;
-      font-feature-settings: revert !important;
-      -webkit-font-feature-settings: revert !important;
-      font-variant-ligatures: revert !important;
-      text-rendering: revert !important;
-    }
+  [dir="rtl"] [dir="ltr"],
+  [dir="rtl"] [dir="ltr"] * {
+    letter-spacing: revert !important;
+    word-spacing: revert !important;
+    font-feature-settings: revert !important;
+    -webkit-font-feature-settings: revert !important;
+    font-variant-ligatures: revert !important;
+    text-rendering: revert !important;
   }
 }
 

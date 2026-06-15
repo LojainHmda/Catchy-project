@@ -7,6 +7,9 @@ type GuestCheckoutPayload = {
     name: string;
     quantity: number;
     size?: string | null;
+    colorId?: string | null;
+    colorName?: string | null;
+    image?: string;
   }>;
   delivery: DeliveryDetails;
 };
@@ -25,6 +28,9 @@ export async function placeGuestOrderFromCart(
       name: item.name,
       quantity: item.quantity,
       size: item.size ?? null,
+      colorId: item.colorId ?? null,
+      colorName: item.colorName ?? null,
+      image: item.image,
     })),
     delivery,
   };

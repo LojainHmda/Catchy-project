@@ -30,10 +30,61 @@ function totalFromSizeStock(sizeStock) {
   return Object.values(sizeStock).reduce((sum, n) => sum + Math.max(0, n), 0);
 }
 
+function parseColorVariants(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const id = typeof entry.id === 'string' ? entry.id.trim() : '';
+      const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+      if (!id || !name) return null;
+      const images = Array.isArray(entry.images)
+        ? entry.images.filter((u) => typeof u === 'string' && u.trim().length > 12)
+        : [];
+      return {
+        id,
+        name,
+        nameAr: typeof entry.nameAr === 'string' ? entry.nameAr.trim() : undefined,
+        hex: typeof entry.hex === 'string' ? entry.hex.trim() : undefined,
+        images,
+        sizeStock: parseSizeStock(entry.sizeStock),
+      };
+    })
+    .filter(Boolean);
+}
+
+function aggregateFromVariants(variants) {
+  const sizeStock = {};
+  variants.forEach((variant) => {
+    Object.entries(variant.sizeStock).forEach(([size, qty]) => {
+      sizeStock[size] = (sizeStock[size] ?? 0) + Math.max(0, qty);
+    });
+  });
+  const defaultVariant = variants[0];
+  return {
+    stock: totalFromSizeStock(sizeStock),
+    sizeStock,
+    colorVariants: variants,
+    hasVariants: true,
+    defaultVariant,
+  };
+}
+
 function resolveProductInventory(data) {
+  const colorVariants = parseColorVariants(data.colorVariants);
+  if (colorVariants.length) {
+    const agg = aggregateFromVariants(colorVariants);
+    return {
+      sizeStock: agg.sizeStock,
+      stock: agg.stock,
+      colorVariants: agg.colorVariants,
+      hasVariants: true,
+    };
+  }
+
   const parsed = parseSizeStock(data.sizeStock);
   if (Object.keys(parsed).length > 0) {
-    return { sizeStock: parsed, stock: totalFromSizeStock(parsed) };
+    return { sizeStock: parsed, stock: totalFromSizeStock(parsed), colorVariants: [], hasVariants: false };
   }
 
   const legacySizes = Array.isArray(data.sizes)
@@ -42,14 +93,38 @@ function resolveProductInventory(data) {
   const legacyStock = Math.max(0, Math.floor(Number(data.stock) || 0));
 
   if (legacySizes.length === 0) {
-    return { sizeStock: {}, stock: legacyStock };
+    return { sizeStock: {}, stock: legacyStock, colorVariants: [], hasVariants: false };
   }
 
   const sizeStock = {};
   legacySizes.forEach((size) => {
     sizeStock[size] = 0;
   });
-  return { sizeStock, stock: legacyStock };
+  return { sizeStock, stock: legacyStock, colorVariants: [], hasVariants: false };
+}
+
+function decrementColorVariants(variants, colorId, size, quantity) {
+  const idx = variants.findIndex((v) => v.id === colorId);
+  if (idx < 0) throw new Error('COLOR_REQUIRED');
+  const variant = variants[idx];
+  const sizeStock = { ...variant.sizeStock };
+  if (!size) throw new Error('SIZE_REQUIRED');
+  const current = Math.max(0, sizeStock[size] ?? 0);
+  if (current < quantity) throw new Error('OUT_OF_STOCK');
+  sizeStock[size] = current - quantity;
+  const next = [...variants];
+  next[idx] = { ...variant, sizeStock };
+  return next;
+}
+
+function reaggregateVariants(variants) {
+  const sizeStock = {};
+  variants.forEach((variant) => {
+    Object.entries(variant.sizeStock).forEach(([size, qty]) => {
+      sizeStock[size] = (sizeStock[size] ?? 0) + Math.max(0, qty);
+    });
+  });
+  return { sizeStock, stock: totalFromSizeStock(sizeStock), colorVariants: variants };
 }
 
 function hasSizedInventory(sizeStock) {
@@ -129,6 +204,9 @@ function normalizeCartItems(items) {
       name: String(item?.name ?? 'Item').trim(),
       quantity: Math.max(1, Math.floor(Number(item?.quantity) || 1)),
       size: typeof item?.size === 'string' && item.size.trim() ? item.size.trim() : null,
+      colorId: typeof item?.colorId === 'string' && item.colorId.trim() ? item.colorId.trim() : null,
+      colorName: typeof item?.colorName === 'string' && item.colorName.trim() ? item.colorName.trim() : null,
+      image: typeof item?.image === 'string' ? item.image.trim() : '',
     }))
     .filter((item) => item.id.length > 0);
 }
@@ -167,11 +245,13 @@ export async function processGuestCheckout(db, { items, delivery }) {
           throw err;
         }
         const data = snap.data() ?? {};
-        const { sizeStock, stock } = resolveProductInventory(data);
+        const inventory = resolveProductInventory(data);
         workingByProduct.set(productId, {
-          sizeStock,
-          stock,
-          sized: hasSizedInventory(sizeStock),
+          sizeStock: inventory.sizeStock,
+          stock: inventory.stock,
+          sized: hasSizedInventory(inventory.sizeStock),
+          hasVariants: inventory.hasVariants,
+          colorVariants: inventory.colorVariants,
         });
       }
 
@@ -181,13 +261,25 @@ export async function processGuestCheckout(db, { items, delivery }) {
         const price = Number(data.price) || 0;
         const working = workingByProduct.get(cartItem.id);
 
+        if (working.hasVariants && !cartItem.colorId) {
+          const err = new Error('OUT_OF_STOCK');
+          err.productName = cartItem.name;
+          throw err;
+        }
+
         if (working.sized && !cartItem.size) {
           const err = new Error('OUT_OF_STOCK');
           err.productName = cartItem.name;
           throw err;
         }
 
-        const available = stockForSelection(working.sizeStock, working.stock, cartItem.size);
+        let available = stockForSelection(working.sizeStock, working.stock, cartItem.size);
+        if (working.hasVariants && cartItem.colorId && working.colorVariants?.length) {
+          const variant = working.colorVariants.find((v) => v.id === cartItem.colorId);
+          available = variant
+            ? stockForSelection(variant.sizeStock, totalFromSizeStock(variant.sizeStock), cartItem.size)
+            : 0;
+        }
         if (available < cartItem.quantity) {
           const err = new Error('OUT_OF_STOCK');
           err.productName = cartItem.name;
@@ -195,25 +287,46 @@ export async function processGuestCheckout(db, { items, delivery }) {
         }
 
         try {
-          const next = decrementInventory(
-            working.sizeStock,
-            working.stock,
-            cartItem.size,
-            cartItem.quantity
-          );
-          workingByProduct.set(cartItem.id, {
-            sizeStock: next.sizeStock,
-            stock: next.stock,
-            sized: working.sized,
-          });
+          if (working.hasVariants && cartItem.colorId && working.colorVariants?.length) {
+            const nextVariants = decrementColorVariants(
+              working.colorVariants,
+              cartItem.colorId,
+              cartItem.size,
+              cartItem.quantity
+            );
+            const agg = reaggregateVariants(nextVariants);
+            workingByProduct.set(cartItem.id, {
+              ...working,
+              colorVariants: agg.colorVariants,
+              sizeStock: agg.sizeStock,
+              stock: agg.stock,
+            });
+          } else {
+            const next = decrementInventory(
+              working.sizeStock,
+              working.stock,
+              cartItem.size,
+              cartItem.quantity
+            );
+            workingByProduct.set(cartItem.id, {
+              ...working,
+              sizeStock: next.sizeStock,
+              stock: next.stock,
+            });
+          }
         } catch {
           const err = new Error('OUT_OF_STOCK');
           err.productName = cartItem.name;
           throw err;
         }
 
-        const lineName = cartItem.size ? `${cartItem.name} (${cartItem.size})` : cartItem.name;
-        const image = sanitizeStoredImageUrl(firstProductImageUrl(data));
+        const colorPart = cartItem.colorName ? `${cartItem.colorName}` : '';
+        const sizePart = cartItem.size ?? '';
+        const variantPart = [colorPart, sizePart].filter(Boolean).join(' / ');
+        const lineName = variantPart ? `${cartItem.name} (${variantPart})` : cartItem.name;
+        const image =
+          sanitizeStoredImageUrl(cartItem.image) ||
+          sanitizeStoredImageUrl(firstProductImageUrl(data));
 
         return {
           productId: cartItem.id,
@@ -222,6 +335,8 @@ export async function processGuestCheckout(db, { items, delivery }) {
           quantity: cartItem.quantity,
           image,
           size: cartItem.size,
+          colorId: cartItem.colorId,
+          colorName: cartItem.colorName,
         };
       });
 
@@ -241,6 +356,9 @@ export async function processGuestCheckout(db, { items, delivery }) {
         const ref = db.collection('products').doc(productId);
         const payload = { stock: working.stock };
         if (working.sized) payload.sizeStock = working.sizeStock;
+        if (working.hasVariants && working.colorVariants?.length) {
+          payload.colorVariants = working.colorVariants;
+        }
         tx.update(ref, payload);
       }
 
@@ -277,7 +395,7 @@ export async function processGuestCheckout(db, { items, delivery }) {
         productName: error.productName,
       };
     }
-    if (code === 'OUT_OF_STOCK' || code === 'SIZE_REQUIRED') {
+    if (code === 'OUT_OF_STOCK' || code === 'SIZE_REQUIRED' || code === 'COLOR_REQUIRED') {
       return {
         ok: false,
         code: 'OUT_OF_STOCK',

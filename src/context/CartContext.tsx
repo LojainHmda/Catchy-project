@@ -4,9 +4,9 @@ import { useAuth } from './AuthContext';
 import {
   cartLineKey,
   hasSizedInventory,
-  resolveProductInventory,
   stockForSelection,
 } from '../lib/productInventory';
+import { resolveVariantSelection } from '../lib/productVariants';
 import {
   isCoordinateCartId,
   coordinateLookIdFromCart,
@@ -25,6 +25,8 @@ export interface CartItem {
   image: string;
   stock: number;
   size?: string | null;
+  colorId?: string | null;
+  colorName?: string | null;
   itemSizes?: Record<string, string>;
   itemSizeSummary?: string;
   lineKey: string;
@@ -32,7 +34,13 @@ export interface CartItem {
 
 interface CartContextType {
   cart: CartItem[];
-  addToCart: (product: any, quantity: number, size?: string | null) => void;
+  addToCart: (
+    product: any,
+    quantity: number,
+    size?: string | null,
+    colorId?: string | null,
+    colorName?: string | null
+  ) => void;
   removeFromCart: (lineKey: string) => void;
   updateQuantity: (lineKey: string, quantity: number) => void;
   clearCart: () => void;
@@ -57,6 +65,8 @@ function normalizeCartItem(raw: unknown): CartItem | null {
   const id = String(item.id ?? '');
   if (!id) return null;
   const size = typeof item.size === 'string' && item.size.trim() ? item.size : null;
+  const colorId = typeof item.colorId === 'string' && item.colorId.trim() ? item.colorId : null;
+  const colorName = typeof item.colorName === 'string' && item.colorName.trim() ? item.colorName : null;
   const itemSizes =
     item.itemSizes && typeof item.itemSizes === 'object' && !Array.isArray(item.itemSizes)
       ? (item.itemSizes as Record<string, string>)
@@ -67,7 +77,7 @@ function normalizeCartItem(raw: unknown): CartItem | null {
       ? item.lineKey
       : isCoord && itemSizes
         ? coordinateLineKey(coordinateLookIdFromCart(id), itemSizes)
-        : cartLineKey(id, size);
+        : cartLineKey(id, size, colorId);
   return {
     id,
     name: String(item.name ?? 'Item'),
@@ -76,6 +86,8 @@ function normalizeCartItem(raw: unknown): CartItem | null {
     image: typeof item.image === 'string' ? item.image : '',
     stock: Math.max(0, Number(item.stock) || 0),
     size,
+    colorId,
+    colorName,
     itemSizes,
     itemSizeSummary: typeof item.itemSizeSummary === 'string' ? item.itemSizeSummary : undefined,
     lineKey,
@@ -138,7 +150,13 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCartReady(true);
   }, [authLoading, ownerId, persistCart]);
 
-  const addToCart = (product: any, quantity: number, size?: string | null) => {
+  const addToCart = (
+    product: any,
+    quantity: number,
+    size?: string | null,
+    colorId?: string | null,
+    colorName?: string | null
+  ) => {
     if (!cartReady || authLoading || !product?.id) return;
     const activeOwner = ownerIdRef.current;
     const isCoord = isCoordinateCartId(product.id);
@@ -147,17 +165,27 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let lineKey: string;
     let available: number;
     let cartSize: string | null = null;
+    let cartColorId: string | null = colorId?.trim() || null;
+    let cartColorName: string | null = colorName?.trim() || null;
+    let image = product.images?.[0] || product.image || '';
 
     if (isCoord && itemSizes) {
       lineKey = coordinateLineKey(coordinateLookIdFromCart(product.id), itemSizes);
       available = Math.max(0, Number(product.stock) || 0);
     } else {
-      const { sizeStock, stock: totalStock } = resolveProductInventory(product);
+      const selection = resolveVariantSelection(product, cartColorId);
+      const sizeStock = selection.sizeStock;
+      const totalStock = selection.stock;
       const sized = hasSizedInventory(sizeStock);
       const selectedSize = size?.trim() || null;
+      if (selection.hasVariants && !cartColorId && selection.variant) {
+        cartColorId = selection.variant.id;
+        cartColorName = selection.variant.name;
+      }
       available = stockForSelection(sizeStock, totalStock, selectedSize);
-      lineKey = cartLineKey(product.id, selectedSize);
+      lineKey = cartLineKey(product.id, selectedSize, cartColorId);
       cartSize = sized ? selectedSize : null;
+      if (selection.images[0]) image = selection.images[0];
     }
 
     const itemSizeSummary =
@@ -186,9 +214,11 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
               name: product.name,
               price: product.price,
               quantity: Math.min(available, quantity),
-              image: product.images?.[0] || product.image || '',
+              image,
               stock: available,
               size: cartSize,
+              colorId: cartColorId,
+              colorName: cartColorName,
               itemSizes: isCoord ? itemSizes : undefined,
               itemSizeSummary,
               lineKey,
@@ -292,13 +322,15 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             const snap = await getDoc(doc(db, 'products', item.id));
             if (!snap.exists()) return null;
-            const { sizeStock, stock } = resolveProductInventory(snap.data() ?? {});
-            const available = stockForSelection(sizeStock, stock, item.size);
+            const data = snap.data() ?? {};
+            const selection = resolveVariantSelection(data, item.colorId);
+            const available = stockForSelection(selection.sizeStock, selection.stock, item.size);
             if (available <= 0) return null;
             return {
               ...item,
               stock: available,
               quantity: Math.min(item.quantity, available),
+              image: selection.images[0] || item.image,
             };
           } catch {
             return item;

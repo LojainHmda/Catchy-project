@@ -2,8 +2,7 @@ import React from 'react';
 import type { OrderLineItem } from '../../types/order';
 import { cn } from '../../lib/utils';
 
-const FALLBACK_IMAGE =
-  'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400';
+import { PRODUCT_IMAGE_PLACEHOLDER } from '../../lib/productImages';
 
 type OrderItemThumbnailsProps = {
   items: OrderLineItem[];
@@ -38,7 +37,7 @@ const OrderItemThumbnails: React.FC<OrderItemThumbnailsProps> = ({
           style={{ zIndex: visible.length - index }}
         >
           <img
-            src={item.image || FALLBACK_IMAGE}
+            src={item.image || PRODUCT_IMAGE_PLACEHOLDER}
             alt=""
             className="h-full w-full object-cover"
             referrerPolicy="no-referrer"

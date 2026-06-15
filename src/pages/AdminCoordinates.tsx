@@ -13,7 +13,7 @@ import {
   subscribeCoordinateLooks,
   updateCoordinateLook,
 } from '../lib/coordinatesService';
-import { coordinateLookStats, coordinateSizesSummary } from '../lib/coordinatesValidation';
+import { coordinateLookStats, coordinateSizesSummary, coordinateLookStatus } from '../lib/coordinatesValidation';
 import { resolveCoordinate } from '../lib/coordinateResolve';
 import { toastFirestoreWriteError } from '../lib/firestoreErrors';
 import CoordinateEditDrawer, { type CoordinateLookDraft } from '../components/admin/CoordinateEditDrawer';
@@ -24,9 +24,9 @@ const AdminCoordinates = () => {
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [linkedCache, setLinkedCache] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
   const [listenError, setListenError] = useState<string | null>(null);
-  const [editId, setEditId] = useState<string | null>(null);
+  const [editingLook, setEditingLook] = useState<CoordinateLook | null>(null);
+  const [isNewDraft, setIsNewDraft] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -123,37 +123,42 @@ const AdminCoordinates = () => {
   }, [allProducts, linkedCache]);
 
   const stats = useMemo(() => coordinateLookStats(looks, productsById), [looks, productsById]);
-  const editingLook = looks.find((l) => l.id === editId) ?? null;
 
-  const addLook = async () => {
-    if (creating) return;
-    setCreating(true);
-    try {
-      const maxOrder = looks.reduce((m, l) => Math.max(m, l.sortOrder ?? 0), -1);
-      const ref = await createCoordinateLook({
-        title: 'New Coordinate Set',
-        titleAr: 'تنسيق جديد',
-        image: '',
-        images: [],
-        productIds: [],
-        priceAutoSync: true,
-        sortOrder: maxOrder + 1,
-        published: false,
-      });
-      setEditId(ref.id);
-      toast.success('Coordinate set created — save when ready');
-    } catch (error) {
-      toastFirestoreWriteError(error, 'Could not create set');
-    } finally {
-      setCreating(false);
-    }
+  const closeEditor = () => {
+    setEditingLook(null);
+    setIsNewDraft(false);
+  };
+
+  const openNewSet = () => {
+    const maxOrder = looks.reduce((m, l) => Math.max(m, l.sortOrder ?? 0), -1);
+    setEditingLook({
+      id: '',
+      title: 'New Coordinate Set',
+      titleAr: 'تنسيق جديد',
+      image: '',
+      images: [],
+      productIds: [],
+      priceAutoSync: true,
+      sortOrder: maxOrder + 1,
+      published: false,
+    });
+    setIsNewDraft(true);
+  };
+
+  const openEdit = (look: CoordinateLook) => {
+    setEditingLook(look);
+    setIsNewDraft(false);
   };
 
   const removeLook = async (id: string) => {
+    if (isNewDraft) {
+      closeEditor();
+      return;
+    }
     if (!window.confirm('Delete this coordinate set permanently?')) return;
     try {
       await deleteCoordinateLook(id);
-      if (editId === id) setEditId(null);
+      if (editingLook?.id === id) closeEditor();
       toast.success('Deleted');
     } catch (error) {
       toastFirestoreWriteError(error, 'Could not delete');
@@ -175,6 +180,24 @@ const AdminCoordinates = () => {
   const handleSave = async (id: string, draft: CoordinateLookDraft, publish: boolean) => {
     setSaving(true);
     try {
+      if (isNewDraft) {
+        await createCoordinateLook({
+          title: draft.title,
+          titleAr: draft.titleAr || undefined,
+          image: '',
+          images: [],
+          productIds: draft.productIds,
+          price: draft.price,
+          priceAutoSync: draft.priceAutoSync,
+          sortOrder: editingLook?.sortOrder ?? looks.length,
+          published: publish,
+        });
+        setIsNewDraft(false);
+        setEditingLook(null);
+        toast.success(publish ? 'Published to catalog' : 'Set saved');
+        return;
+      }
+
       const current = looks.find((l) => l.id === id);
       await updateCoordinateLook(id, {
         title: draft.title,
@@ -185,6 +208,7 @@ const AdminCoordinates = () => {
         published: publish ? true : current?.published ?? false,
       });
       toast.success(publish ? 'Published to catalog' : 'Draft saved');
+      if (publish) closeEditor();
     } catch (error) {
       toastFirestoreWriteError(error, publish ? 'Could not publish' : 'Could not save');
       throw error;
@@ -211,8 +235,9 @@ const AdminCoordinates = () => {
           </p>
           <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
             <span><strong className="text-gray-900">{stats.total}</strong> total</span>
-            <span><strong className="text-emerald-700">{stats.published}</strong> live</span>
+            <span><strong className="text-emerald-700">{stats.live}</strong> live</span>
             <span><strong className="text-amber-700">{stats.hidden}</strong> hidden</span>
+            <span><strong className="text-gray-500">{stats.draft}</strong> draft</span>
           </dl>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -222,8 +247,8 @@ const AdminCoordinates = () => {
           <Link to="/catalog?category=Coordinates" target="_blank" rel="noopener noreferrer" className="inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50">
             <ExternalLink size={14} /> Catalog
           </Link>
-          <button type="button" onClick={addLook} disabled={creating} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-catchy px-3 text-xs font-semibold text-white hover:bg-catchy-dark disabled:opacity-50">
-            {creating ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+          <button type="button" onClick={openNewSet} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-catchy px-3 text-xs font-semibold text-white hover:bg-catchy-dark">
+            <Plus size={14} />
             Add set
           </button>
         </div>
@@ -237,7 +262,7 @@ const AdminCoordinates = () => {
         <div className="rounded-xl border border-dashed border-gray-200 bg-white px-6 py-12 text-center">
           <LayoutGrid className="mx-auto mb-2 h-8 w-8 text-gray-300" />
           <p className="text-sm font-medium text-gray-900">No coordinate sets yet</p>
-          <button type="button" onClick={addLook} disabled={creating} className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-catchy px-3 text-xs font-semibold text-white">
+          <button type="button" onClick={openNewSet} className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-catchy px-3 text-xs font-semibold text-white">
             <Plus size={14} /> Add set
           </button>
         </div>
@@ -260,6 +285,7 @@ const AdminCoordinates = () => {
                 const linked = (look.productIds ?? []).map((id) => productsById[id]).filter(Boolean);
                 const resolved = resolveCoordinate(look, linked);
                 const photoCount = getCoordinateImages(look, linked).length;
+                const status = coordinateLookStatus(look, productsById);
                 return (
                   <tr key={look.id} className="group hover:bg-gray-50/60">
                     <td className="px-2 py-2">
@@ -279,9 +305,11 @@ const AdminCoordinates = () => {
                     <td className="px-3 py-2">
                       <span className={cn(
                         'inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase',
-                        look.published !== false ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'
+                        status === 'live' && 'bg-emerald-50 text-emerald-700',
+                        status === 'hidden' && 'bg-amber-50 text-amber-700',
+                        status === 'draft' && 'bg-gray-100 text-gray-500'
                       )}>
-                        {look.published !== false ? 'Live' : 'Hidden'}
+                        {status === 'live' ? 'Live' : status === 'hidden' ? 'Hidden' : 'Draft'}
                       </span>
                     </td>
                     <td className="px-3 py-2">
@@ -292,7 +320,7 @@ const AdminCoordinates = () => {
                         <button type="button" onClick={() => moveLook(index, 1)} disabled={index === looks.length - 1} className="inline-flex h-7 w-7 items-center justify-center rounded text-gray-400 hover:bg-gray-100 disabled:opacity-30" aria-label="Move down">
                           <MoveDown size={14} />
                         </button>
-                        <button type="button" onClick={() => setEditId(look.id)} className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-700 hover:border-catchy">
+                        <button type="button" onClick={() => openEdit(look)} className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-700 hover:border-catchy">
                           <Pencil size={12} />
                           Edit
                         </button>
@@ -311,13 +339,14 @@ const AdminCoordinates = () => {
 
       <CoordinateEditDrawer
         look={editingLook}
-        open={Boolean(editId && editingLook)}
-        onClose={() => setEditId(null)}
-        allProducts={allProducts}
+        open={Boolean(editingLook)}
+        isNew={isNewDraft}
+        onClose={closeEditor}
         productsById={productsById}
         saving={saving}
         onSave={handleSave}
         onDelete={removeLook}
+        onRefreshProducts={loadProducts}
       />
     </div>
   );

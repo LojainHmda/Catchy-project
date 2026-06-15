@@ -1,5 +1,5 @@
 import type { CoordinateLook } from '../types/coordinates';
-import { coerceProductImages, PRODUCT_IMAGE_PLACEHOLDER } from './productImages';
+import { coerceProductImages, isUsableImageSrc, PRODUCT_IMAGE_PLACEHOLDER } from './productImages';
 import { resolveCoordinate, type ProductLike } from './coordinateResolve';
 
 export const MAX_COORDINATE_IMAGES = 4;
@@ -16,16 +16,16 @@ export function getCoordinateImages(
   if (ordered.length > 0) {
     const fromProducts = ordered
       .map((p) => coerceProductImages(p)[0])
-      .filter((u): u is string => typeof u === 'string' && u.trim().length > 12);
+      .filter((u): u is string => typeof u === 'string' && isUsableImageSrc(u));
     if (fromProducts.length > 0) return fromProducts.slice(0, MAX_COORDINATE_IMAGES);
   }
 
   if (Array.isArray(look.images)) {
-    const list = look.images.filter((u) => typeof u === 'string' && u.trim().length > 12);
+    const list = look.images.filter((u) => typeof u === 'string' && isUsableImageSrc(u));
     if (list.length > 0) return list.slice(0, MAX_COORDINATE_IMAGES);
   }
   const legacy = typeof look.image === 'string' ? look.image.trim() : '';
-  return legacy.length > 12 ? [legacy] : [];
+  return isUsableImageSrc(legacy) ? [legacy] : [];
 }
 
 export function primaryCoordinateImage(

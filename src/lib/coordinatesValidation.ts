@@ -47,6 +47,45 @@ export function normalizeCoordinateLook(raw: Partial<CoordinateLook> & { id: str
   };
 }
 
+/** All product IDs referenced by published coordinate sets (catalog only). */
+export function publishedLinkedProductIds(looks: CoordinateLook[]): string[] {
+  const ids = new Set<string>();
+  looks.forEach((look) => {
+    if (look.published === false) return;
+    look.productIds?.forEach((id) => ids.add(id));
+  });
+  return [...ids];
+}
+
+/** All product IDs referenced by coordinate sets (for batch loading). */
+export function allLinkedProductIds(looks: CoordinateLook[]): string[] {
+  const ids = new Set<string>();
+  looks.forEach((look) => look.productIds?.forEach((id) => ids.add(id)));
+  return [...ids];
+}
+
+/** True once every required ID has been fetched or confirmed missing. */
+export function coordinateLinkedFetchReady(
+  requiredIds: string[],
+  productsById: Record<string, ProductLike>,
+  attemptedIds: ReadonlySet<string>
+): boolean {
+  if (requiredIds.length === 0) return true;
+  return requiredIds.every((id) => Boolean(productsById[id]) || attemptedIds.has(id));
+}
+
+export type CoordinateLookStatus = 'draft' | 'live' | 'hidden';
+
+export function coordinateLookStatus(
+  look: CoordinateLook,
+  productsById: Record<string, ProductLike> = {}
+): CoordinateLookStatus {
+  if (look.published === false) return 'draft';
+  const linked = linkedProductsForLook(look, productsById);
+  if (hasLinkedProductsLoaded(look, linked) && isLookVisibleToCustomers(look, linked)) return 'live';
+  return 'hidden';
+}
+
 export function validateCoordinateLook(
   look: Pick<CoordinateLook, 'title' | 'image' | 'images' | 'productIds' | 'price' | 'priceAutoSync'>,
   products: ProductLike[] = []
@@ -56,6 +95,9 @@ export function validateCoordinateLook(
   }
   if (!look.productIds?.length) {
     return { ok: false, message: 'Add at least one product to this set.' };
+  }
+  if (products.length < look.productIds.length) {
+    return { ok: false, message: 'Some linked products could not be loaded. Refresh products and try again.' };
   }
   if (getCoordinateImages(look, products).length === 0) {
     return { ok: false, message: 'Linked products need photos (set collage is built from item images).' };
@@ -128,14 +170,16 @@ export function catalogCoordinateLooks(
 }
 
 export function coordinateLookStats(looks: CoordinateLook[], productsById: Record<string, ProductLike> = {}) {
-  let published = 0;
+  let live = 0;
   let hidden = 0;
+  let draft = 0;
   looks.forEach((l) => {
-    const products = (l.productIds ?? []).map((id) => productsById[id]).filter(Boolean);
-    if (isLookVisibleToCustomers(l, products)) published += 1;
+    const status = coordinateLookStatus(l, productsById);
+    if (status === 'live') live += 1;
+    else if (status === 'draft') draft += 1;
     else hidden += 1;
   });
-  return { total: looks.length, published, hidden };
+  return { total: looks.length, live, hidden, draft, published: live };
 }
 
 export function coordinateSizesSummary(_look: CoordinateLook, products: ProductLike[] = []): string {

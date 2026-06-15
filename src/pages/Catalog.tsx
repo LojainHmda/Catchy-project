@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
-import { db, doc, getDoc } from '../firebase';
 import { Search, X, Loader2 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { CATEGORY_KEYS, CATALOG_FILTER_CATEGORIES } from '../constants';
@@ -16,111 +15,56 @@ import {
   fetchCatalogProductsPage,
   type CatalogSortKey,
 } from '../lib/catalogPagination';
-import {
-  subscribeCoordinateLooks,
-  fetchAllCoordinateLooks,
-} from '../lib/coordinatesService';
+import { type CatalogListProduct } from '../lib/catalogProductList';
+import { getCachedCategoryCounts, getCachedCoordinateLooks, getCachedCatalogProducts, setCachedCategoryCounts, setCachedCoordinateLooks, setCachedCatalogProducts, catalogProductsCacheKey } from '../lib/catalogCache';
+import { fetchProductsByIds } from '../lib/fetchProductsByIds';
+import { fetchAllCoordinateLooks } from '../lib/coordinatesService';
 import {
   catalogCoordinateLooks,
+  coordinateLinkedFetchReady,
   linkedProductsForLook,
+  publishedLinkedProductIds,
 } from '../lib/coordinatesValidation';
 import type { CoordinateLook } from '../types/coordinates';
 
 const Catalog = () => {
   const { t, isRTL } = useLanguage();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [products, setProducts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const initialCats = useMemo(() => {
+    const cats = searchParams.get('cats');
+    const one = searchParams.get('category');
+    const raw = cats
+      ? cats.split(',').map((s) => decodeURIComponent(s.trim()))
+      : one
+        ? [decodeURIComponent(one.trim())]
+        : [];
+    return raw.map(canonicalCategory).filter(Boolean);
+  }, []);
+  const initialSort: CatalogSortKey = 'priceAsc';
+  const initialCacheKey = catalogProductsCacheKey(initialCats, initialSort);
+  const initialCachedProducts = getCachedCatalogProducts(initialCacheKey);
+
+  const [products, setProducts] = useState<CatalogListProduct[]>(initialCachedProducts ?? []);
+  const [loading, setLoading] = useState(!initialCachedProducts?.length);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [productsReady, setProductsReady] = useState(Boolean(initialCachedProducts?.length));
   const [viewPage, setViewPage] = useState(0);
   const [categoryCounts, setCategoryCounts] = useState<Map<string, number>>(new Map());
+  const [countsLoaded, setCountsLoaded] = useState(false);
   const lastDocRef = useRef<QueryDocumentSnapshot | null>(null);
   const fetchGenRef = useRef(0);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sortBy, setSortBy] = useState<CatalogSortKey>('priceAsc');
-  const [coordinateLooks, setCoordinateLooks] = useState<CoordinateLook[]>([]);
-  const [linkedProducts, setLinkedProducts] = useState<Record<string, any>>({});
+  const [coordinateLooks, setCoordinateLooks] = useState<CoordinateLook[]>(() => getCachedCoordinateLooks() ?? []);
+  const [coordinateLooksLoading, setCoordinateLooksLoading] = useState(() => !getCachedCoordinateLooks());
+  const [linkedProducts, setLinkedProducts] = useState<Record<string, CatalogListProduct>>({});
+  const [linkedProductsLoading, setLinkedProductsLoading] = useState(false);
   const linkedFetchAttemptedRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    let cancelled = false;
-
-    fetchAllCoordinateLooks()
-      .then((data) => {
-        if (!cancelled) setCoordinateLooks(data);
-      })
-      .catch((e) => console.error('Coordinate looks fetch:', e));
-
-    const unsubLooks = subscribeCoordinateLooks(
-      (data) => {
-        if (!cancelled) setCoordinateLooks(data);
-      },
-      (error) => console.error('Coordinate looks subscription:', error)
-    );
-
-    return () => {
-      cancelled = true;
-      unsubLooks();
-    };
-  }, []);
-
-  useEffect(() => {
-    const ids = new Set<string>();
-    coordinateLooks.forEach((look) => look.productIds?.forEach((id) => ids.add(id)));
-    const missing = [...ids].filter(
-      (id) => !linkedProducts[id] && !linkedFetchAttemptedRef.current.has(id)
-    );
-    if (missing.length === 0) return;
-
-    missing.forEach((id) => linkedFetchAttemptedRef.current.add(id));
-
-    let cancelled = false;
-    (async () => {
-      const fetched: Record<string, any> = {};
-      await Promise.all(
-        missing.map(async (id) => {
-          try {
-            const snap = await getDoc(doc(db, 'products', id));
-            if (snap.exists()) fetched[id] = { id: snap.id, ...snap.data() };
-          } catch { /* skip */ }
-        })
-      );
-      if (!cancelled && Object.keys(fetched).length > 0) {
-        setLinkedProducts((prev) => ({ ...prev, ...fetched }));
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [coordinateLooks, linkedProducts]);
-
-  const productsById = useMemo(() => {
-    const map: Record<string, any> = { ...linkedProducts };
-    products.forEach((p) => { map[p.id] = p; });
-    return map;
-  }, [linkedProducts, products]);
-
-  const productsForLook = useCallback(
-    (look: CoordinateLook) => linkedProductsForLook(look, productsById),
-    [productsById]
-  );
-
-  const customerCoordinateLooks = useMemo(
-    () => catalogCoordinateLooks(coordinateLooks, productsById),
-    [coordinateLooks, productsById]
-  );
-
-  useEffect(() => {
-    const id = window.setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
-    return () => clearTimeout(id);
-  }, [searchTerm]);
-
-  useEffect(() => {
-    fetchCatalogCategoryCounts()
-      .then(setCategoryCounts)
-      .catch((e) => console.error('Category counts:', e));
-  }, []);
+  const [linkedFetchEpoch, setLinkedFetchEpoch] = useState(0);
 
   const selectedCats = useMemo(() => {
     const cats = searchParams.get('cats');
@@ -139,6 +83,153 @@ const Catalog = () => {
     () => selectedCats.some((c) => canonicalCategory(c).toLowerCase() === 'coordinates'),
     [selectedCats]
   );
+
+  useEffect(() => {
+    if (!productsReady && !coordinatesActive) return;
+
+    const cached = getCachedCoordinateLooks();
+    if (cached) {
+      setCoordinateLooks(cached);
+      setCoordinateLooksLoading(false);
+    }
+
+    let cancelled = false;
+    const needsNetwork = !cached || coordinatesActive;
+    if (!needsNetwork) return;
+
+    const delay = coordinatesActive ? (productsReady ? 0 : 250) : 300;
+
+    const timer = window.setTimeout(() => {
+      if (!cached) setCoordinateLooksLoading(true);
+      fetchAllCoordinateLooks()
+        .then((data) => {
+          if (!cancelled) {
+            setCoordinateLooks(data);
+            setCachedCoordinateLooks(data);
+          }
+        })
+        .catch((e) => console.error('Coordinate looks fetch:', e))
+        .finally(() => {
+          if (!cancelled) setCoordinateLooksLoading(false);
+        });
+    }, delay);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [coordinatesActive, productsReady]);
+
+  useEffect(() => {
+    if (!productsReady && !coordinatesActive) return;
+
+    const requiredIds = publishedLinkedProductIds(coordinateLooks);
+    if (requiredIds.length === 0) {
+      setLinkedProductsLoading(false);
+      return;
+    }
+
+    const missing = requiredIds.filter(
+      (id) => !linkedProducts[id] && !linkedFetchAttemptedRef.current.has(id)
+    );
+    if (missing.length === 0) {
+      setLinkedProductsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const delay = coordinatesActive ? 0 : 400;
+
+    const timer = window.setTimeout(() => {
+      setLinkedProductsLoading(true);
+      fetchProductsByIds(missing)
+        .then((fetched) => {
+          if (!cancelled) {
+            setLinkedProducts((prev) => ({ ...prev, ...fetched }));
+          }
+        })
+        .catch((e) => console.error('Linked products fetch:', e))
+        .finally(() => {
+          if (!cancelled) {
+            missing.forEach((id) => linkedFetchAttemptedRef.current.add(id));
+            setLinkedFetchEpoch((n) => n + 1);
+            setLinkedProductsLoading(false);
+          }
+        });
+    }, delay);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [coordinateLooks, linkedProducts, coordinatesActive, productsReady]);
+
+  const coordinateProductsById = useMemo(() => linkedProducts, [linkedProducts]);
+
+  const productsForLook = useCallback(
+    (look: CoordinateLook) => linkedProductsForLook(look, coordinateProductsById),
+    [coordinateProductsById]
+  );
+
+  const customerCoordinateLooks = useMemo(
+    () => catalogCoordinateLooks(coordinateLooks, coordinateProductsById),
+    [coordinateLooks, coordinateProductsById]
+  );
+
+  const requiredLinkedIds = useMemo(() => publishedLinkedProductIds(coordinateLooks), [coordinateLooks]);
+
+  const coordinatesCatalogReady = useMemo(
+    () =>
+      !coordinateLooksLoading &&
+      !linkedProductsLoading &&
+      coordinateLinkedFetchReady(
+        requiredLinkedIds,
+        coordinateProductsById,
+        linkedFetchAttemptedRef.current
+      ),
+    [
+      coordinateLooksLoading,
+      linkedProductsLoading,
+      requiredLinkedIds,
+      coordinateProductsById,
+      linkedFetchEpoch,
+    ]
+  );
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(id);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    if (!productsReady) return;
+
+    const cached = getCachedCategoryCounts();
+    if (cached) {
+      setCategoryCounts(cached);
+      setCountsLoaded(true);
+    }
+
+    let cancelled = false;
+    const delay = cached ? 1200 : 600;
+
+    const timer = window.setTimeout(() => {
+      fetchCatalogCategoryCounts()
+        .then((counts) => {
+          if (!cancelled) {
+            setCategoryCounts(counts);
+            setCountsLoaded(true);
+            setCachedCategoryCounts(counts);
+          }
+        })
+        .catch((e) => console.error('Category counts:', e));
+    }, delay);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [productsReady]);
 
   const setSelectedCats = (cats: string[]) => {
     const next = new URLSearchParams(searchParams);
@@ -161,8 +252,18 @@ const Catalog = () => {
   const loadProducts = useCallback(
     async (reset: boolean) => {
       const gen = ++fetchGenRef.current;
+      const cacheKey = catalogProductsCacheKey(selectedCats, sortBy);
+      const cached = reset ? getCachedCatalogProducts(cacheKey) : null;
+
       if (reset) {
-        setLoading(true);
+        setFetchError(null);
+        if (cached?.length) {
+          setProducts(cached);
+          setLoading(false);
+          setProductsReady(true);
+        } else {
+          setLoading(true);
+        }
         lastDocRef.current = null;
       } else {
         setLoadingMore(true);
@@ -180,14 +281,24 @@ const Catalog = () => {
         lastDocRef.current = lastDoc;
         setHasMore(more);
         setProducts((prev) => (reset ? items : [...prev, ...items]));
-        if (reset) setViewPage(0);
+        if (reset) {
+          setViewPage(0);
+          setCachedCatalogProducts(cacheKey, items);
+          setProductsReady(true);
+        }
       } catch (error) {
         console.error('Error fetching catalog:', error);
-        if (gen === fetchGenRef.current && reset) setProducts([]);
+        if (gen === fetchGenRef.current) {
+          if (reset && !cached?.length) setProducts([]);
+          if (reset) {
+            setFetchError(error instanceof Error ? error.message : 'Could not load catalog');
+          }
+        }
       } finally {
         if (gen === fetchGenRef.current) {
           setLoading(false);
           setLoadingMore(false);
+          if (reset) setProductsReady(true);
         }
       }
     },
@@ -199,6 +310,16 @@ const Catalog = () => {
   }, [loadProducts]);
 
   useEffect(() => {
+    if (!loading) return;
+    const timer = window.setTimeout(() => {
+      setLoading(false);
+      setProductsReady(true);
+      setFetchError((prev) => prev ?? t('catalog.loadError'));
+    }, 14_000);
+    return () => window.clearTimeout(timer);
+  }, [loading, t]);
+
+  useEffect(() => {
     setViewPage(0);
   }, [debouncedSearch, saleOnly]);
 
@@ -207,11 +328,11 @@ const Catalog = () => {
       const key = canonicalCategory(cat);
       let count = categoryCounts.get(key) ?? 0;
       if (key.toLowerCase() === 'coordinates') {
-        count = customerCoordinateLooks.length + count;
+        count = coordinatesCatalogReady ? customerCoordinateLooks.length + count : count;
       }
       return [cat, count] as [string, number];
     });
-  }, [categoryCounts, customerCoordinateLooks]);
+  }, [categoryCounts, coordinatesCatalogReady, customerCoordinateLooks.length]);
 
   const sortedProducts = useMemo(() => {
     const list = products.filter((p) => {
@@ -317,8 +438,15 @@ const Catalog = () => {
     return pills;
   }, [saleOnly, searchParams, selectedCats, t, setSearchParams]);
 
+  const coordinatesSectionLoading = coordinatesActive && !coordinatesCatalogReady;
+  const productsGridLoading = loading && products.length === 0;
+  const showEmptyState = totalGridCount === 0 && !productsGridLoading && !coordinatesSectionLoading && !fetchError;
+  const showLoadError = Boolean(fetchError) && products.length === 0 && !productsGridLoading;
+
   const showingLine = useMemo(() => {
-    if (totalGridCount === 0 && !loading) {
+    if (productsGridLoading) return t('catalog.loadingMore');
+    if (coordinatesSectionLoading) return t('catalog.loadingCoordinates');
+    if (totalGridCount === 0) {
       return t('catalog.showingLine').replace('{shown}', '0').replace('{total}', '0').replace('{for}', '');
     }
     const start = totalGridCount === 0 ? 0 : viewPage * CATALOG_VIEW_PAGE_SIZE + 1;
@@ -335,10 +463,32 @@ const Catalog = () => {
     return t('catalog.showingPaged')
       .replace('{start}', String(start))
       .replace('{end}', String(end))
-      .replace('{loaded}', String(totalGridCount))
+      .replace('{total}', String(totalGridCount))
       .replace('{more}', more)
       .replace('{for}', forPart);
-  }, [totalGridCount, viewPage, debouncedSearch, saleOnly, hasMore, loading, t]);
+  }, [totalGridCount, viewPage, debouncedSearch, saleOnly, hasMore, productsGridLoading, coordinatesSectionLoading, t]);
+
+  const gridSkeleton = (
+    <div className="grid grid-cols-2 justify-items-center gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 lg:gap-x-5 lg:gap-y-6">
+      {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+        <div
+          key={i}
+          className="aspect-[5/6] w-full max-w-[10.5rem] animate-pulse rounded-md bg-neutral-200 sm:max-w-[11rem]"
+        />
+      ))}
+    </div>
+  );
+
+  const coordinateSkeleton = (
+    <div className="mb-4 grid grid-cols-2 justify-items-center gap-x-4 gap-y-4 sm:grid-cols-3 lg:grid-cols-4 lg:gap-x-5 lg:gap-y-5">
+      {[1, 2].map((i) => (
+        <div
+          key={`coord-${i}`}
+          className="aspect-[5/6] w-full max-w-[10.5rem] animate-pulse rounded-md bg-neutral-200 sm:max-w-[11rem]"
+        />
+      ))}
+    </div>
+  );
 
   const chipClass = (active: boolean) =>
     cn(
@@ -377,6 +527,7 @@ const Catalog = () => {
               <div className="flex h-6 shrink-0 flex-nowrap items-center">
                 <select
                   id="catalog-sort"
+                  name="catalog-sort"
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as CatalogSortKey)}
                   aria-label={t('catalog.sortBy')}
@@ -421,9 +572,11 @@ const Catalog = () => {
                           )}
                         >
                           <span>{t(CATEGORY_KEYS[cat] || cat)}</span>
-                          <span className={cn('tabular-nums', checked ? 'text-white/80' : 'text-gray-400')}>
-                            {count}
-                          </span>
+                          {countsLoaded && (
+                            <span className={cn('tabular-nums', checked ? 'text-white/80' : 'text-gray-400')}>
+                              {count}
+                            </span>
+                          )}
                         </button>
                       );
                     })}
@@ -441,12 +594,17 @@ const Catalog = () => {
                     </button>
                   </div>
                 </div>
-                <div
+                <form
+                  role="search"
+                  onSubmit={(e) => e.preventDefault()}
                   className={cn(
                     'relative w-full max-w-[9.5rem] shrink-0 sm:w-[9.5rem] md:w-[10.5rem]',
                     isRTL ? 'self-start sm:self-auto' : 'self-end sm:self-auto'
                   )}
                 >
+                  <label htmlFor="catalog-search" className="sr-only">
+                    {t('catalog.search')}
+                  </label>
                   <Search
                     className={cn(
                       'pointer-events-none absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400',
@@ -455,7 +613,10 @@ const Catalog = () => {
                     aria-hidden
                   />
                   <input
+                    id="catalog-search"
+                    name="catalog-search"
                     type="search"
+                    autoComplete="off"
                     dir={isRTL ? 'rtl' : 'ltr'}
                     placeholder={t('catalog.search')}
                     value={searchTerm}
@@ -465,7 +626,7 @@ const Catalog = () => {
                       isRTL ? 'pr-9 pl-2.5 text-start' : 'pl-9 pr-2.5'
                     )}
                   />
-                </div>
+                </form>
               </div>
             </div>
 
@@ -502,94 +663,110 @@ const Catalog = () => {
             )}
 
             <div className={cn(filterPills.length > 0 ? 'mt-1.5' : 'mt-2')}>
-              {loading ? (
-                <div className="grid grid-cols-2 justify-items-center gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 lg:gap-x-5 lg:gap-y-6">
-                  {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                    <div
-                      key={i}
-                      className="aspect-[5/6] w-full max-w-[10.5rem] animate-pulse rounded-md bg-neutral-200 sm:max-w-[11rem]"
-                    />
-                  ))}
-                </div>
-              ) : totalGridCount > 0 ? (
+              {productsGridLoading ? (
+                gridSkeleton
+              ) : totalGridCount > 0 || coordinatesSectionLoading ? (
                 <>
-                  <div className="grid grid-cols-2 justify-items-center gap-x-4 gap-y-4 sm:grid-cols-3 lg:grid-cols-4 lg:gap-x-5 lg:gap-y-5">
-                    {pagedGridEntries.map((entry) => {
-                      if (entry.kind === 'look') {
-                        return (
-                          <CoordinateCatalogCard
-                            key={`look-${entry.look.id}`}
-                            look={entry.look}
-                            linkedProducts={productsForLook(entry.look)}
-                            isRTL={isRTL}
-                          />
-                        );
-                      }
-                      const meta = getCatalogSaleMeta(entry.product);
-                      return (
-                        <CatalogProductCard
-                          key={entry.product.id}
-                          product={entry.product}
-                          compareAtPrice={meta.compareAt}
-                          discountPercent={meta.discountPercent}
-                          saleLabel={t('catalog.sale')}
-                          colorsLine=""
-                        />
-                      );
-                    })}
-                  </div>
-
-                  <div
-                    className={cn(
-                      'mt-3 flex flex-col items-center justify-center gap-2 sm:flex-row sm:gap-3',
-                      isRTL && 'font-arabic'
-                    )}
-                  >
-                    <p className="text-[11px] leading-none text-gray-500">
-                      {t('catalog.pageInfo')
-                        .replace('{page}', String(viewPage + 1))
-                        .replace('{pages}', String(totalViewPages))}
-                    </p>
-                    <div className="flex flex-wrap items-center justify-center gap-1.5">
-                      <button
-                        type="button"
-                        disabled={viewPage === 0}
-                        onClick={() => setViewPage((p) => Math.max(0, p - 1))}
-                        className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-catchy-dark transition hover:border-catchy disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        {t('catalog.prevPage')}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={viewPage >= totalViewPages - 1 && !hasMore}
-                        onClick={() => {
-                          if (viewPage < totalViewPages - 1) {
-                            setViewPage((p) => p + 1);
-                          } else if (hasMore) {
-                            loadProducts(false);
+                  {coordinatesSectionLoading ? coordinateSkeleton : null}
+                  {totalGridCount > 0 ? (
+                    <>
+                      <div className="grid grid-cols-2 justify-items-center gap-x-4 gap-y-4 sm:grid-cols-3 lg:grid-cols-4 lg:gap-x-5 lg:gap-y-5">
+                        {pagedGridEntries.map((entry, index) => {
+                          if (entry.kind === 'look') {
+                            return (
+                              <CoordinateCatalogCard
+                                key={`look-${entry.look.id}`}
+                                look={entry.look}
+                                linkedProducts={productsForLook(entry.look)}
+                                isRTL={isRTL}
+                              />
+                            );
                           }
-                        }}
-                        className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-catchy-dark transition hover:border-catchy disabled:cursor-not-allowed disabled:opacity-40"
+                          const meta = getCatalogSaleMeta(entry.product);
+                          return (
+                            <CatalogProductCard
+                              key={entry.product.id}
+                              product={entry.product}
+                              compareAtPrice={meta.compareAt}
+                              discountPercent={meta.discountPercent}
+                              saleLabel={t('catalog.sale')}
+                              colorsLine={
+                                entry.product.colorCount > 1
+                                  ? t('catalog.colorsCount').replace('{n}', String(entry.product.colorCount))
+                                  : ''
+                              }
+                              priority={index < 4}
+                            />
+                          );
+                        })}
+                      </div>
+
+                      <div
+                        className={cn(
+                          'mt-3 flex flex-col items-center justify-center gap-2 sm:flex-row sm:gap-3',
+                          isRTL && 'font-arabic'
+                        )}
                       >
-                        {t('catalog.nextPage')}
-                      </button>
-                      {hasMore && (
-                        <button
-                          type="button"
-                          disabled={loadingMore}
-                          onClick={() => loadProducts(false)}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-catchy px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-catchy-dark disabled:opacity-60"
-                        >
-                          {loadingMore ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                          ) : null}
-                          {loadingMore ? t('catalog.loadingMore') : t('catalog.loadMore')}
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                        <p className="text-[11px] leading-none text-gray-500">
+                          {t('catalog.pageInfo')
+                            .replace('{page}', String(viewPage + 1))
+                            .replace('{pages}', String(totalViewPages))}
+                        </p>
+                        <div className="flex flex-wrap items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={viewPage === 0}
+                            onClick={() => setViewPage((p) => Math.max(0, p - 1))}
+                            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-catchy-dark transition hover:border-catchy disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {t('catalog.prevPage')}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={viewPage >= totalViewPages - 1 && !hasMore}
+                            onClick={() => {
+                              if (viewPage < totalViewPages - 1) {
+                                setViewPage((p) => p + 1);
+                              } else if (hasMore) {
+                                loadProducts(false);
+                              }
+                            }}
+                            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-catchy-dark transition hover:border-catchy disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {t('catalog.nextPage')}
+                          </button>
+                          {hasMore && (
+                            <button
+                              type="button"
+                              disabled={loadingMore}
+                              onClick={() => loadProducts(false)}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-catchy px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-catchy-dark disabled:opacity-60"
+                            >
+                              {loadingMore ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                              ) : null}
+                              {loadingMore ? t('catalog.loadingMore') : t('catalog.loadMore')}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
                 </>
-              ) : (
+              ) : showLoadError ? (
+                <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/40 px-8 py-12 text-center">
+                  <Loader2 className="mx-auto mb-4 h-10 w-10 text-amber-500" />
+                  <h2 className="text-lg font-semibold text-catchy-dark">{t('catalog.loadError')}</h2>
+                  <p className="mt-2 text-sm text-gray-500">{fetchError}</p>
+                  <button
+                    type="button"
+                    onClick={() => loadProducts(true)}
+                    className="mt-6 inline-flex items-center gap-2 rounded-lg bg-catchy px-4 py-2 text-sm font-semibold text-white hover:bg-catchy-dark"
+                  >
+                    {t('catalog.retry')}
+                  </button>
+                </div>
+              ) : showEmptyState ? (
                 <div className="rounded-xl border border-dashed border-gray-200 bg-white px-8 py-12 text-center">
                   <Search className="mx-auto mb-4 h-10 w-10 text-gray-300" />
                   <h2 className="text-lg font-semibold text-catchy-dark">{t('catalog.emptyTitle')}</h2>
@@ -601,7 +778,7 @@ const Catalog = () => {
                     {t('nav.home')}
                   </Link>
                 </div>
-              )}
+              ) : null}
             </div>
         </div>
       </div>

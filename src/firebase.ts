@@ -13,6 +13,7 @@ import {
 import {
   getFirestore,
   initializeFirestore,
+  memoryLocalCache,
   persistentLocalCache,
   persistentMultipleTabManager,
   collection,
@@ -31,6 +32,8 @@ import {
   startAfter,
   serverTimestamp,
   runTransaction,
+  documentId,
+  deleteField,
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -64,7 +67,9 @@ const app = getOrInitApp();
 let db: ReturnType<typeof getFirestore>;
 try {
   db = initializeFirestore(app, {
-    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    localCache: import.meta.env.DEV
+      ? memoryLocalCache()
+      : persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
   });
 } catch {
   db = getFirestore(app);
@@ -78,6 +83,7 @@ let _storage: ReturnType<typeof getStorage> | null = null;
 try { _storage = getStorage(app); } catch { /* Storage not configured */ }
 export const storage = _storage as ReturnType<typeof getStorage>;
 export { storageRef, uploadBytesResumable, getDownloadURL, deleteObject };
+export { uploadBytes } from 'firebase/storage';
 
 export {
   collection,
@@ -96,6 +102,8 @@ export {
   startAfter,
   serverTimestamp,
   runTransaction,
+  documentId,
+  deleteField,
   GoogleAuthProvider,
   signInWithPopup,
   signOut,

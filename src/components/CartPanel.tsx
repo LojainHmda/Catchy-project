@@ -10,6 +10,7 @@ import { formatOrderMoney } from '../lib/orders';
 import { sortedSizeStockEntries } from '../lib/productInventory';
 import { isCoordinateCartId, coordinateLookIdFromCart } from '../lib/coordinateCart';
 import { cn } from '../lib/utils';
+import { PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
 
 type CartProductGroup = {
   productId: string;
@@ -18,6 +19,14 @@ type CartProductGroup = {
   image: string;
   lines: CartItem[];
 };
+
+function formatCartLineLabel(line: CartItem, t: (key: string) => string): string {
+  if (line.itemSizeSummary) return line.itemSizeSummary;
+  const parts: string[] = [];
+  if (line.colorName) parts.push(line.colorName);
+  if (line.size) parts.push(line.size);
+  return parts.length ? parts.join(' · ') : t('cart.oneSize');
+}
 
 function groupCartByProduct(cart: CartItem[]): CartProductGroup[] {
   const groups: CartProductGroup[] = [];
@@ -137,6 +146,7 @@ const CartPanel: React.FC<CartPanelProps> = ({ variant, onClose }) => {
             const showSizeRows =
               group.lines.length > 1 ||
               Boolean(group.lines[0]?.size) ||
+              Boolean(group.lines[0]?.colorName) ||
               Boolean(group.lines[0]?.itemSizeSummary);
 
             return (
@@ -160,7 +170,7 @@ const CartPanel: React.FC<CartPanelProps> = ({ variant, onClose }) => {
                   )}
                 >
                   <img
-                    src={group.image || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400'}
+                    src={group.image || PRODUCT_IMAGE_PLACEHOLDER}
                     alt={group.name}
                     className="h-full w-full object-cover"
                     referrerPolicy="no-referrer"
@@ -259,7 +269,7 @@ const CartPanel: React.FC<CartPanelProps> = ({ variant, onClose }) => {
                           className="flex items-center justify-between gap-2 rounded-md border border-gray-100 bg-gray-50/60 px-2 py-1.5"
                         >
                           <p className="min-w-0 text-[10px] font-medium leading-snug text-gray-500">
-                            {line.itemSizeSummary ?? line.size ?? t('cart.oneSize')}
+                            {formatCartLineLabel(line, t)}
                           </p>
                           {qtyControls}
                         </div>

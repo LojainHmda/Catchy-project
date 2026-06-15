@@ -1,9 +1,25 @@
-/** Used only when a product has no usable image URLs. */
-export const PRODUCT_IMAGE_PLACEHOLDER =
-  'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=1000';
+/** Local fallback — never use third-party URLs (avoids CORB / hotlink blocks). */
+export const PRODUCT_IMAGE_PLACEHOLDER = '/images/product-placeholder.svg';
 
 export function isRemoteImageUrl(src: string): boolean {
   return /^https?:\/\//i.test(src.trim());
+}
+
+/** True when the URL is safe to put on an `<img src>` (avoids CORB from JSON/API responses). */
+export function isUsableImageSrc(src: string): boolean {
+  const s = src.trim();
+  if (!s || s.length < 12) return false;
+  if (s.startsWith('data:image/')) return true;
+  if (s.startsWith('/')) return true;
+  if (!/^https?:\/\//i.test(s)) return false;
+  if (/firestore\.googleapis\.com|identitytoolkit|securetoken\.googleapis/i.test(s)) return false;
+  if (/images\.unsplash\.com/i.test(s)) return false;
+  return true;
+}
+
+export function sanitizeImageSrc(src: string | undefined | null): string | null {
+  if (!src || !isUsableImageSrc(src)) return null;
+  return src.trim();
 }
 
 /**

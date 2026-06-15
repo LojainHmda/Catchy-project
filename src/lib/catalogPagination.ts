@@ -1,4 +1,5 @@
 import type { QueryConstraint, QueryDocumentSnapshot } from 'firebase/firestore';
+import { getDocsFromCache } from 'firebase/firestore';
 import {
   collection,
   db,
@@ -10,23 +11,41 @@ import {
   where,
 } from '../firebase';
 import { canonicalCategory } from './category';
+import {
+  categoryCountsFromProducts,
+  toCatalogListProduct,
+  type CatalogListProduct,
+} from './catalogProductList';
 
 export const CATALOG_FETCH_SIZE = 24;
 export const CATALOG_VIEW_PAGE_SIZE = 24;
+const FIRESTORE_TIMEOUT_MS = 12_000;
 
 export type CatalogSortKey = 'priceAsc' | 'priceDesc';
 
-export async function fetchCatalogProductsPage(options: {
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+    promise
+      .then((value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
+function buildProductQuery(options: {
   selectedCats: string[];
   sortBy: CatalogSortKey;
   cursor: QueryDocumentSnapshot | null;
-  pageSize?: number;
-}): Promise<{
-  items: { id: string; [key: string]: unknown }[];
-  lastDoc: QueryDocumentSnapshot | null;
-  hasMore: boolean;
-}> {
-  const pageSize = options.pageSize ?? CATALOG_FETCH_SIZE;
+  pageSize: number;
+}) {
   const constraints: QueryConstraint[] = [];
   const categories = options.selectedCats.map(canonicalCategory).filter(Boolean);
 
@@ -38,18 +57,47 @@ export async function fetchCatalogProductsPage(options: {
 
   // category + orderBy(price) needs a composite Firestore index; sort client-side when filtered
   if (categories.length === 0) {
-    constraints.push(
-      orderBy('price', options.sortBy === 'priceDesc' ? 'desc' : 'asc')
-    );
+    constraints.push(orderBy('price', options.sortBy === 'priceDesc' ? 'desc' : 'asc'));
   }
 
-  constraints.push(limit(pageSize));
+  constraints.push(limit(options.pageSize));
   if (options.cursor) constraints.push(startAfter(options.cursor));
 
-  const snap = await getDocs(query(collection(db, 'products'), ...constraints));
-  const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  const lastDoc = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1]! : null;
+  return query(collection(db, 'products'), ...constraints);
+}
 
+async function runQuery(q: ReturnType<typeof buildProductQuery>) {
+  try {
+    const cached = await getDocsFromCache(q);
+    if (!cached.empty) return cached;
+  } catch {
+    /* persistent cache not warm yet */
+  }
+  return withTimeout(getDocs(q), FIRESTORE_TIMEOUT_MS, 'Catalog products');
+}
+
+export async function fetchCatalogProductsPage(options: {
+  selectedCats: string[];
+  sortBy: CatalogSortKey;
+  cursor: QueryDocumentSnapshot | null;
+  pageSize?: number;
+}): Promise<{
+  items: CatalogListProduct[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}> {
+  const pageSize = options.pageSize ?? CATALOG_FETCH_SIZE;
+  const q = buildProductQuery({ ...options, pageSize });
+  const snap = await runQuery(q);
+  return mapProductPage(snap, pageSize);
+}
+
+function mapProductPage(
+  snap: Awaited<ReturnType<typeof getDocs>>,
+  pageSize: number
+) {
+  const items = snap.docs.map((d) => toCatalogListProduct(d.id, d.data() as Record<string, unknown>));
+  const lastDoc = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1]! : null;
   return {
     items,
     lastDoc,
@@ -57,14 +105,21 @@ export async function fetchCatalogProductsPage(options: {
   };
 }
 
-/** Lightweight fetch for sidebar category counts (cap avoids huge reads). */
+/** Background counts — cache-first, non-blocking. */
 export async function fetchCatalogCategoryCounts(): Promise<Map<string, number>> {
-  const snap = await getDocs(query(collection(db, 'products'), limit(500)));
-  const map = new Map<string, number>();
-  snap.docs.forEach((d) => {
-    const key = canonicalCategory(d.data().category);
-    if (!key) return;
-    map.set(key, (map.get(key) ?? 0) + 1);
-  });
-  return map;
+  const q = query(collection(db, 'products'), limit(500));
+  try {
+    const cached = await getDocsFromCache(q);
+    if (!cached.empty) {
+      const items = cached.docs.map((d) =>
+        toCatalogListProduct(d.id, d.data() as Record<string, unknown>)
+      );
+      return categoryCountsFromProducts(items);
+    }
+  } catch {
+    /* persistent cache not warm yet */
+  }
+  const snap = await withTimeout(getDocs(q), FIRESTORE_TIMEOUT_MS, 'Category counts');
+  const items = snap.docs.map((d) => toCatalogListProduct(d.id, d.data() as Record<string, unknown>));
+  return categoryCountsFromProducts(items);
 }

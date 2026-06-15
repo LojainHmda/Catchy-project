@@ -1,4 +1,14 @@
 /** Firestore product document — discount fields are optional and owner-managed. */
+export type ProductColorVariant = {
+  id: string;
+  name: string;
+  nameAr?: string;
+  /** Swatch for storefront picker (#rrggbb). */
+  hex?: string;
+  images: string[];
+  sizeStock: Record<string, number>;
+};
+
 export type ProductRecord = {
   id: string;
   name: string;
@@ -17,6 +27,9 @@ export type ProductRecord = {
   sizeStock?: Record<string, number>;
   stock?: number;
   lifestyleImage?: string;
+  /** Per-color inventory, images, and size counts. When set, drives storefront color picker. */
+  colorVariants?: ProductColorVariant[];
+  defaultColorId?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
 };

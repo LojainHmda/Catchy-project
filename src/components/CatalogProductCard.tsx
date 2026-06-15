@@ -1,24 +1,17 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '../lib/utils';
-import { coerceProductImages, isRemoteImageUrl, PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
+import { catalogThumbnailUrl, type CatalogListProduct } from '../lib/catalogProductList';
+import { isRemoteImageUrl, sanitizeImageSrc } from '../lib/productImages';
 import { ProductSaleBadge } from './ProductPriceDisplay';
 
 export interface CatalogProductCardProps {
-  product: {
-    id: string;
-    name: string;
-    price: number;
-    images?: string[];
-    image?: string;
-    sizes?: string[];
-  };
-  /** When set and greater than `price`, shows as sale with strikethrough compare price. */
+  product: Pick<CatalogListProduct, 'id' | 'name' | 'price' | 'images' | 'sizes'>;
   compareAtPrice?: number | null;
   discountPercent?: number;
   saleLabel: string;
-  /** Pre-translated line, e.g. "3 colors" */
   colorsLine: string;
+  priority?: boolean;
 }
 
 const CatalogProductCard: React.FC<CatalogProductCardProps> = ({
@@ -27,9 +20,9 @@ const CatalogProductCard: React.FC<CatalogProductCardProps> = ({
   discountPercent,
   saleLabel,
   colorsLine,
+  priority = false,
 }) => {
-  const imgs = coerceProductImages(product);
-  const src = imgs[0] ?? PRODUCT_IMAGE_PLACEHOLDER;
+  const src = sanitizeImageSrc(catalogThumbnailUrl(product));
   const onSale = typeof compareAtPrice === 'number' && compareAtPrice > product.price;
 
   return (
@@ -43,18 +36,19 @@ const CatalogProductCard: React.FC<CatalogProductCardProps> = ({
               className="left-1.5 top-1.5"
             />
           )}
-          <img
-            src={src}
-            alt=""
-            className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]"
-            referrerPolicy={isRemoteImageUrl(src) ? 'no-referrer' : undefined}
-            onError={(e) => {
-              const el = e.currentTarget;
-              if (el.src.startsWith('data:')) return;
-              el.onerror = null;
-              el.src = PRODUCT_IMAGE_PLACEHOLDER;
-            }}
-          />
+          {src ? (
+            <img
+              src={src}
+              alt={product.name}
+              loading={priority ? 'eager' : 'lazy'}
+              decoding="async"
+              fetchPriority={priority ? 'high' : 'auto'}
+              className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]"
+              referrerPolicy={isRemoteImageUrl(src) ? 'no-referrer' : undefined}
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-neutral-100" aria-hidden />
+          )}
         </div>
       </Link>
       <div className="mt-2 space-y-1 px-0">

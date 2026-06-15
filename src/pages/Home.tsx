@@ -189,7 +189,7 @@ const Home = () => {
       </section>
 
       {/* ── Latest Arrivals (pulled up over hero to cover the video watermark) ── */}
-      <section className="relative z-10 -mt-5 rounded-t-[2rem] bg-surface px-5 pt-10 mb-12 sm:-mt-16">
+      <section className="relative z-10 -mt-5 bg-surface px-5 pt-10 mb-12 sm:-mt-16">
         <h2
           className={cn('text-xl text-primary text-center mb-8', isAr ? 'font-arabic' : '')}
           style={!isAr ? { fontFamily: 'var(--font-display)' } : undefined}

@@ -95,10 +95,40 @@ export function parseOrderLineItems(raw: unknown): OrderLineItem[] {
         quantity,
         image: sanitizeStoredImageUrl(item.image),
         lineTotal: price * quantity,
-        size: typeof item.size === 'string' && item.size.trim() ? item.size : null,
+        size: typeof item.size === 'string' && item.size.trim() ? item.size.trim() : null,
+        colorId: typeof item.colorId === 'string' && item.colorId.trim() ? item.colorId.trim() : null,
+        colorName: typeof item.colorName === 'string' && item.colorName.trim() ? item.colorName.trim() : null,
+        itemSizes:
+          item.itemSizes && typeof item.itemSizes === 'object' && !Array.isArray(item.itemSizes)
+            ? (item.itemSizes as Record<string, string>)
+            : undefined,
       };
     })
     .filter((item) => item.name.trim().length > 0);
+}
+
+/** Split stored line name into product title + color + size for display tables. */
+export function parseLineItemDisplay(item: Pick<OrderLineItem, 'name' | 'size' | 'colorName'>) {
+  let color = item.colorName?.trim() || null;
+  let size = item.size?.trim() || null;
+  let productName = item.name.trim();
+
+  const suffixMatch = productName.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+  if (suffixMatch) {
+    productName = suffixMatch[1]!.trim();
+    if (!color && !size) {
+      const inner = suffixMatch[2]!.trim();
+      const parts = inner.split('/').map((part) => part.trim()).filter(Boolean);
+      if (parts.length >= 2) {
+        color = parts[0] ?? null;
+        size = parts[1] ?? null;
+      } else if (parts.length === 1) {
+        size = parts[0] ?? null;
+      }
+    }
+  }
+
+  return { productName, color, size };
 }
 
 export function parseOrderDocument(

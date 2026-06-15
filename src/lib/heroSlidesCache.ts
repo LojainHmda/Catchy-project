@@ -150,6 +150,10 @@ export function subscribeHeroSlides(listener: HeroSlidesListener): () => void {
 
   return () => {
     listeners.delete(listener);
+    if (listeners.size === 0 && unsubscribeFirestore) {
+      unsubscribeFirestore();
+      unsubscribeFirestore = null;
+    }
   };
 }
 

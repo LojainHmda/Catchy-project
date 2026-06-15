@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Percent, Search, Trash2, Tag, Loader2, RefreshCw, X } from 'lucide-react';
+import { Percent, Search, Trash2, Tag, Loader2, RefreshCw, X, Square, CheckSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { CATEGORY_ICONS } from '../constants';
+import { canonicalCategory } from '../lib/category';
+import { subscribeCoordinateLooks } from '../lib/coordinatesService';
+import {
+  coordinateLinkedProductIds,
+  productMatchesCoordinatesFilter,
+} from '../lib/coordinateProductFilter';
+import type { CoordinateLook } from '../types/coordinates';
 import {
   db,
   collection,
@@ -36,6 +44,9 @@ const AdminDiscounts = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkPercent, setBulkPercent] = useState('20');
   const [applyModalOpen, setApplyModalOpen] = useState(false);
+  const [applySearch, setApplySearch] = useState('');
+  const [applyCategoryFilter, setApplyCategoryFilter] = useState('all');
+  const [coordinateLooks, setCoordinateLooks] = useState<CoordinateLook[]>([]);
 
   const fetchProducts = async () => {
     try {
@@ -54,6 +65,15 @@ const AdminDiscounts = () => {
   useEffect(() => {
     fetchProducts();
   }, []);
+
+  useEffect(() => {
+    return subscribeCoordinateLooks(setCoordinateLooks);
+  }, []);
+
+  const coordinateLinkedIds = useMemo(
+    () => coordinateLinkedProductIds(coordinateLooks),
+    [coordinateLooks]
+  );
 
   const discountedProducts = useMemo(
     () => products.filter((p) => isProductOnSale(p)),
@@ -76,17 +96,66 @@ const AdminDiscounts = () => {
     [products]
   );
 
-  const filteredForApply = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase();
-    return notOnSaleProducts.filter((p) => {
-      if (!q) return true;
-      return (
-        (p.name || '').toLowerCase().includes(q) ||
-        p.id.toLowerCase().includes(q) ||
-        (p.category || '').toLowerCase().includes(q)
-      );
+  const applyCategoryFilters = useMemo(
+    () => ['all', ...Object.keys(CATEGORY_ICONS).filter((k) => k !== 'All')],
+    []
+  );
+
+  const applyCategoryCounts = useMemo(() => {
+    const map: Record<string, number> = { all: notOnSaleProducts.length };
+    notOnSaleProducts.forEach((p) => {
+      const cat = canonicalCategory(p.category) || 'Uncategorized';
+      map[cat] = (map[cat] ?? 0) + 1;
     });
-  }, [notOnSaleProducts, searchTerm]);
+    map.Coordinates = notOnSaleProducts.filter((p) =>
+      productMatchesCoordinatesFilter(p, coordinateLinkedIds)
+    ).length;
+    return map;
+  }, [notOnSaleProducts, coordinateLinkedIds]);
+
+  const filteredForApply = useMemo(() => {
+    const q = applySearch.trim().toLowerCase();
+    return notOnSaleProducts
+      .filter((p) => {
+        if (applyCategoryFilter !== 'all') {
+          if (applyCategoryFilter === 'Coordinates') {
+            if (!productMatchesCoordinatesFilter(p, coordinateLinkedIds)) return false;
+          } else if (canonicalCategory(p.category) !== applyCategoryFilter) {
+            return false;
+          }
+        }
+        if (!q) return true;
+        return (
+          (p.name || '').toLowerCase().includes(q) ||
+          p.id.toLowerCase().includes(q) ||
+          (p.category || '').toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? '')));
+  }, [notOnSaleProducts, applySearch, applyCategoryFilter, coordinateLinkedIds]);
+
+  const openApplyModal = () => {
+    setSelectedIds(new Set());
+    setApplySearch('');
+    setApplyCategoryFilter('all');
+    setApplyModalOpen(true);
+  };
+
+  const selectAllVisible = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      filteredForApply.forEach((p) => next.add(p.id));
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const applyChipClass = (active: boolean) =>
+    cn(
+      'shrink-0 rounded-md px-2 py-1 text-[10px] font-medium transition-colors',
+      active ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+    );
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -197,10 +266,7 @@ const AdminDiscounts = () => {
             </button>
             <button
               type="button"
-              onClick={() => {
-                setSelectedIds(new Set());
-                setApplyModalOpen(true);
-              }}
+              onClick={openApplyModal}
               className="inline-flex h-9 items-center gap-1.5 rounded-md bg-catchy px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-catchy-dark"
             >
               <Percent size={14} />
@@ -248,7 +314,7 @@ const AdminDiscounts = () => {
             </p>
             <button
               type="button"
-              onClick={() => setApplyModalOpen(true)}
+              onClick={openApplyModal}
               className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-catchy px-3 text-xs font-semibold text-white hover:bg-catchy-dark"
             >
               <Percent size={14} />
@@ -348,54 +414,117 @@ const AdminDiscounts = () => {
                 </button>
               </div>
 
-              <div className="border-b border-gray-100 px-4 py-3">
-                <label className="mb-1 block text-xs font-medium text-gray-500">Discount percentage</label>
-                <div className="flex items-center gap-2">
+              <div className="space-y-3 border-b border-gray-100 px-4 py-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-500">Discount percentage</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={99}
+                      value={bulkPercent}
+                      onChange={(e) => setBulkPercent(e.target.value)}
+                      className={cn(INPUT, 'max-w-[6rem]')}
+                    />
+                    <span className="text-sm text-gray-500">% off current price</span>
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
                   <input
-                    type="number"
-                    min={1}
-                    max={99}
-                    value={bulkPercent}
-                    onChange={(e) => setBulkPercent(e.target.value)}
-                    className={cn(INPUT, 'max-w-[6rem]')}
+                    type="search"
+                    value={applySearch}
+                    onChange={(e) => setApplySearch(e.target.value)}
+                    placeholder="Search name, category, ID…"
+                    className="h-8 w-full rounded-md border border-gray-200 bg-white pl-8 pr-3 text-xs outline-none focus:border-catchy"
                   />
-                  <span className="text-sm text-gray-500">% off current price</span>
+                </div>
+
+                <div className="flex gap-1 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {applyCategoryFilters.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setApplyCategoryFilter(cat)}
+                      className={applyChipClass(applyCategoryFilter === cat)}
+                    >
+                      {cat === 'all' ? 'All' : cat}
+                      <span className="ms-1 tabular-nums opacity-70">{applyCategoryCounts[cat] ?? 0}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] text-gray-500">
+                    {selectedIds.size} selected · {filteredForApply.length} shown
+                  </p>
+                  <div className="flex gap-2">
+                    {filteredForApply.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={selectAllVisible}
+                        className="text-[10px] font-semibold text-catchy hover:underline"
+                      >
+                        Select all shown
+                      </button>
+                    ) : null}
+                    {selectedIds.size > 0 ? (
+                      <button
+                        type="button"
+                        onClick={clearSelection}
+                        className="text-[10px] font-medium text-gray-500 hover:underline"
+                      >
+                        Clear
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 
               <div className="overflow-y-auto px-4 py-3" style={{ maxHeight: '50vh' }}>
-                <p className="mb-2 text-xs font-medium text-gray-500">
-                  {selectedIds.size} selected · {filteredForApply.length} available
-                </p>
+                {filteredForApply.length === 0 ? (
+                  <p className="py-8 text-center text-xs text-gray-500">No products match this search or category.</p>
+                ) : (
                 <ul className="divide-y divide-gray-100 rounded-md border border-gray-200">
-                  {filteredForApply.slice(0, 100).map((product) => {
+                  {filteredForApply.map((product) => {
                     const base = Number(product.price);
                     const preview = applyPercentToPrice(base, parseFloat(bulkPercent) || 0);
                     const checked = selectedIds.has(product.id);
                     return (
                       <li key={product.id}>
-                        <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-gray-50">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleSelect(product.id)}
-                            className="h-4 w-4 rounded border-gray-300 text-catchy focus:ring-catchy"
-                          />
+                        <button
+                          type="button"
+                          onClick={() => toggleSelect(product.id)}
+                          className={cn(
+                            'flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-gray-50',
+                            checked && 'bg-catchy/5'
+                          )}
+                        >
+                          <span className="shrink-0 text-catchy">
+                            {checked ? (
+                              <CheckSquare size={16} strokeWidth={2} />
+                            ) : (
+                              <Square size={16} strokeWidth={2} className="text-gray-300" />
+                            )}
+                          </span>
                           <div className="h-9 w-9 shrink-0 overflow-hidden rounded border border-gray-100">
                             <img src={tableThumb(product)} alt="" className="h-full w-full object-cover" />
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium text-gray-900">{product.name}</p>
                             <p className="text-xs text-gray-500">
+                              {product.category ? `${product.category} · ` : ''}
                               ILS {base.toFixed(2)} →{' '}
                               <span className="font-semibold text-red-600">ILS {preview.toFixed(2)}</span>
                             </p>
                           </div>
-                        </label>
+                        </button>
                       </li>
                     );
                   })}
                 </ul>
+                )}
               </div>
 
               <div className="flex gap-2 border-t border-gray-200 px-4 py-3">

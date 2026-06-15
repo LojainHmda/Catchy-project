@@ -4,17 +4,24 @@ import { db, doc, getDoc } from '../firebase';
 import { useCart } from '../context/CartContext';
 import { useLanguage } from '../context/LanguageContext';
 import { CATEGORY_KEYS } from '../constants';
-import { ShoppingCart, Heart, Share2, ArrowLeft } from 'lucide-react';
+import { ShoppingCart, Heart, Share2, ArrowLeft, ZoomIn } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { coerceProductImages, isRemoteImageUrl, PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
+import ImageLightbox from '../components/ImageLightbox';
 import {
   availableSizes,
   hasSizedInventory,
-  resolveProductInventory,
   sortedSizeStockEntries,
   stockForSelection,
 } from '../lib/productInventory';
+import {
+  defaultVariantId,
+  parseColorVariants,
+  resolveVariantSelection,
+  variantLabel,
+} from '../lib/productVariants';
+import ColorSwatchPicker from '../components/product/ColorSwatchPicker';
 import { getCatalogSaleMeta } from '../lib/catalogSale';
 import ProductPriceDisplay, { ProductSaleBadge } from '../components/ProductPriceDisplay';
 import SizeRequiredModal from '../components/product/SizeRequiredModal';
@@ -22,7 +29,7 @@ import SizeRequiredModal from '../components/product/SizeRequiredModal';
 const ProductDetail = () => {
   const { id } = useParams();
   const { addToCart, openCart } = useCart();
-  const { t, isRTL } = useLanguage();
+  const { t, isRTL, language } = useLanguage();
   const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState(0);
@@ -30,7 +37,10 @@ const ProductDetail = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [isFavorited, setIsFavorited] = useState(false);
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
+  const [selectedColorId, setSelectedColorId] = useState<string | null>(null);
   const [sizePromptOpen, setSizePromptOpen] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
 
   useEffect(() => {
     if (!id) return;
@@ -56,14 +66,24 @@ const ProductDetail = () => {
     fetchProduct();
   }, [id]);
 
-  const galleryImages = React.useMemo(
-    () => (product ? coerceProductImages(product) : []),
+  const colorVariants = useMemo(
+    () => (product ? parseColorVariants(product.colorVariants) : []),
     [product]
+  );
+
+  const variantSelection = useMemo(
+    () => (product ? resolveVariantSelection(product, selectedColorId) : null),
+    [product, selectedColorId]
+  );
+
+  const galleryImages = React.useMemo(
+    () => variantSelection?.images ?? (product ? coerceProductImages(product) : []),
+    [variantSelection, product]
   );
 
   const allMedia = React.useMemo(() => {
     if (!product) return [];
-    const images = coerceProductImages(product);
+    const images = variantSelection?.images ?? coerceProductImages(product);
     const lifestyle =
       typeof product.lifestyleImage === 'string' && product.lifestyleImage.trim().length > 12
         ? [product.lifestyleImage as string]
@@ -76,42 +96,72 @@ const ProductDetail = () => {
       ...lifestyle.map((img: string) => ({ type: 'image', url: img, tag: 'real-life' })),
       ...videos.map((vid: string) => ({ type: 'video', url: vid, tag: '' })),
     ];
-  }, [product]);
+  }, [product, variantSelection]);
+
+  const lightboxImages = useMemo(
+    () =>
+      allMedia
+        .filter((media) => media.type === 'image')
+        .map((media) => media.url),
+    [allMedia]
+  );
+
+  const openLightbox = () => {
+    const current = allMedia[selectedImage];
+    if (!current || current.type === 'video') return;
+    const index = lightboxImages.indexOf(current.url);
+    setLightboxIndex(index >= 0 ? index : 0);
+    setLightboxOpen(true);
+  };
+
+  const handleLightboxIndexChange = (index: number) => {
+    setLightboxIndex(index);
+    const url = lightboxImages[index];
+    const mediaIndex = allMedia.findIndex((media) => media.type === 'image' && media.url === url);
+    if (mediaIndex >= 0) setSelectedImage(mediaIndex);
+  };
 
   const isVideoMedia = allMedia[selectedImage]?.type === 'video';
 
   React.useEffect(() => {
     setSelectedImage(0);
-  }, [product?.id, galleryImages.length]);
+  }, [product?.id, selectedColorId, galleryImages.length]);
+
+  React.useEffect(() => {
+    if (!product) return;
+    setSelectedColorId(defaultVariantId(product));
+    setSelectedSize(null);
+  }, [product?.id]);
 
   React.useEffect(() => {
     if (selectedImage >= allMedia.length) {
       setSelectedImage(Math.max(0, allMedia.length - 1));
     }
-  }, [galleryImages.length, selectedImage]);
+  }, [allMedia.length, selectedImage]);
 
-  const inventory = useMemo(
-    () => (product ? resolveProductInventory(product) : { sizeStock: {}, stock: 0 }),
-    [product]
-  );
-
-  const sized = hasSizedInventory(inventory.sizeStock);
+  const sizeStock = variantSelection?.sizeStock ?? {};
+  const totalStock = variantSelection?.stock ?? 0;
+  const sized = hasSizedInventory(sizeStock);
   const sizeOptions = useMemo(
-    () => (sized ? sortedSizeStockEntries(inventory.sizeStock, { includeZero: false }).map(([size]) => size) : []),
-    [inventory.sizeStock, sized]
+    () => (sized ? sortedSizeStockEntries(sizeStock, { includeZero: false }).map(([size]) => size) : []),
+    [sizeStock, sized]
   );
   const inStockSizes = useMemo(
-    () => (sized ? availableSizes(inventory.sizeStock) : []),
-    [inventory.sizeStock, sized]
+    () => (sized ? availableSizes(sizeStock) : []),
+    [sizeStock, sized]
   );
 
-  const selectedStock = stockForSelection(inventory.sizeStock, inventory.stock, selectedSize);
-  const outOfStock = sized ? inStockSizes.length === 0 : inventory.stock <= 0;
-  const canAddWithSelection = sized ? Boolean(selectedSize && selectedStock > 0) : inventory.stock > 0;
+  const selectedStock = stockForSelection(sizeStock, totalStock, selectedSize);
+  const outOfStock = sized ? inStockSizes.length === 0 : totalStock <= 0;
+  const canAddWithSelection = sized ? Boolean(selectedSize && selectedStock > 0) : totalStock > 0;
 
   useEffect(() => {
     setQuantity(1);
-  }, [selectedSize, product?.id]);
+  }, [selectedColorId, product?.id]);
+
+  useEffect(() => {
+    setSelectedSize(null);
+  }, [selectedColorId, product?.id]);
 
   useEffect(() => {
     if (quantity > selectedStock && selectedStock > 0) {
@@ -125,9 +175,13 @@ const ProductDetail = () => {
       setSizePromptOpen(true);
       return;
     }
+    if (variantSelection?.hasVariants && !selectedColorId) return;
     if (!canAddWithSelection) return;
     setIsAdding(true);
-    addToCart(product, quantity, selectedSize);
+    const colorName = variantSelection?.variant
+      ? variantLabel(variantSelection.variant, language === 'ar')
+      : undefined;
+    addToCart(product, quantity, selectedSize, selectedColorId, colorName);
     openCart();
     setTimeout(() => setIsAdding(false), 1000);
   };
@@ -233,21 +287,32 @@ const ProductDetail = () => {
                   poster={galleryImages[0] || PRODUCT_IMAGE_PLACEHOLDER}
                 />
               ) : (
-                <img
-                  src={allMedia[selectedImage]?.url || PRODUCT_IMAGE_PLACEHOLDER}
-                  alt={product.name}
-                  className="h-full w-full object-cover"
-                  referrerPolicy={
-                    isRemoteImageUrl(allMedia[selectedImage]?.url || '') ? 'no-referrer' : undefined
-                  }
-                  onError={(e) => {
-                    const el = e.currentTarget;
-                    const src = el.currentSrc || el.src;
-                    if (src.startsWith('data:')) return;
-                    el.onerror = null;
-                    el.src = PRODUCT_IMAGE_PLACEHOLDER;
-                  }}
-                />
+                <button
+                  type="button"
+                  onClick={openLightbox}
+                  className="group absolute inset-0 h-full w-full cursor-zoom-in border-0 bg-transparent p-0"
+                  aria-label={t('product.tapToZoom')}
+                >
+                  <img
+                    src={allMedia[selectedImage]?.url || PRODUCT_IMAGE_PLACEHOLDER}
+                    alt={product.name}
+                    className="h-full w-full object-cover"
+                    referrerPolicy={
+                      isRemoteImageUrl(allMedia[selectedImage]?.url || '') ? 'no-referrer' : undefined
+                    }
+                    onError={(e) => {
+                      const el = e.currentTarget;
+                      const src = el.currentSrc || el.src;
+                      if (src.startsWith('data:')) return;
+                      el.onerror = null;
+                      el.src = PRODUCT_IMAGE_PLACEHOLDER;
+                    }}
+                  />
+                  <span className="pointer-events-none absolute bottom-2 end-2 z-[1] inline-flex items-center gap-1 rounded-full bg-black/45 px-2 py-1 text-[10px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100">
+                    <ZoomIn size={12} />
+                    {t('product.tapToZoom')}
+                  </span>
+                </button>
               )}
               <span
                 className={cn(
@@ -265,6 +330,11 @@ const ProductDetail = () => {
                 />
               ) : null}
             </motion.div>
+            {!isVideoMedia ? (
+              <p className={cn('text-center text-[11px] text-gray-400', isRTL && 'font-arabic')}>
+                {t('product.tapToZoom')}
+              </p>
+            ) : null}
             {allMedia.length > 1 ? (
               <div className="grid grid-cols-4 gap-2 sm:max-w-sm lg:max-w-none">
                 {allMedia.map((media: any, i: number) => (
@@ -335,23 +405,50 @@ const ProductDetail = () => {
                 <span
                   className={cn(
                     'rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide',
-                    inventory.stock > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600',
+                    totalStock > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600',
                     isRTL && 'font-arabic'
                   )}
                 >
-                  {inventory.stock > 0 ? t('product.inStock') : t('product.outOfStock')}
+                  {totalStock > 0 ? t('product.inStock') : t('product.outOfStock')}
                 </span>
               </div>
 
+              {colorVariants.length > 1 ? (
+                <div className="mb-4">
+                  <ColorSwatchPicker
+                    variants={colorVariants}
+                    selectedId={selectedColorId}
+                    onSelect={setSelectedColorId}
+                    isRTL={isRTL}
+                    isAr={language === 'ar'}
+                    label={t('product.color')}
+                  />
+                </div>
+              ) : null}
+
               {sized && sizeOptions.length > 0 ? (
                 <div className="mb-4">
-                  <p className={cn('mb-2 text-[10px] font-black uppercase tracking-[0.12em] text-gray-400', isRTL && 'font-arabic')}>
-                    {t('product.size')}
-                    {selectedSize ? <span className="ms-1.5 text-catchy">{selectedSize}</span> : null}
+                  <p
+                    className={cn(
+                      'mb-2 w-fit max-w-full text-start text-[10px] text-gray-400',
+                      isRTL ? 'font-arabic font-bold normal-case tracking-normal' : 'font-black uppercase tracking-[0.12em]'
+                    )}
+                  >
+                    {isRTL && selectedSize ? (
+                      <>
+                        <span>{t('product.size')}</span>
+                        <span className="text-catchy">{`\u00A0${selectedSize}`}</span>
+                      </>
+                    ) : (
+                      <>
+                        {t('product.size')}
+                        {selectedSize ? <span className="ms-1.5 text-catchy">{selectedSize}</span> : null}
+                      </>
+                    )}
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {sizeOptions.map((size) => {
-                      const qty = inventory.sizeStock[size] ?? 0;
+                      const qty = sizeStock[size] ?? 0;
                       const active = selectedSize === size;
                       return (
                         <button
@@ -407,7 +504,7 @@ const ProductDetail = () => {
                 <p className={cn('text-xs font-medium text-gray-400', isRTL && 'font-arabic')}>
                   {sized && selectedSize
                     ? t('product.sizeLeft').replace('{n}', String(selectedStock))
-                    : t('product.stockAvailable').replace('{n}', String(inventory.stock))}
+                    : t('product.stockAvailable').replace('{n}', String(totalStock))}
                 </p>
               </div>
 
@@ -454,6 +551,14 @@ const ProductDetail = () => {
         </div>
       </div>
       <SizeRequiredModal open={sizePromptOpen} onClose={() => setSizePromptOpen(false)} />
+      <ImageLightbox
+        images={lightboxImages.length > 0 ? lightboxImages : [PRODUCT_IMAGE_PLACEHOLDER]}
+        index={lightboxIndex}
+        open={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+        onIndexChange={handleLightboxIndexChange}
+        alt={product.name}
+      />
     </div>
   );
 };

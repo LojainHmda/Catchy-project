@@ -17,8 +17,15 @@ import {
   hasSizedInventory,
   resolveProductInventory,
   stockForSelection,
+  totalFromSizeStock,
   type SizeStock,
 } from '../productInventory';
+import {
+  aggregateFromVariants,
+  aggregateSizeStockFromVariants,
+  decrementColorVariants,
+  parseColorVariants,
+} from '../productVariants';
 import { isCoordinateCartId, coordinateLookIdFromCart, validateCoordinateItemSizes, coordinateAvailableSets, formatCoordinateItemSizes } from '../coordinateCart';
 import { resolveCoordinate } from '../coordinateResolve';
 import { getShippingCost } from '../shippingZones';
@@ -30,7 +37,13 @@ const PRODUCTS_COLLECTION = 'products';
 const COORDINATE_LOOKS_COLLECTION = 'coordinate_looks';
 
 type DocSnap = Awaited<ReturnType<typeof getDoc>>;
-type WorkingInventory = { sizeStock: SizeStock; stock: number; sized: boolean };
+type WorkingInventory = {
+  sizeStock: SizeStock;
+  stock: number;
+  sized: boolean;
+  colorVariants?: ReturnType<typeof parseColorVariants>;
+  hasVariants: boolean;
+};
 
 type CoordinateBundle = {
   lookSnap: DocSnap;
@@ -60,11 +73,21 @@ function firebaseErrorCode(error: unknown): string {
 }
 
 async function applyInventoryUpdates(
-  updates: { productId: string; stock: number; sizeStock?: SizeStock; sized: boolean }[]
+  updates: {
+    productId: string;
+    stock: number;
+    sizeStock?: SizeStock;
+    sized: boolean;
+    colorVariants?: ReturnType<typeof parseColorVariants>;
+    hasVariants?: boolean;
+  }[]
 ): Promise<void> {
   for (const update of updates) {
     const payload: Record<string, unknown> = { stock: update.stock };
-    if (update.sized && update.sizeStock) {
+    if (update.hasVariants && update.colorVariants) {
+      payload.colorVariants = update.colorVariants;
+      payload.sizeStock = aggregateSizeStockFromVariants(update.colorVariants);
+    } else if (update.sized && update.sizeStock) {
       payload.sizeStock = update.sizeStock;
     }
     await updateDoc(doc(db, PRODUCTS_COLLECTION, update.productId), payload);
@@ -133,12 +156,26 @@ function buildCheckoutPayload(
     if (!snap.exists()) {
       throw new OrderError('PRODUCT_MISSING', 'A product in your bag is no longer available.');
     }
-    const { sizeStock, stock } = resolveProductInventory(snap.data() ?? {});
-    workingByProductId.set(productId, {
-      sizeStock: { ...sizeStock },
-      stock,
-      sized: hasSizedInventory(sizeStock),
-    });
+    const data = snap.data() ?? {};
+    const variants = parseColorVariants(data.colorVariants);
+    if (variants.length > 0) {
+      const agg = aggregateFromVariants(variants);
+      workingByProductId.set(productId, {
+        colorVariants: variants.map((v) => ({ ...v, sizeStock: { ...v.sizeStock } })),
+        hasVariants: true,
+        sizeStock: agg.sizeStock,
+        stock: agg.stock,
+        sized: Object.keys(agg.sizeStock).length > 0,
+      });
+    } else {
+      const { sizeStock, stock } = resolveProductInventory(data);
+      workingByProductId.set(productId, {
+        sizeStock: { ...sizeStock },
+        stock,
+        sized: hasSizedInventory(sizeStock),
+        hasVariants: false,
+      });
+    }
     initialSnapsByProductId.set(productId, snap);
   };
 
@@ -217,12 +254,27 @@ function buildCheckoutPayload(
     const price = Number(data.price ?? cartItem.price);
     const working = workingByProductId.get(cartItem.id)!;
 
+    if (working.hasVariants && !cartItem.colorId) {
+      throw new OrderError('OUT_OF_STOCK', `Select a color for "${cartItem.name}".`, cartItem.name);
+    }
+
     if (working.sized && !cartItem.size) {
       throw new OrderError('OUT_OF_STOCK', `Select a size for "${cartItem.name}".`, cartItem.name);
     }
 
     const available = stockForSelection(working.sizeStock, working.stock, cartItem.size);
-    if (available < cartItem.quantity) {
+    if (working.hasVariants && cartItem.colorId && working.colorVariants) {
+      const variant = working.colorVariants.find((v) => v.id === cartItem.colorId);
+      const variantStock = variant ? stockForSelection(variant.sizeStock, totalFromSizeStock(variant.sizeStock), cartItem.size) : 0;
+      if (variantStock < cartItem.quantity) {
+        const sizeLabel = cartItem.size ? ` (${cartItem.size})` : '';
+        throw new OrderError(
+          'OUT_OF_STOCK',
+          `Only ${variantStock} left in stock for "${cartItem.name}"${sizeLabel}.`,
+          cartItem.name
+        );
+      }
+    } else if (available < cartItem.quantity) {
       const sizeLabel = cartItem.size ? ` (${cartItem.size})` : '';
       throw new OrderError(
         'OUT_OF_STOCK',
@@ -232,14 +284,33 @@ function buildCheckoutPayload(
     }
 
     try {
-      const next = decrementInventory(working.sizeStock, working.stock, cartItem.size, cartItem.quantity);
-      workingByProductId.set(cartItem.id, { ...next, sized: working.sized });
+      if (working.hasVariants && cartItem.colorId && working.colorVariants) {
+        const nextVariants = decrementColorVariants(
+          working.colorVariants,
+          cartItem.colorId,
+          cartItem.size,
+          cartItem.quantity
+        );
+        const agg = aggregateFromVariants(nextVariants);
+        workingByProductId.set(cartItem.id, {
+          ...working,
+          colorVariants: nextVariants,
+          sizeStock: agg.sizeStock,
+          stock: agg.stock,
+        });
+      } else {
+        const next = decrementInventory(working.sizeStock, working.stock, cartItem.size, cartItem.quantity);
+        workingByProductId.set(cartItem.id, { ...next, sized: working.sized, hasVariants: false });
+      }
       bumpRemoved(cartItem.id, cartItem.quantity);
     } catch {
       throw new OrderError('OUT_OF_STOCK', `Not enough stock for "${cartItem.name}".`, cartItem.name);
     }
 
-    const lineName = cartItem.size ? `${cartItem.name} (${cartItem.size})` : cartItem.name;
+    const colorPart = cartItem.colorName ? `${cartItem.colorName}` : '';
+    const sizePart = cartItem.size ?? '';
+    const variantPart = [colorPart, sizePart].filter(Boolean).join(' / ');
+    const lineName = variantPart ? `${cartItem.name} (${variantPart})` : cartItem.name;
     const image =
       sanitizeStoredImageUrl(cartItem.image) ||
       sanitizeStoredImageUrl(firstProductImageUrl(data as Record<string, unknown>));
@@ -251,6 +322,8 @@ function buildCheckoutPayload(
       quantity: cartItem.quantity,
       image,
       size: cartItem.size ?? null,
+      colorId: cartItem.colorId ?? null,
+      colorName: cartItem.colorName ?? null,
     };
   });
 
@@ -263,7 +336,16 @@ function buildCheckoutPayload(
     return {
       productId,
       stock: stockAfterCheckout(data, working.stock, qtyRemoved),
-      ...(working.sized ? { sizeStock: working.sizeStock, sized: true } : { sized: false }),
+      ...(working.hasVariants && working.colorVariants
+        ? {
+            hasVariants: true,
+            colorVariants: working.colorVariants,
+            sizeStock: working.sizeStock,
+            sized: true,
+          }
+        : working.sized
+          ? { sizeStock: working.sizeStock, sized: true, hasVariants: false }
+          : { sized: false, hasVariants: false }),
     };
   });
 

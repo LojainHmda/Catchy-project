@@ -129,8 +129,15 @@ export function decrementInventory(
   return { sizeStock, stock: totalStock - quantity };
 }
 
-export function cartLineKey(productId: string, size?: string | null): string {
-  return size ? `${productId}::${size}` : productId;
+export function cartLineKey(
+  productId: string,
+  size?: string | null,
+  colorId?: string | null
+): string {
+  const parts = [productId];
+  if (colorId) parts.push(colorId);
+  if (size) parts.push(size);
+  return parts.join('::');
 }
 
 const SIZE_SORT_ORDER = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'One Size'];

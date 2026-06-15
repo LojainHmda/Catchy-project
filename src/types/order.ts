@@ -12,6 +12,8 @@ export type CartLineItem = {
   image: string;
   stock: number;
   size?: string | null;
+  colorId?: string | null;
+  colorName?: string | null;
   /** Per-product size picks for coordinate sets (productId → size). */
   itemSizes?: Record<string, string>;
   lineKey: string;
@@ -25,6 +27,8 @@ export type OrderLineItem = {
   image: string;
   lineTotal: number;
   size?: string | null;
+  colorId?: string | null;
+  colorName?: string | null;
   itemSizes?: Record<string, string>;
 };
 

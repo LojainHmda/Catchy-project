@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect } from 'react';
-import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { isRemoteImageUrl, PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
+import { useImageZoomPan } from '../hooks/useImageZoomPan';
+import { useLanguage } from '../context/LanguageContext';
 
 export type ImageLightboxProps = {
   images: string[];
@@ -21,20 +23,39 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
   onIndexChange,
   alt = '',
 }) => {
-  const [zoomed, setZoomed] = React.useState(false);
+  const { t, isRTL } = useLanguage();
   const src = images[index] ?? PRODUCT_IMAGE_PLACEHOLDER;
   const hasMultiple = images.length > 1;
 
+  const {
+    viewportRef,
+    scale,
+    x,
+    y,
+    reset,
+    zoomIn,
+    zoomOut,
+    viewportHandlers,
+    onDoubleClick,
+    onClick,
+    isZoomed,
+    isDragging,
+  } = useImageZoomPan({ minScale: 1, maxScale: 5 });
+
   useEffect(() => {
-    if (!open) setZoomed(false);
-  }, [open, index]);
+    if (open) reset();
+  }, [open, index, reset]);
 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
+      if (isZoomed) return;
       if (e.key === 'ArrowLeft' && hasMultiple) onIndexChange(Math.max(0, index - 1));
       if (e.key === 'ArrowRight' && hasMultiple) onIndexChange(Math.min(images.length - 1, index + 1));
+      if (e.key === '+' || e.key === '=') zoomIn();
+      if (e.key === '-') zoomOut();
+      if (e.key === '0') reset();
     };
     window.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
@@ -42,7 +63,7 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = '';
     };
-  }, [open, index, images.length, hasMultiple, onClose, onIndexChange]);
+  }, [open, index, images.length, hasMultiple, onClose, onIndexChange, isZoomed, zoomIn, zoomOut, reset]);
 
   const goPrev = useCallback(() => {
     if (index > 0) onIndexChange(index - 1);
@@ -52,6 +73,8 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
     if (index < images.length - 1) onIndexChange(index + 1);
   }, [index, images.length, onIndexChange]);
 
+  const zoomPercent = Math.round(scale * 100);
+
   return (
     <AnimatePresence>
       {open ? (
@@ -59,30 +82,58 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[200] flex flex-col bg-black/92 backdrop-blur-sm"
+          className="fixed inset-0 z-[200] flex flex-col bg-black/95 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
-          aria-label="Image zoom"
-          onClick={onClose}
+          aria-label={t('product.zoomTitle')}
+          onClick={() => {
+            if (!isZoomed) onClose();
+          }}
         >
-          <div className="flex shrink-0 items-center justify-between px-4 py-3" onClick={(e) => e.stopPropagation()}>
-            <p className="text-sm font-medium text-white/80">
-              {hasMultiple ? `${index + 1} / ${images.length}` : 'Zoom'}
-            </p>
-            <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-3" onClick={(e) => e.stopPropagation()}>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-white/90">
+                {hasMultiple ? `${index + 1} / ${images.length}` : t('product.zoomTitle')}
+              </p>
+              <p className={cn('text-[11px] text-white/55', isRTL && 'font-arabic')}>{t('product.zoomHint')}</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+              <span className="hidden min-w-[3rem] text-center text-xs tabular-nums text-white/70 sm:inline">
+                {zoomPercent}%
+              </span>
               <button
                 type="button"
-                onClick={() => setZoomed((z) => !z)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
-                aria-label={zoomed ? 'Zoom out' : 'Zoom in'}
+                onClick={zoomOut}
+                disabled={scale <= 1}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 disabled:opacity-40"
+                aria-label={t('product.zoomOut')}
               >
-                {zoomed ? <ZoomOut size={18} /> : <ZoomIn size={18} />}
+                <ZoomOut size={18} />
               </button>
+              <button
+                type="button"
+                onClick={zoomIn}
+                disabled={scale >= 5}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 disabled:opacity-40"
+                aria-label={t('product.zoomIn')}
+              >
+                <ZoomIn size={18} />
+              </button>
+              {isZoomed ? (
+                <button
+                  type="button"
+                  onClick={reset}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+                  aria-label={t('product.zoomReset')}
+                >
+                  <RotateCcw size={16} />
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={onClose}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
-                aria-label="Close"
+                aria-label={t('product.zoomClose')}
               >
                 <X size={20} />
               </button>
@@ -90,10 +141,15 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
           </div>
 
           <div
-            className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-4 pb-6"
+            ref={viewportRef}
+            className={cn(
+              'relative flex min-h-0 flex-1 touch-none select-none items-center justify-center overflow-hidden px-4 pb-4',
+              isZoomed ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in'
+            )}
             onClick={(e) => e.stopPropagation()}
+            {...viewportHandlers}
           >
-            {hasMultiple && index > 0 ? (
+            {hasMultiple && index > 0 && !isZoomed ? (
               <button
                 type="button"
                 onClick={goPrev}
@@ -104,25 +160,26 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
               </button>
             ) : null}
 
-            <motion.img
+            <img
               key={src}
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: zoomed ? 1.75 : 1 }}
-              transition={{ duration: 0.2 }}
               src={src}
               alt={alt}
-              className={cn(
-                'max-h-[min(78vh,720px)] max-w-full object-contain transition-transform duration-300',
-                zoomed ? 'cursor-zoom-out' : 'cursor-zoom-in'
-              )}
+              draggable={false}
+              decoding="async"
+              className="max-h-[min(82vh,900px)] max-w-[min(96vw,1100px)] object-contain will-change-transform"
+              style={{
+                transform: `translate3d(${x}px, ${y}px, 0) scale(${scale})`,
+                transition: isDragging ? 'none' : 'transform 0.08s ease-out',
+              }}
               referrerPolicy={isRemoteImageUrl(src) ? 'no-referrer' : undefined}
-              onClick={() => setZoomed((z) => !z)}
+              onDoubleClick={onDoubleClick}
+              onClick={onClick}
               onError={(e) => {
                 (e.target as HTMLImageElement).src = PRODUCT_IMAGE_PLACEHOLDER;
               }}
             />
 
-            {hasMultiple && index < images.length - 1 ? (
+            {hasMultiple && index < images.length - 1 && !isZoomed ? (
               <button
                 type="button"
                 onClick={goNext}
@@ -135,7 +192,7 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
           </div>
 
           {hasMultiple ? (
-            <div className="flex shrink-0 justify-center gap-2 px-4 pb-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex shrink-0 justify-center gap-2 px-4 pb-5" onClick={(e) => e.stopPropagation()}>
               {images.map((thumb, i) => (
                 <button
                   key={i}
@@ -146,11 +203,15 @@ const ImageLightbox: React.FC<ImageLightboxProps> = ({
                     i === index ? 'border-white opacity-100' : 'border-transparent opacity-50 hover:opacity-80'
                   )}
                 >
-                  <img src={thumb} alt="" className="h-full w-full object-cover" />
+                  <img src={thumb} alt="" className="h-full w-full object-cover" draggable={false} />
                 </button>
               ))}
             </div>
-          ) : null}
+          ) : (
+            <p className={cn('shrink-0 pb-5 text-center text-[11px] text-white/45', isRTL && 'font-arabic')}>
+              {t('product.zoomHintShort')}
+            </p>
+          )}
         </motion.div>
       ) : null}
     </AnimatePresence>

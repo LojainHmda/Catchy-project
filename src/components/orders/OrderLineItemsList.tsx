@@ -1,13 +1,11 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '../../context/LanguageContext';
-import { formatOrderMoney } from '../../lib/orders';
+import { formatOrderMoney, parseLineItemDisplay } from '../../lib/orders';
 import type { OrderLineItem } from '../../types/order';
 import { isCoordinateCartId, coordinateLookIdFromCart } from '../../lib/coordinateCart';
 import { cn } from '../../lib/utils';
-
-const FALLBACK_IMAGE =
-  'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=400';
+import { PRODUCT_IMAGE_PLACEHOLDER } from '../../lib/productImages';
 
 type OrderLineItemsListProps = {
   items: OrderLineItem[];
@@ -33,11 +31,13 @@ const OrderLineItemsList: React.FC<OrderLineItemsListProps> = ({
   if (variant === 'table') {
     return (
       <div className="overflow-x-auto" dir="ltr">
-        <table className="w-full min-w-[420px] text-start text-sm">
+        <table className="w-full min-w-[560px] text-start text-sm">
           <thead>
             <tr className="border-b border-gray-200 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
               <th className="pb-2 pe-3 text-start font-semibold w-[72px]">Image</th>
               <th className="pb-2 pe-3 text-start font-semibold">Product</th>
+              <th className="pb-2 pe-3 text-start font-semibold w-24">Color</th>
+              <th className="pb-2 pe-3 text-center font-semibold w-16">Size</th>
               <th className="pb-2 pe-3 text-center font-semibold w-14">Qty</th>
               <th className="pb-2 text-end font-semibold w-24">Total</th>
             </tr>
@@ -51,9 +51,11 @@ const OrderLineItemsList: React.FC<OrderLineItemsListProps> = ({
                     : `/product/${item.productId}`
                   : null;
 
-              const productName = (
+              const { productName, color, size } = parseLineItemDisplay(item);
+
+              const nameCell = (
                 <p className={cn('font-medium leading-snug text-gray-900', isRTL && 'font-arabic')}>
-                  {item.name}
+                  {productName}
                 </p>
               );
 
@@ -64,15 +66,16 @@ const OrderLineItemsList: React.FC<OrderLineItemsListProps> = ({
                       <Link to={href} onClick={onItemClick} className="block">
                         <div className="size-16 shrink-0 overflow-hidden rounded-lg bg-gray-100 ring-1 ring-black/5 transition hover:opacity-90">
                           <img
-                            src={item.image || FALLBACK_IMAGE}
-                            alt={item.name}
+                            src={item.image || PRODUCT_IMAGE_PLACEHOLDER}
+                            alt={productName}
                             className="h-full w-full object-cover"
                             referrerPolicy="no-referrer"
                             loading="lazy"
                             onError={(e) => {
-                              if (e.currentTarget.src !== FALLBACK_IMAGE) {
-                                e.currentTarget.src = FALLBACK_IMAGE;
-                              }
+                              const el = e.currentTarget;
+                              if (el.src.includes('product-placeholder.svg')) return;
+                              el.onerror = null;
+                              el.src = PRODUCT_IMAGE_PLACEHOLDER;
                             }}
                           />
                         </div>
@@ -80,32 +83,46 @@ const OrderLineItemsList: React.FC<OrderLineItemsListProps> = ({
                     ) : (
                       <div className="size-16 shrink-0 overflow-hidden rounded-lg bg-gray-100 ring-1 ring-black/5">
                         <img
-                          src={item.image || FALLBACK_IMAGE}
-                          alt={item.name}
+                          src={item.image || PRODUCT_IMAGE_PLACEHOLDER}
+                          alt={productName}
                           className="h-full w-full object-cover"
                           referrerPolicy="no-referrer"
                           loading="lazy"
                           onError={(e) => {
-                            if (e.currentTarget.src !== FALLBACK_IMAGE) {
-                              e.currentTarget.src = FALLBACK_IMAGE;
-                            }
+                            const el = e.currentTarget;
+                            if (el.src.includes('product-placeholder.svg')) return;
+                            el.onerror = null;
+                            el.src = PRODUCT_IMAGE_PLACEHOLDER;
                           }}
                         />
                       </div>
                     )}
                   </td>
-                  <td className="max-w-[14rem] py-2.5 pe-3 align-middle">
+                  <td className="max-w-[12rem] py-2.5 pe-3 align-middle">
                     {href ? (
                       <Link to={href} onClick={onItemClick} className="block hover:text-catchy">
-                        {productName}
+                        {nameCell}
                       </Link>
                     ) : (
-                      productName
+                      nameCell
                     )}
-                    <p className="mt-0.5 text-xs tabular-nums text-gray-500">
-                      {formatOrderMoney(item.price)}
-                      {item.size ? ` · ${item.size}` : ''}
-                    </p>
+                    <p className="mt-0.5 text-xs tabular-nums text-gray-500">{formatOrderMoney(item.price)}</p>
+                  </td>
+                  <td className="py-2.5 pe-3 align-middle">
+                    {color ? (
+                      <span className={cn('text-sm text-gray-800', isRTL && 'font-arabic')}>{color}</span>
+                    ) : (
+                      <span className="text-sm text-gray-300">—</span>
+                    )}
+                  </td>
+                  <td className="py-2.5 pe-3 text-center align-middle">
+                    {size ? (
+                      <span className="inline-flex min-w-[2rem] items-center justify-center rounded-md bg-gray-100 px-2 py-1 text-xs font-semibold tabular-nums text-gray-800">
+                        {size}
+                      </span>
+                    ) : (
+                      <span className="text-sm text-gray-300">—</span>
+                    )}
                   </td>
                   <td className="py-2.5 pe-3 text-center align-middle">
                     <span className="inline-flex min-w-[2rem] items-center justify-center rounded-md bg-gray-100 px-2 py-1 text-sm font-semibold tabular-nums text-gray-900">
@@ -127,6 +144,9 @@ const OrderLineItemsList: React.FC<OrderLineItemsListProps> = ({
   return (
     <ul className={cn('space-y-3', compact && 'space-y-2')}>
       {items.map((item) => {
+        const { productName, color, size } = parseLineItemDisplay(item);
+        const variantParts = [color, size].filter(Boolean);
+
         const content = (
           <>
             <div
@@ -136,19 +156,19 @@ const OrderLineItemsList: React.FC<OrderLineItemsListProps> = ({
               )}
             >
               <img
-                src={item.image || FALLBACK_IMAGE}
-                alt={item.name}
+                src={item.image || PRODUCT_IMAGE_PLACEHOLDER}
+                alt={productName}
                 className="h-full w-full object-cover"
                 referrerPolicy="no-referrer"
               />
             </div>
             <div className="min-w-0 flex-1">
               <p className={cn('truncate font-medium text-gray-900', compact ? 'text-xs' : 'text-sm', isRTL && 'font-arabic')}>
-                {item.name}
+                {productName}
               </p>
               <p className="mt-0.5 text-[11px] tabular-nums text-gray-500">
                 {item.quantity} × {formatOrderMoney(item.price)}
-                {item.size ? ` · ${item.size}` : ''}
+                {variantParts.length ? ` · ${variantParts.join(' · ')}` : ''}
               </p>
             </div>
             <p className={cn('shrink-0 font-semibold tabular-nums text-gray-900', compact ? 'text-xs' : 'text-sm')}>

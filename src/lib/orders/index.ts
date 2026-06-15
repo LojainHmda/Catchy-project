@@ -16,6 +16,7 @@ export {
   orderStatusTone,
   parseOrderDocument,
   parseOrderLineItems,
+  parseLineItemDisplay,
   shortOrderId,
   toDate,
 } from './orderUtils';
