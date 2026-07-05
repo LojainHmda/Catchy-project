@@ -6,6 +6,7 @@ import type { OrderLineItem } from '../../types/order';
 import { isCoordinateCartId, coordinateLookIdFromCart } from '../../lib/coordinateCart';
 import { cn } from '../../lib/utils';
 import { PRODUCT_IMAGE_PLACEHOLDER } from '../../lib/productImages';
+import { orderItemImageSrc, useOrderItemImages } from '../../hooks/useOrderItemImages';
 
 type OrderLineItemsListProps = {
   items: OrderLineItem[];
@@ -23,6 +24,7 @@ const OrderLineItemsList: React.FC<OrderLineItemsListProps> = ({
   variant = 'list',
 }) => {
   const { isRTL } = useLanguage();
+  const resolvedImages = useOrderItemImages(items);
 
   if (!items.length) {
     return <p className="text-xs text-gray-500">No line items recorded.</p>;
@@ -66,7 +68,7 @@ const OrderLineItemsList: React.FC<OrderLineItemsListProps> = ({
                       <Link to={href} onClick={onItemClick} className="block">
                         <div className="size-16 shrink-0 overflow-hidden rounded-lg bg-gray-100 ring-1 ring-black/5 transition hover:opacity-90">
                           <img
-                            src={item.image || PRODUCT_IMAGE_PLACEHOLDER}
+                            src={orderItemImageSrc(item, resolvedImages) || PRODUCT_IMAGE_PLACEHOLDER}
                             alt={productName}
                             className="h-full w-full object-cover"
                             referrerPolicy="no-referrer"
@@ -83,7 +85,7 @@ const OrderLineItemsList: React.FC<OrderLineItemsListProps> = ({
                     ) : (
                       <div className="size-16 shrink-0 overflow-hidden rounded-lg bg-gray-100 ring-1 ring-black/5">
                         <img
-                          src={item.image || PRODUCT_IMAGE_PLACEHOLDER}
+                          src={orderItemImageSrc(item, resolvedImages) || PRODUCT_IMAGE_PLACEHOLDER}
                           alt={productName}
                           className="h-full w-full object-cover"
                           referrerPolicy="no-referrer"
@@ -156,10 +158,17 @@ const OrderLineItemsList: React.FC<OrderLineItemsListProps> = ({
               )}
             >
               <img
-                src={item.image || PRODUCT_IMAGE_PLACEHOLDER}
+                src={orderItemImageSrc(item, resolvedImages) || PRODUCT_IMAGE_PLACEHOLDER}
                 alt={productName}
                 className="h-full w-full object-cover"
                 referrerPolicy="no-referrer"
+                loading="lazy"
+                onError={(e) => {
+                  const el = e.currentTarget;
+                  if (el.src.includes('product-placeholder.svg')) return;
+                  el.onerror = null;
+                  el.src = PRODUCT_IMAGE_PLACEHOLDER;
+                }}
               />
             </div>
             <div className="min-w-0 flex-1">

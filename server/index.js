@@ -167,6 +167,12 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
   res.status(200).json({ result: true });
 });
 
+// ── Same-origin image proxy (lets the invoice canvas draw remote product photos) ──
+app.get('/api/image-proxy', async (req, res) => {
+  const { proxyImage } = await import('./lib/imageProxy.js');
+  await proxyImage(req.query.url, res);
+});
+
 // ── Static SPA + client-side routing fallback ──
 app.use(express.static(DIST_DIR));
 app.get('*', (_req, res) => res.sendFile(path.join(DIST_DIR, 'index.html')));

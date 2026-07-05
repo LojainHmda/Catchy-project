@@ -3,58 +3,52 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { LogIn, User, Lock, Loader2, ChevronLeft } from 'lucide-react';
-import { ADMIN_DEMO_EMAIL, ADMIN_DEMO_PASSWORD } from '../constants';
 import { cn } from '../lib/utils';
 
 type AuthMode = 'signin' | 'signup';
 
-function getAuthErrorMessage(err: unknown, mode: AuthMode): string {
+/**
+ * Map an auth error to a friendly, localized message for the customer. The raw error/code is
+ * logged to the console (for debugging) but never shown — users only see plain-language reasons.
+ */
+function getAuthErrorMessage(err: unknown, mode: AuthMode, t: (key: string) => string): string {
   const code =
     err && typeof err === 'object' && 'code' in err && typeof (err as { code: unknown }).code === 'string'
       ? (err as { code: string }).code
       : '';
-  const msg = err instanceof Error ? err.message : '';
-
-  if (code === 'auth/admin-shortcut-disabled') {
-    return 'Hard refresh (Ctrl+Shift+R) or redeploy, then sign in with admin@gmail.com / admin123.';
-  }
+  console.error('[auth] sign-in error:', code || err);
 
   switch (code) {
     case 'auth/email-already-in-use':
     case 'auth/email-exists':
-      return 'An account with this email already exists. Sign in instead.';
+      return t('auth.emailInUse');
     case 'auth/invalid-credential':
     case 'auth/invalid-login-credentials':
     case 'auth/wrong-password':
     case 'auth/user-not-found':
-      return mode === 'signup'
-        ? 'Could not create account. Check your details or try Google.'
-        : 'Wrong email or password. Create the user in Firebase Authentication, or use Google.';
+      return mode === 'signup' ? t('auth.signUpFailed') : t('auth.wrongCredentials');
     case 'auth/invalid-email':
-      return 'Invalid email. Use admin@gmail.com for the built-in admin, or a full address like you@gmail.com.';
+      return t('auth.invalidEmail');
     case 'auth/user-disabled':
-      return 'This account has been disabled.';
+      return t('auth.userDisabled');
     case 'auth/too-many-requests':
-      return 'Too many attempts. Try again in a few minutes.';
-    case 'auth/operation-not-allowed':
-      return 'Email/password sign-in is turned off. In Firebase Console → Authentication → Sign-in method, enable Email/Password.';
+      return t('auth.tooManyRequests');
     case 'auth/weak-password':
-      return 'Password too weak for Firebase. Use at least 6 characters.';
+      return t('auth.weakPassword');
     case 'auth/network-request-failed':
-      return 'Network error. Check your connection and try again.';
-    case 'auth/configuration-error':
-      return msg || 'App configuration error. Check Firebase project settings.';
-    case 'auth/unauthorized-domain':
-      return 'This domain is not allowed to sign in. In Firebase Console → Authentication → Settings → Authorized domains, add your site host (e.g. your Cloud Run URL).';
+      return t('auth.network');
     case 'auth/popup-closed-by-user':
-      return 'Google sign-in was closed before finishing.';
+      return t('auth.popupClosed');
     case 'auth/popup-blocked':
-      return 'The browser blocked the Google sign-in popup. Allow popups for this site and try again.';
+      return t('auth.popupBlocked');
+    // Configuration / domain / setup issues are not the customer's problem — keep it generic.
+    case 'auth/operation-not-allowed':
+    case 'auth/unauthorized-domain':
+    case 'auth/configuration-error':
+    case 'auth/admin-shortcut-disabled':
+      return t('auth.unavailable');
     default:
-      if (msg && !msg.startsWith('Firebase:')) return msg;
-      return mode === 'signup'
-        ? 'Sign-up failed. Try Google or a different email.'
-        : 'Sign-in failed. Use Google or an email/password user that exists in Firebase Authentication.';
+      return mode === 'signup' ? t('auth.signUpFailed') : t('auth.signInFailed');
   }
 }
 
@@ -128,7 +122,7 @@ const Login = () => {
         await loginWithCredentials(email, password);
       }
     } catch (err) {
-      setError(getAuthErrorMessage(err, mode));
+      setError(getAuthErrorMessage(err, mode, t));
     } finally {
       setSubmitting(false);
     }
@@ -140,7 +134,7 @@ const Login = () => {
     try {
       await login();
     } catch (err) {
-      setError(getAuthErrorMessage(err, mode));
+      setError(getAuthErrorMessage(err, mode, t));
     } finally {
       setSubmitting(false);
     }
@@ -177,21 +171,6 @@ const Login = () => {
               {isSignUp ? t('login.signUpSubtitle') : t('login.subtitle')}
             </p>
           </div>
-
-          {!isSignUp ? (
-            <button
-              type="button"
-              disabled={authDisabled}
-              onClick={() => {
-                setEmail(ADMIN_DEMO_EMAIL);
-                setPassword(ADMIN_DEMO_PASSWORD);
-                setError('');
-              }}
-              className="mb-6 w-full rounded-2xl border border-catchy/25 bg-catchy/[0.06] py-3 text-[11px] font-semibold uppercase tracking-wider text-catchy-dark transition-colors hover:bg-catchy/[0.1] disabled:pointer-events-none disabled:opacity-40"
-            >
-              {t('login.fillAdmin')}
-            </button>
-          ) : null}
 
           <form onSubmit={handleCredentialsSubmit} className="space-y-4">
             {isSignUp ? (
@@ -267,7 +246,12 @@ const Login = () => {
             ) : null}
 
             {error ? (
-              <p className="rounded-xl border border-red-100 bg-red-50/80 px-3 py-2.5 text-start text-[12px] font-medium leading-snug text-red-700">
+              <p
+                className={cn(
+                  'rounded-xl border border-red-100 bg-red-50/80 px-3 py-2.5 text-start text-[12px] font-medium leading-snug text-red-700',
+                  isRTL && 'font-arabic'
+                )}
+              >
                 {error}
               </p>
             ) : null}

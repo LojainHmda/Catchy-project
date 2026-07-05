@@ -3,6 +3,7 @@ import type { OrderLineItem } from '../../types/order';
 import { cn } from '../../lib/utils';
 
 import { PRODUCT_IMAGE_PLACEHOLDER } from '../../lib/productImages';
+import { orderItemImageSrc, useOrderItemImages } from '../../hooks/useOrderItemImages';
 
 type OrderItemThumbnailsProps = {
   items: OrderLineItem[];
@@ -19,6 +20,7 @@ const OrderItemThumbnails: React.FC<OrderItemThumbnailsProps> = ({
 }) => {
   const visible = items.slice(0, max);
   const overflow = Math.max(0, items.length - max);
+  const resolvedImages = useOrderItemImages(visible);
 
   if (!visible.length) return null;
 
@@ -37,10 +39,17 @@ const OrderItemThumbnails: React.FC<OrderItemThumbnailsProps> = ({
           style={{ zIndex: visible.length - index }}
         >
           <img
-            src={item.image || PRODUCT_IMAGE_PLACEHOLDER}
+            src={orderItemImageSrc(item, resolvedImages) || PRODUCT_IMAGE_PLACEHOLDER}
             alt=""
             className="h-full w-full object-cover"
             referrerPolicy="no-referrer"
+            loading="lazy"
+            onError={(e) => {
+              const el = e.currentTarget;
+              if (el.src.includes('product-placeholder.svg')) return;
+              el.onerror = null;
+              el.src = PRODUCT_IMAGE_PLACEHOLDER;
+            }}
           />
         </div>
       ))}

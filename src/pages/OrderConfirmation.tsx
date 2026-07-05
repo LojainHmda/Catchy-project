@@ -7,6 +7,7 @@ import { useOrder } from '../hooks/useOrder';
 import OrderLineItemsList from '../components/orders/OrderLineItemsList';
 import OrderStatusBadge from '../components/orders/OrderStatusBadge';
 import OrderTotalsBreakdown from '../components/orders/OrderTotalsBreakdown';
+import InvoiceDownloadButton from '../components/orders/InvoiceDownloadButton';
 import { shortOrderId } from '../lib/orders';
 import { cn } from '../lib/utils';
 
@@ -102,6 +103,10 @@ const OrderConfirmation = () => {
         ) : null}
 
         <OrderLineItemsList items={order.items} linkProducts />
+
+        <div className="mt-5 flex justify-center border-t border-gray-100 pt-5">
+          <InvoiceDownloadButton order={order} />
+        </div>
       </div>
 
       <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">

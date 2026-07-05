@@ -19,7 +19,8 @@ import {
 
 export const CATALOG_FETCH_SIZE = 24;
 export const CATALOG_VIEW_PAGE_SIZE = 24;
-const FIRESTORE_TIMEOUT_MS = 12_000;
+const FIRESTORE_TIMEOUT_MS = 8_000;
+const CATEGORY_COUNTS_LIMIT = 120;
 
 export type CatalogSortKey = 'priceAsc' | 'priceDesc';
 
@@ -55,7 +56,6 @@ function buildProductQuery(options: {
     constraints.push(where('category', 'in', categories.slice(0, 10)));
   }
 
-  // category + orderBy(price) needs a composite Firestore index; sort client-side when filtered
   if (categories.length === 0) {
     constraints.push(orderBy('price', options.sortBy === 'priceDesc' ? 'desc' : 'asc'));
   }
@@ -76,6 +76,7 @@ async function runQuery(q: ReturnType<typeof buildProductQuery>) {
   return withTimeout(getDocs(q), FIRESTORE_TIMEOUT_MS, 'Catalog products');
 }
 
+/** @deprecated Catalog page uses `loadCatalogIndex` — kept for admin/tools. */
 export async function fetchCatalogProductsPage(options: {
   selectedCats: string[];
   sortBy: CatalogSortKey;
@@ -89,13 +90,6 @@ export async function fetchCatalogProductsPage(options: {
   const pageSize = options.pageSize ?? CATALOG_FETCH_SIZE;
   const q = buildProductQuery({ ...options, pageSize });
   const snap = await runQuery(q);
-  return mapProductPage(snap, pageSize);
-}
-
-function mapProductPage(
-  snap: Awaited<ReturnType<typeof getDocs>>,
-  pageSize: number
-) {
   const items = snap.docs.map((d) => toCatalogListProduct(d.id, d.data() as Record<string, unknown>));
   const lastDoc = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1]! : null;
   return {
@@ -105,9 +99,9 @@ function mapProductPage(
   };
 }
 
-/** Background counts — cache-first, non-blocking. */
+/** @deprecated Catalog page derives counts from the index. */
 export async function fetchCatalogCategoryCounts(): Promise<Map<string, number>> {
-  const q = query(collection(db, 'products'), limit(500));
+  const q = query(collection(db, 'products'), limit(CATEGORY_COUNTS_LIMIT));
   try {
     const cached = await getDocsFromCache(q);
     if (!cached.empty) {

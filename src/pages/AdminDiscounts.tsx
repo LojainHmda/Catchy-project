@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Percent, Search, Trash2, Tag, Loader2, RefreshCw, X, Square, CheckSquare } from 'lucide-react';
+import { Percent, Search, Trash2, Tag, Loader2, RefreshCw, X, Square, CheckSquare, ChevronDown, Megaphone } from 'lucide-react';
+import AnnouncementBannerPanel from '../components/admin/AnnouncementBannerPanel';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CATEGORY_ICONS } from '../constants';
 import { canonicalCategory } from '../lib/category';
@@ -18,6 +19,8 @@ import {
   doc,
   query,
   orderBy,
+  limit,
+  startAfter,
   serverTimestamp,
 } from '../firebase';
 import { cn } from '../lib/utils';
@@ -36,9 +39,16 @@ import type { ProductRecord } from '../types/product';
 const INPUT =
   'h-9 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-400 focus:ring-0';
 
+const PAGE_SIZE = 50;
+
+type DiscountTab = 'discounts' | 'banner';
+
 const AdminDiscounts = () => {
+  const [activeTab, setActiveTab] = useState<DiscountTab>('discounts');
   const [products, setProducts] = useState<ProductRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -48,11 +58,16 @@ const AdminDiscounts = () => {
   const [applyCategoryFilter, setApplyCategoryFilter] = useState('all');
   const [coordinateLooks, setCoordinateLooks] = useState<CoordinateLook[]>([]);
 
-  const fetchProducts = async () => {
+  const lastDocRef = useRef<any>(null);
+
+  const fetchProducts = useCallback(async () => {
+    setLoading(true);
+    lastDocRef.current = null;
     try {
-      setLoading(true);
-      const q = query(collection(db, 'products'), orderBy('createdAt', 'desc'));
+      const q = query(collection(db, 'products'), orderBy('createdAt', 'desc'), limit(PAGE_SIZE));
       const snapshot = await getDocs(q);
+      lastDocRef.current = snapshot.docs[snapshot.docs.length - 1] ?? null;
+      setHasMore(snapshot.docs.length === PAGE_SIZE);
       setProducts(snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as ProductRecord)));
     } catch (error) {
       console.error('Error fetching products:', error);
@@ -60,11 +75,38 @@ const AdminDiscounts = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  const loadMore = useCallback(async () => {
+    if (!hasMore || loadingMore || !lastDocRef.current) return;
+    setLoadingMore(true);
+    try {
+      const q = query(
+        collection(db, 'products'),
+        orderBy('createdAt', 'desc'),
+        startAfter(lastDocRef.current),
+        limit(PAGE_SIZE)
+      );
+      const snapshot = await getDocs(q);
+      if (snapshot.docs.length > 0) lastDocRef.current = snapshot.docs[snapshot.docs.length - 1];
+      setHasMore(snapshot.docs.length === PAGE_SIZE);
+      setProducts((prev) => {
+        const seen = new Set(prev.map((p) => p.id));
+        const newDocs = snapshot.docs
+          .filter((d) => !seen.has(d.id))
+          .map((d) => ({ id: d.id, ...d.data() } as ProductRecord));
+        return [...prev, ...newDocs];
+      });
+    } catch (error) {
+      console.error('Error loading more:', error);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [hasMore, loadingMore]);
 
   useEffect(() => {
     fetchProducts();
-  }, []);
+  }, [fetchProducts]);
 
   useEffect(() => {
     return subscribeCoordinateLooks(setCoordinateLooks);
@@ -251,41 +293,80 @@ const AdminDiscounts = () => {
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">Discounts</h1>
             <p className="mt-0.5 text-sm text-gray-500">
-              Create, apply, and remove product sales. Discounts appear on the catalog and product pages.
+              {activeTab === 'discounts'
+                ? 'Create, apply, and remove product sales. Discounts appear on the catalog and product pages.'
+                : 'Show, hide, and edit the top announcement bar shown on every page.'}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => fetchProducts()}
-              disabled={loading}
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
-            >
-              <RefreshCw size={14} className={cn(loading && 'animate-spin')} />
-              Refresh
-            </button>
-            <button
-              type="button"
-              onClick={openApplyModal}
-              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-catchy px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-catchy-dark"
-            >
-              <Percent size={14} />
-              Apply discount
-            </button>
-          </div>
+          {activeTab === 'discounts' && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => fetchProducts()}
+                disabled={loading}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+              >
+                <RefreshCw size={14} className={cn(loading && 'animate-spin')} />
+                Refresh
+              </button>
+              <button
+                type="button"
+                onClick={openApplyModal}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-catchy px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-catchy-dark"
+              >
+                <Percent size={14} />
+                Apply discount
+              </button>
+            </div>
+          )}
         </div>
-        <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm">
-          <div className="flex gap-1.5">
-            <dt className="text-gray-500">On sale</dt>
-            <dd className="font-medium tabular-nums text-red-600">{discountedProducts.length}</dd>
-          </div>
-          <div className="flex gap-1.5">
-            <dt className="text-gray-500">Full price</dt>
-            <dd className="font-medium tabular-nums text-gray-900">{notOnSaleProducts.length}</dd>
-          </div>
-        </dl>
+        {activeTab === 'discounts' && (
+          <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+            <div className="flex gap-1.5">
+              <dt className="text-gray-500">On sale</dt>
+              <dd className="font-medium tabular-nums text-red-600">{discountedProducts.length}</dd>
+            </div>
+            <div className="flex gap-1.5">
+              <dt className="text-gray-500">Full price</dt>
+              <dd className="font-medium tabular-nums text-gray-900">{notOnSaleProducts.length}</dd>
+            </div>
+          </dl>
+        )}
       </header>
 
+      {/* Tabs */}
+      <div className="mt-4 flex gap-1 border-b border-gray-200">
+        {([
+          { key: 'discounts', label: 'Product discounts', icon: Percent },
+          { key: 'banner', label: 'Banner', icon: Megaphone },
+        ] as const).map((tab) => {
+          const active = activeTab === tab.key;
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={cn(
+                '-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors',
+                active
+                  ? 'border-catchy text-catchy'
+                  : 'border-transparent text-gray-500 hover:text-gray-900'
+              )}
+            >
+              <Icon size={14} />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === 'banner' ? (
+        <div className="mt-5">
+          <AnnouncementBannerPanel />
+        </div>
+      ) : (
+      <>
       <div className="mt-4 flex flex-col gap-2 border-b border-gray-200 pb-3 sm:flex-row sm:items-center">
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -343,7 +424,7 @@ const AdminDiscounts = () => {
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-3">
                           <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md border border-gray-100 bg-gray-50">
-                            <img src={tableThumb(product)} alt="" className="h-full w-full object-cover" />
+                            <img src={tableThumb(product)} alt="" className="h-full w-full object-cover" loading="lazy"/>
                           </div>
                           <div className="min-w-0">
                             <p className="truncate font-medium text-gray-900">{product.name}</p>
@@ -383,6 +464,22 @@ const AdminDiscounts = () => {
           </div>
         )}
       </div>
+
+      {hasMore ? (
+        <div className="mt-3 flex justify-center">
+          <button
+            type="button"
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+          >
+            {loadingMore ? <Loader2 size={14} className="animate-spin" /> : <ChevronDown size={14} />}
+            Load more products
+          </button>
+        </div>
+      ) : null}
+      </>
+      )}
 
       <AnimatePresence>
         {applyModalOpen && (

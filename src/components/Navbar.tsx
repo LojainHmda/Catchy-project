@@ -5,6 +5,11 @@ import { useCart } from '../context/CartContext';
 import { useLanguage } from '../context/LanguageContext';
 import { cn } from '../lib/utils';
 import TickerBanner from './TickerBanner';
+import {
+  ANNOUNCEMENT_DEFAULTS,
+  subscribeAnnouncement,
+  type AnnouncementSettings,
+} from '../lib/announcementBanner';
 
 const Navbar = () => {
   const location = useLocation();
@@ -13,9 +18,12 @@ const Navbar = () => {
   const { language, setLanguage, t, isRTL } = useLanguage();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [announcement, setAnnouncement] = useState<AnnouncementSettings>(ANNOUNCEMENT_DEFAULTS);
   const isAr = language === 'ar';
 
   useEffect(() => { closeCart(); setMenuOpen(false); }, [location.pathname, closeCart]);
+
+  useEffect(() => subscribeAnnouncement(setAnnouncement), []);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 10);
@@ -36,14 +44,16 @@ const Navbar = () => {
   return (
     <>
       {/* Announcement bar */}
-      <div
-        className="w-full bg-primary text-on-primary text-center py-2 text-xs tracking-wide"
-        dir={isRTL ? 'rtl' : 'ltr'}
-        style={{ fontFamily: 'var(--font-body)' }}
-      >
-        <span className="material-symbols-outlined align-middle mx-1" style={{ fontSize: '14px' }}>local_shipping</span>
-        {isAr ? 'توصيل مجاني للطلبيات فوق 300 شيكل' : 'Free shipping on orders over 300 ILS'}
-      </div>
+      {announcement.enabled && (
+        <div
+          className="w-full bg-primary text-on-primary text-center py-2 text-xs tracking-wide"
+          dir={isRTL ? 'rtl' : 'ltr'}
+          style={{ fontFamily: 'var(--font-body)' }}
+        >
+          <span className="material-symbols-outlined align-middle mx-1" style={{ fontSize: '14px' }}>local_shipping</span>
+          {isAr ? announcement.textAr : announcement.textEn}
+        </div>
+      )}
 
       {/* Desktop header */}
       <header

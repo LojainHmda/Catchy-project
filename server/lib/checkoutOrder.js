@@ -164,8 +164,8 @@ function validateDelivery(delivery) {
 
   const customerPhone = normalizePhone(delivery?.customerPhone);
   const digits = customerPhone.replace(/\D/g, '');
-  if (digits.length < 9 || digits.length > 15) {
-    return { ok: false, code: 'DELIVERY_INVALID', message: 'Please enter a valid phone number.' };
+  if (digits.length !== 10) {
+    return { ok: false, code: 'DELIVERY_INVALID', message: 'Please enter a 10-digit phone number.' };
   }
 
   const deliveryAddress = String(delivery?.deliveryAddress ?? '').trim();
@@ -344,8 +344,8 @@ export async function processGuestCheckout(db, { items, delivery }) {
       const itemCount = lineItems.reduce((sum, item) => sum + item.quantity, 0);
       const shippingCosts = {
         west_bank: 20,
-        jerusalem: 50,
-        abu_ghosh: 30,
+        jerusalem: 30,
+        abu_ghosh: 50,
         inside_israel: 70,
       };
       const shippingCost = shippingCosts[deliveryCheck.details.deliveryZone] ?? 0;

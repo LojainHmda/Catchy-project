@@ -277,7 +277,7 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
                           {variant.images.map((url, imgIdx) => (
                             <div
                               key={url}
-                              className="relative aspect-[4/5] overflow-hidden rounded-md bg-gray-100 ring-1 ring-black/5 hover:[&_.photo-remove-btn]:pointer-events-auto hover:[&_.photo-remove-btn]:opacity-100"
+                              className="group relative aspect-[4/5] overflow-hidden rounded-md bg-gray-100 ring-1 ring-black/5"
                             >
                               <img src={url} alt="" className="h-full w-full object-cover" />
                               <button
@@ -287,7 +287,7 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
                                     images: variant.images.filter((_, i) => i !== imgIdx),
                                   })
                                 }
-                                className="photo-remove-btn pointer-events-none absolute right-1 top-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-white opacity-0 transition-opacity"
+                                className="absolute right-1 top-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-white transition-opacity sm:opacity-0 sm:pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto"
                                 aria-label="Remove photo"
                               >
                                 <X size={12} />

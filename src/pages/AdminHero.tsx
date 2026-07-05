@@ -153,7 +153,7 @@ const AdminHero = () => {
               )}
             >
               <div className="group relative h-36 w-full shrink-0 md:h-auto md:w-40 md:self-stretch md:min-h-[8rem] md:max-h-40">
-                <img src={slide.url} alt="" className="h-full w-full object-cover" />
+                <img src={slide.url} alt="" className="h-full w-full object-cover" loading="lazy"/>
                 <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
                   <span className="rounded-full bg-white/20 p-2 text-white backdrop-blur-sm">
                     <ImageIcon size={18} />
@@ -358,7 +358,7 @@ const AdminHero = () => {
                                 key={id}
                                 className="flex items-center gap-1.5 rounded-lg border border-catchy/30 bg-white py-1 pl-1 pr-1 text-[11px] shadow-sm"
                               >
-                                <img src={thumb} alt="" className="h-8 w-8 rounded-md object-cover" />
+                                <img src={thumb} alt="" className="h-8 w-8 rounded-md object-cover" loading="lazy"/>
                                 <span className="max-w-[120px] truncate font-bold text-gray-800">{label}</span>
                                 <button
                                   type="button"
@@ -424,7 +424,7 @@ const AdminHero = () => {
                                         : 'hover:border-catchy/30 hover:bg-catchy/5'
                                     )}
                                   >
-                                    <img src={thumb} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" />
+                                    <img src={thumb} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" loading="lazy"/>
                                     <span className="min-w-0 flex-1 truncate font-bold text-gray-800">{p.name}</span>
                                     <span className="shrink-0 font-bold text-gray-400">ILS {p.price}</span>
                                     <Plus className="h-3.5 w-3.5 shrink-0 text-catchy" />

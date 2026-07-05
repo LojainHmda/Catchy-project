@@ -10,6 +10,7 @@ import OrderItemThumbnails from './OrderItemThumbnails';
 import OrderLineItemsList from './OrderLineItemsList';
 import OrderStatusBadge from './OrderStatusBadge';
 import OrderStatusTimeline from './OrderStatusTimeline';
+import InvoiceDownloadButton from './InvoiceDownloadButton';
 
 type CustomerOrderCardProps = {
   order: OrderRecord;
@@ -92,6 +93,7 @@ const CustomerOrderCard: React.FC<CustomerOrderCardProps> = ({
                   <ExternalLink size={12} />
                   {t('orders.viewDetails')}
                 </Link>
+                <InvoiceDownloadButton order={order} />
               </div>
             </div>
           </motion.div>

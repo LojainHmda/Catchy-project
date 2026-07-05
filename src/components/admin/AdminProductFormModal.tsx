@@ -4,8 +4,8 @@ import { db, collection, addDoc, updateDoc, doc, serverTimestamp, deleteField } 
 import { X, Upload, Loader2, Tag, Percent } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLanguage } from '../../context/LanguageContext';
-import { CATEGORY_KEYS, CATEGORY_ICONS } from '../../constants';
 import { cn } from '../../lib/utils';
+import { useStoreCategories } from '../../hooks/useStoreCategories';
 import {
   ensureRemoteProductImage,
   ensureRemoteProductImages,
@@ -41,10 +41,38 @@ import {
   variantRowsToFirestore,
   type ColorVariantFormRow,
 } from '../../lib/productVariants';
+import {
+  countNewArrivalProducts,
+  hasNewArrivalTag,
+  isLegacyNewArrivalCategory,
+  MAX_NEW_ARRIVAL_PRODUCTS,
+  productTags,
+  withNewArrivalTag,
+} from '../../lib/productTags';
 
 const MAX_PRODUCT_IMAGES = 6;
 const MAX_FILE_BEFORE_COMPRESS = 15 * 1024 * 1024;
 const PRESET_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size'];
+
+// deleteField() sentinel used to detect (and drop) field-deletion markers when
+// creating a new document, where they are invalid.
+const DELETE_FIELD_SENTINEL = deleteField();
+
+const stripFieldDeletions = <T extends Record<string, unknown>>(data: T): T => {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (
+      value != null &&
+      typeof value === 'object' &&
+      typeof (value as { isEqual?: unknown }).isEqual === 'function' &&
+      (value as { isEqual: (other: unknown) => boolean }).isEqual(DELETE_FIELD_SENTINEL)
+    ) {
+      continue;
+    }
+    out[key] = value;
+  }
+  return out as T;
+};
 
 const INPUT =
   'h-9 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-400 focus:ring-0';
@@ -55,6 +83,7 @@ type ProductFormData = {
   description: string;
   price: string;
   category: string;
+  isNewArrival: boolean;
   images: string[];
   videos: string[];
   sizeRows: SizeRow[];
@@ -69,6 +98,7 @@ const emptyForm = (): ProductFormData => ({
   description: '',
   price: '',
   category: '',
+  isNewArrival: false,
   images: [],
   videos: [],
   sizeRows: [],
@@ -100,13 +130,16 @@ function formFromProduct(product: any): ProductFormData {
   if (!rows.length && Array.isArray(product.sizes)) {
     rows = product.sizes.map((s: string) => newSizeRow(String(s), '0'));
   }
+  const legacyNewArrivalCategory =
+    typeof product.category === 'string' && product.category.trim().toLowerCase() === 'new arrivals';
   return {
     name: product.name,
     description: product.description ?? '',
     price: isProductOnSale(product)
       ? String(Number(product.compareAtPrice))
       : product.price?.toString() ?? '',
-    category: product.category ?? '',
+    category: legacyNewArrivalCategory ? '' : (product.category ?? ''),
+    isNewArrival: hasNewArrivalTag(product),
     images: coerceProductImages(product),
     videos: Array.isArray(product.videos) ? product.videos : [],
     sizeRows: rows.length ? rows : [newSizeRow('One Size', String(product.stock ?? 0))],
@@ -123,6 +156,7 @@ export type AdminProductFormModalProps = {
   open: boolean;
   onClose: () => void;
   product?: any | null;
+  newArrivalCount?: number;
   onSaved?: (saved: { id: string; [key: string]: unknown }) => void | Promise<void>;
 };
 
@@ -130,9 +164,11 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
   open,
   onClose,
   product = null,
+  newArrivalCount = 0,
   onSaved,
 }) => {
   const { t } = useLanguage();
+  const { categories: storeCategories } = useStoreCategories();
   const [formData, setFormData] = useState<ProductFormData>(emptyForm());
   const [customSizeInput, setCustomSizeInput] = useState('');
   const [saving, setSaving] = useState(false);
@@ -249,6 +285,11 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
     [formData.sizeRows]
   );
 
+  const alreadyTagged = product ? hasNewArrivalTag(product) : false;
+  const newArrivalSlotsUsed =
+    newArrivalCount - (alreadyTagged ? 1 : 0) + (formData.isNewArrival ? 1 : 0);
+  const newArrivalAtLimit = formData.isNewArrival && newArrivalSlotsUsed > MAX_NEW_ARRIVAL_PRODUCTS;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -271,6 +312,34 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
       discountFields = buildDiscountUpdate(resolved.compareAt, resolved.salePrice);
     } else if (product && isProductOnSale(product)) {
       discountFields = buildRemoveDiscountUpdate({ ...product, price });
+    }
+
+    if (formData.isNewArrival) {
+      try {
+        const otherTagged = await countNewArrivalProducts(db, product?.id);
+        if (otherTagged >= MAX_NEW_ARRIVAL_PRODUCTS) {
+          toast.error('Latest Arrivals is full', {
+            description: `Only ${MAX_NEW_ARRIVAL_PRODUCTS} products can have the "new arrived" tag. Remove it from another product first.`,
+          });
+          return;
+        }
+      } catch (err) {
+        console.error('Could not verify new arrival slots:', err);
+        toast.error('Could not verify Latest Arrivals slots', {
+          description: 'Check your connection and try again.',
+        });
+        return;
+      }
+    }
+
+    const tags = withNewArrivalTag(productTags(product), formData.isNewArrival);
+    const category = isLegacyNewArrivalCategory(formData.category) ? '' : formData.category;
+
+    if (!category.trim()) {
+      toast.error('Category required', {
+        description: 'Choose a catalog category (e.g. Tops, Dresses). New Arrivals is a tag only.',
+      });
+      return;
     }
 
     let sizes: string[] = [];
@@ -334,7 +403,8 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
       const productData = {
         name: formData.name.trim(),
         description: (formData.description ?? '').trim(),
-        category: formData.category,
+        category,
+        tags,
         images: remoteImages.filter(Boolean),
         videos,
         sizes,
@@ -361,8 +431,11 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
         await updateDoc(doc(db, 'products', product.id), productData);
         saved = { id: product.id, ...productData };
       } else {
-        const ref = await addDoc(collection(db, 'products'), productData);
-        saved = { id: ref.id, ...productData };
+        // deleteField() is only valid on update/set-with-merge. A brand new
+        // document has nothing to delete, so drop those sentinels before addDoc.
+        const createData = stripFieldDeletions(productData);
+        const ref = await addDoc(collection(db, 'products'), createData);
+        saved = { id: ref.id, ...createData };
       }
 
       toast.success(wasEditing ? 'Updated in Firestore' : 'Saved to Firestore', {
@@ -475,15 +548,34 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                       className={INPUT}
                     >
                       <option value="">Select category</option>
-                      {Object.keys(CATEGORY_ICONS)
-                        .filter((k) => k !== 'All')
-                        .map((cat) => (
-                          <option key={cat} value={cat}>
-                            {cat} ({t(CATEGORY_KEYS[cat])})
-                          </option>
-                        ))}
+                      {storeCategories.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.name}
+                          {cat.nameAr ? ` (${cat.nameAr})` : ''}
+                          {cat.hidden ? ' — hidden' : ''}
+                        </option>
+                      ))}
                     </select>
                   </div>
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2">
+                    <label className="text-xs text-gray-600">
+                      New Arrivals on home page
+                      <span className="ml-1 tabular-nums text-gray-400">
+                        ({Math.min(newArrivalSlotsUsed, MAX_NEW_ARRIVAL_PRODUCTS)}/{MAX_NEW_ARRIVAL_PRODUCTS})
+                      </span>
+                    </label>
+                    <AdminToggle
+                      checked={formData.isNewArrival}
+                      disabled={!formData.isNewArrival && newArrivalCount >= MAX_NEW_ARRIVAL_PRODUCTS && !alreadyTagged}
+                      onChange={(checked) => setFormData({ ...formData, isNewArrival: checked })}
+                      ariaLabel="Show in Latest Arrivals on home page"
+                    />
+                  </div>
+                  {newArrivalAtLimit ? (
+                    <p className="text-[11px] text-amber-700">
+                      All {MAX_NEW_ARRIVAL_PRODUCTS} slots are taken. Remove the tag from another product first.
+                    </p>
+                  ) : null}
                   <div>
                     <label className={LABEL}>
                       {formData.discount.enabled ? 'Original price (ILS)' : 'Price (ILS)'}
@@ -662,7 +754,7 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                         {formData.images.map((img, i) => (
                           <div
                             key={`img-${i}`}
-                            className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-gray-200 bg-gray-50 hover:[&_.photo-remove-btn]:pointer-events-auto hover:[&_.photo-remove-btn]:opacity-100"
+                            className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-gray-200 bg-gray-50"
                           >
                             <img src={img} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
                             <button
@@ -673,7 +765,7 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                                   images: prev.images.filter((_, idx) => idx !== i),
                                 }))
                               }
-                              className="photo-remove-btn pointer-events-none absolute right-0.5 top-0.5 z-10 flex h-5 w-5 items-center justify-center rounded bg-black/65 text-white opacity-0 transition-opacity"
+                              className="absolute right-0.5 top-0.5 z-10 flex h-5 w-5 items-center justify-center rounded bg-black/65 text-white transition-opacity sm:opacity-0 sm:pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto"
                               aria-label="Remove photo"
                             >
                               <X size={10} />
@@ -748,7 +840,7 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                     </label>
                     <div className="flex items-center gap-2">
                       {formData.lifestyleImage ? (
-                        <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-gray-200 hover:[&_.photo-remove-btn]:pointer-events-auto hover:[&_.photo-remove-btn]:opacity-100">
+                        <div className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-gray-200">
                           <img
                             src={formData.lifestyleImage}
                             alt=""
@@ -758,7 +850,7 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                           <button
                             type="button"
                             onClick={() => setFormData((prev) => ({ ...prev, lifestyleImage: '' }))}
-                            className="photo-remove-btn pointer-events-none absolute right-0.5 top-0.5 z-10 flex h-5 w-5 items-center justify-center rounded bg-black/65 text-white opacity-0 transition-opacity"
+                            className="absolute right-0.5 top-0.5 z-10 flex h-5 w-5 items-center justify-center rounded bg-black/65 text-white transition-opacity sm:opacity-0 sm:pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto"
                             aria-label="Remove lifestyle photo"
                           >
                             <X size={10} />

@@ -98,7 +98,7 @@ const AdminCategoryTiles = () => {
               className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm"
             >
               <div className="relative aspect-[16/10] bg-neutral-100">
-                <img src={src} alt="" className="h-full w-full object-cover" />
+                <img src={src} alt="" className="h-full w-full object-cover" loading="lazy"/>
                 {isCustom && (
                   <span className="absolute left-3 top-3 rounded-full bg-catchy px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
                     Custom

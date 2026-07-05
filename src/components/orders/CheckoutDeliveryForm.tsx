@@ -99,10 +99,12 @@ const CheckoutDeliveryForm: React.FC<CheckoutDeliveryFormProps> = ({
           </span>
           <input
             type="tel"
+            inputMode="numeric"
             autoComplete="tel"
             dir="ltr"
+            maxLength={10}
             value={values.customerPhone}
-            onChange={(e) => setField('customerPhone', e.target.value)}
+            onChange={(e) => setField('customerPhone', e.target.value.replace(/\D/g, '').slice(0, 10))}
             onBlur={() => markTouched('customerPhone')}
             placeholder={t('cart.deliveryPhonePlaceholder')}
             className={cn(fieldClass, showError('customerPhone') && 'border-red-300 focus:border-red-400 focus:ring-red-100')}

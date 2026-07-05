@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local tooling / deploy caches
+.firebase/
+memory/

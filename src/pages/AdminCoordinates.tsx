@@ -290,7 +290,7 @@ const AdminCoordinates = () => {
                   <tr key={look.id} className="group hover:bg-gray-50/60">
                     <td className="px-2 py-2">
                       <div className="h-10 w-8 overflow-hidden rounded bg-gray-100 ring-1 ring-black/5">
-                        <img src={primaryCoordinateImage(look, linked)} alt="" className="h-full w-full object-cover" />
+                        <img src={primaryCoordinateImage(look, linked)} alt="" className="h-full w-full object-cover" loading="lazy"/>
                       </div>
                     </td>
                     <td className="px-3 py-2">

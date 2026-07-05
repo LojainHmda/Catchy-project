@@ -110,10 +110,23 @@ function whatsappDevApi(env: Record<string, string>) {
   };
 }
 
+function imageProxyDevApi() {
+  return {
+    name: 'image-proxy-dev-api',
+    configureServer(server: any) {
+      server.middlewares.use('/api/image-proxy', async (req: any, res: any) => {
+        const url = new URL(req.originalUrl || req.url, 'http://localhost').searchParams.get('url');
+        const {proxyImage} = await import('./server/lib/imageProxy.js');
+        await proxyImage(url, res);
+      });
+    },
+  };
+}
+
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
-    plugins: [react(), tailwindcss(), guestCheckoutDevApi(env), whatsappDevApi(env)],
+    plugins: [react(), tailwindcss(), guestCheckoutDevApi(env), whatsappDevApi(env), imageProxyDevApi()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },
@@ -124,8 +137,27 @@ export default defineConfig(({mode}) => {
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+      // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id: string) {
+            if (id.includes('node_modules/firebase') || id.includes('node_modules/@firebase')) {
+              return 'vendor-firebase';
+            }
+            if (id.includes('node_modules/framer-motion')) {
+              return 'vendor-motion';
+            }
+            if (id.includes('node_modules')) {
+              return 'vendor';
+            }
+          },
+        },
+      },
+      assetsInlineLimit: 4096,
+      sourcemap: false,
     },
   };
 });

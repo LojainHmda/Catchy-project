@@ -1,6 +1,8 @@
 import { coerceProductImages } from './productImages';
 import {
+  hasSizedInventory,
   parseSizeStock,
+  resolveProductInventory,
   rowsToSizeStock,
   sizeStockToRows,
   totalFromSizeStock,
@@ -92,6 +94,37 @@ export function defaultVariantId(product: {
   if (preferred && variants.some((v) => v.id === preferred)) return preferred;
   const inStock = variants.find((v) => totalFromSizeStock(v.sizeStock) > 0);
   return inStock?.id ?? variants[0]!.id;
+}
+
+type ProductInventoryFields = {
+  colorVariants?: unknown;
+  sizeStock?: unknown;
+  sizes?: unknown;
+  stock?: unknown;
+};
+
+/**
+ * Storefront inventory for a product doc. When color variants exist they are the
+ * source of truth — the top-level `stock`/`sizeStock` is a denormalized aggregate
+ * that can drift stale, so we recompute from the variants instead.
+ */
+export function resolveListingInventory(data: ProductInventoryFields): {
+  sizeStock: SizeStock;
+  stock: number;
+} {
+  const variants = parseColorVariants(data.colorVariants);
+  if (variants.length > 0) {
+    const sizeStock = aggregateSizeStockFromVariants(variants);
+    return { sizeStock, stock: totalFromSizeStock(sizeStock) };
+  }
+  return resolveProductInventory(data);
+}
+
+/** Whether a storefront listing should treat the product as buyable (variant-aware). */
+export function isProductInStock(data: ProductInventoryFields): boolean {
+  const { sizeStock, stock } = resolveListingInventory(data);
+  if (hasSizedInventory(sizeStock)) return totalFromSizeStock(sizeStock) > 0;
+  return stock > 0;
 }
 
 /** Sum inventory across all color variants (for catalog chips / legacy fields). */

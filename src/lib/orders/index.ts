@@ -32,7 +32,11 @@ export {
   fetchOrderById,
   fetchOrdersForUser,
   placeOrderFromCart,
+  saveOrderItems,
   updateOrderCustomerDetails,
   updateOrderStatus,
 } from './orderService';
-export type { OrderCustomerDetailsUpdate } from './orderService';
+export type {
+  OrderCustomerDetailsUpdate,
+  OrderItemsMutationResult,
+} from './orderService';

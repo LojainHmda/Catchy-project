@@ -13,13 +13,13 @@ import {
 import {
   getFirestore,
   initializeFirestore,
-  memoryLocalCache,
   persistentLocalCache,
   persistentMultipleTabManager,
   collection,
   doc,
   getDoc,
   getDocs,
+  getDocsFromCache,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -66,10 +66,9 @@ const app = getOrInitApp();
 
 let db: ReturnType<typeof getFirestore>;
 try {
+  // Persistent cache makes catalog getDocsFromCache instant after the first load (including dev).
   db = initializeFirestore(app, {
-    localCache: import.meta.env.DEV
-      ? memoryLocalCache()
-      : persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
   });
 } catch {
   db = getFirestore(app);
@@ -90,6 +89,7 @@ export {
   doc,
   getDoc,
   getDocs,
+  getDocsFromCache,
   setDoc,
   updateDoc,
   deleteDoc,

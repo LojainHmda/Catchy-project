@@ -21,6 +21,8 @@ export type ProductRecord = {
   /** Legacy alias — treated the same as `onSale`. */
   sale?: boolean;
   category?: string;
+  /** Storefront tags — e.g. `new-arrived` for the home page Latest Arrivals row. */
+  tags?: string[];
   images?: string[];
   videos?: string[];
   sizes?: string[];

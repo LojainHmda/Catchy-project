@@ -15,8 +15,8 @@ export type ShippingZone = {
 
 export const SHIPPING_ZONES: ShippingZone[] = [
   { id: 'west_bank', cost: 20, labelKey: 'shipping.zone.westBank' },
-  { id: 'jerusalem', cost: 50, labelKey: 'shipping.zone.jerusalem' },
-  { id: 'abu_ghosh', cost: 30, labelKey: 'shipping.zone.abuGhosh' },
+  { id: 'jerusalem', cost: 30, labelKey: 'shipping.zone.jerusalem' },
+  { id: 'abu_ghosh', cost: 50, labelKey: 'shipping.zone.abuGhosh' },
   { id: 'inside_israel', cost: 70, labelKey: 'shipping.zone.insideIsrael' },
 ];
 

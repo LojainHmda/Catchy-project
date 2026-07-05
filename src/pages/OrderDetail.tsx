@@ -8,6 +8,7 @@ import OrderLineItemsList from '../components/orders/OrderLineItemsList';
 import OrderStatusBadge from '../components/orders/OrderStatusBadge';
 import OrderStatusTimeline from '../components/orders/OrderStatusTimeline';
 import OrderTotalsBreakdown from '../components/orders/OrderTotalsBreakdown';
+import InvoiceDownloadButton from '../components/orders/InvoiceDownloadButton';
 import { formatOrderDateTime, formatOrderMoney, shortOrderId } from '../lib/orders';
 import { cn } from '../lib/utils';
 
@@ -116,7 +117,7 @@ const OrderDetail = () => {
         </section>
       </div>
 
-      <div className="mt-8">
+      <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
         <Link
           to="/catalog"
           className={cn(
@@ -126,6 +127,10 @@ const OrderDetail = () => {
         >
           {t('cart.continueShopping')}
         </Link>
+        <InvoiceDownloadButton
+          order={order}
+          className="w-full justify-center py-3 text-[11px] tracking-widest sm:w-auto sm:px-8"
+        />
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { db, collection, getDocs, updateDoc, doc, query, orderBy } from '../firebase';
-import { Search, Loader2 } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { db, collection, getDocs, updateDoc, doc, query, orderBy, limit, startAfter } from '../firebase';
+import { Search, Loader2, ChevronDown } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { coerceProductImages, PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
 
@@ -11,6 +11,8 @@ type ProductRow = {
   stock: number;
   image: string;
 };
+
+const PAGE_SIZE = 50;
 
 type StockFilter = 'all' | 'low' | 'out';
 
@@ -23,35 +25,39 @@ function stockStatus(stock: number): { label: string; tone: string } {
 const AdminStock = () => {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [stockFilter, setStockFilter] = useState<StockFilter>('all');
   const [savingId, setSavingId] = useState<string | null>(null);
   const [stockUpdates, setStockUpdates] = useState<Record<string, number>>({});
 
+  const lastDocRef = useRef<any>(null);
+
+  const mapRow = useCallback((d: any): ProductRow => {
+    const data = d.data();
+    const imgs = coerceProductImages(data);
+    return {
+      id: d.id,
+      name: String(data.name ?? ''),
+      category: String(data.category ?? ''),
+      stock: Number(data.stock) || 0,
+      image: imgs[0] ?? PRODUCT_IMAGE_PLACEHOLDER,
+    };
+  }, []);
+
   const fetchProducts = useCallback(async () => {
     setLoading(true);
+    lastDocRef.current = null;
     try {
-      const q = query(collection(db, 'products'), orderBy('name', 'asc'));
+      const q = query(collection(db, 'products'), orderBy('name', 'asc'), limit(PAGE_SIZE));
       const snapshot = await getDocs(q);
-      const productsData: ProductRow[] = snapshot.docs
-        .map((d) => {
-          const data = d.data();
-          const imgs = coerceProductImages(data);
-          return {
-            id: d.id,
-            name: String(data.name ?? ''),
-            category: String(data.category ?? ''),
-            stock: Number(data.stock) || 0,
-            image: imgs[0] ?? PRODUCT_IMAGE_PLACEHOLDER,
-          };
-        })
-        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-
+      const productsData: ProductRow[] = snapshot.docs.map(mapRow);
+      lastDocRef.current = snapshot.docs[snapshot.docs.length - 1] ?? null;
+      setHasMore(snapshot.docs.length === PAGE_SIZE);
       setProducts(productsData);
       const initial: Record<string, number> = {};
-      productsData.forEach((p) => {
-        initial[p.id] = p.stock;
-      });
+      productsData.forEach((p) => { initial[p.id] = p.stock; });
       setStockUpdates(initial);
     } catch (error) {
       console.error('Error fetching products:', error);
@@ -59,7 +65,37 @@ const AdminStock = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [mapRow]);
+
+  const loadMore = useCallback(async () => {
+    if (!hasMore || loadingMore || !lastDocRef.current) return;
+    setLoadingMore(true);
+    try {
+      const q = query(
+        collection(db, 'products'),
+        orderBy('name', 'asc'),
+        startAfter(lastDocRef.current),
+        limit(PAGE_SIZE)
+      );
+      const snapshot = await getDocs(q);
+      const newRows: ProductRow[] = snapshot.docs.map(mapRow);
+      if (snapshot.docs.length > 0) lastDocRef.current = snapshot.docs[snapshot.docs.length - 1];
+      setHasMore(snapshot.docs.length === PAGE_SIZE);
+      setProducts((prev) => {
+        const seen = new Set(prev.map((p) => p.id));
+        return [...prev, ...newRows.filter((r) => !seen.has(r.id))];
+      });
+      setStockUpdates((prev) => {
+        const next = { ...prev };
+        newRows.forEach((p) => { if (!(p.id in next)) next[p.id] = p.stock; });
+        return next;
+      });
+    } catch (error) {
+      console.error('Error loading more:', error);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [hasMore, loadingMore, mapRow]);
 
   useEffect(() => {
     fetchProducts();
@@ -206,8 +242,7 @@ const AdminStock = () => {
                                 src={product.image}
                                 alt=""
                                 className="h-8 w-8 shrink-0 rounded object-cover bg-gray-100"
-                                referrerPolicy="no-referrer"
-                              />
+                                referrerPolicy="no-referrer" loading="lazy"/>
                               <div className="min-w-0">
                                 <p className="truncate font-medium text-gray-900">{product.name}</p>
                                 <p className="truncate text-xs text-gray-500">{product.category}</p>
@@ -265,8 +300,7 @@ const AdminStock = () => {
                           src={product.image}
                           alt=""
                           className="h-10 w-10 shrink-0 rounded object-cover bg-gray-100"
-                          referrerPolicy="no-referrer"
-                        />
+                          referrerPolicy="no-referrer" loading="lazy"/>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium text-gray-900">{product.name}</p>
                           <p className="text-xs text-gray-500">
@@ -275,7 +309,7 @@ const AdminStock = () => {
                           <div className="mt-2 flex items-center gap-2">
                             <input
                               type="number"
-                              min={0}
+                                          min={0}
                               value={currentVal}
                               onChange={(e) => handleStockChange(product.id, e.target.value)}
                               className="h-8 w-20 rounded-md border border-gray-200 px-2 text-center text-sm tabular-nums outline-none focus:border-gray-400"
@@ -303,6 +337,20 @@ const AdminStock = () => {
             </>
           )}
         </div>
+
+      {hasMore && (
+        <div className="mt-3 flex justify-center">
+          <button
+            type="button"
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+          >
+            {loadingMore ? <Loader2 size={14} className="animate-spin" /> : <ChevronDown size={14} />}
+            Load more products
+          </button>
+        </div>
+      )}
       </div>
     </div>
   );

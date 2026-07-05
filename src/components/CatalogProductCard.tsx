@@ -1,29 +1,41 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '../lib/utils';
-import { catalogThumbnailUrl, type CatalogListProduct } from '../lib/catalogProductList';
+import {
+  catalogDisplaySizes,
+  type CatalogColorSwatch,
+  type CatalogListProduct,
+} from '../lib/catalogProductList';
 import { isRemoteImageUrl, sanitizeImageSrc } from '../lib/productImages';
+import { useLanguage } from '../context/LanguageContext';
 import { ProductSaleBadge } from './ProductPriceDisplay';
 
 export interface CatalogProductCardProps {
-  product: Pick<CatalogListProduct, 'id' | 'name' | 'price' | 'images' | 'sizes'>;
+  product: Pick<CatalogListProduct, 'id' | 'name' | 'price' | 'images' | 'sizes' | 'sizeStock'>;
   compareAtPrice?: number | null;
   discountPercent?: number;
   saleLabel: string;
-  colorsLine: string;
+  colorSwatches?: CatalogColorSwatch[];
   priority?: boolean;
 }
+
+const MAX_VISIBLE_SWATCHES = 4;
 
 const CatalogProductCard: React.FC<CatalogProductCardProps> = ({
   product,
   compareAtPrice,
   discountPercent,
   saleLabel,
-  colorsLine,
+  colorSwatches,
   priority = false,
 }) => {
-  const src = sanitizeImageSrc(catalogThumbnailUrl(product));
+  const { isRTL } = useLanguage();
+  const src = sanitizeImageSrc(product.images?.[0] ?? '');
   const onSale = typeof compareAtPrice === 'number' && compareAtPrice > product.price;
+  const swatches = colorSwatches ?? [];
+  const visibleSwatches = swatches.slice(0, MAX_VISIBLE_SWATCHES);
+  const extraSwatches = swatches.length - visibleSwatches.length;
+  const displaySizes = catalogDisplaySizes(product);
 
   return (
     <article className="group mx-auto w-full max-w-[10.5rem] font-sans sm:max-w-[11.5rem] lg:max-w-[12rem]">
@@ -71,9 +83,26 @@ const CatalogProductCard: React.FC<CatalogProductCardProps> = ({
           </span>
         </div>
         <div dir="ltr" className="flex flex-row items-center justify-between gap-1.5 text-[11px] leading-tight text-gray-500">
-          <div className="flex flex-wrap items-center gap-0.5">
-            {colorsLine && <span className="mr-0.5">{colorsLine}</span>}
-            {Array.isArray(product.sizes) && product.sizes.map((s) => (
+          <div className="flex flex-wrap items-center gap-1">
+            {visibleSwatches.length > 0 && (
+              <span className="flex shrink-0 items-center gap-1">
+                <span className="flex items-center -space-x-1">
+                  {visibleSwatches.map((swatch, i) => (
+                    <span
+                      key={`${swatch.name}-${i}`}
+                      title={isRTL ? swatch.nameAr || swatch.name : swatch.name}
+                      aria-label={isRTL ? swatch.nameAr || swatch.name : swatch.name}
+                      className="h-3 w-3 rounded-full ring-1 ring-black/15 ring-offset-1 ring-offset-white"
+                      style={{ backgroundColor: swatch.hex }}
+                    />
+                  ))}
+                </span>
+                {extraSwatches > 0 && (
+                  <span className="text-[9px] font-bold tabular-nums text-gray-400">+{extraSwatches}</span>
+                )}
+              </span>
+            )}
+            {displaySizes.map((s) => (
               <span key={s} className="rounded bg-gray-100 px-1 py-px text-[9px] font-bold text-gray-500 leading-tight">
                 {s}
               </span>
@@ -88,4 +117,4 @@ const CatalogProductCard: React.FC<CatalogProductCardProps> = ({
   );
 };
 
-export default CatalogProductCard;
+export default React.memo(CatalogProductCard);

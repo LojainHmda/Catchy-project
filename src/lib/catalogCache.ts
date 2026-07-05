@@ -71,6 +71,14 @@ export function getCachedCategoryCounts(): Map<string, number> | null {
   return isFresh(categoryCountsCache, COUNTS_TTL_MS) ? categoryCountsCache.value : null;
 }
 
+export function isCategoryCountsCacheFresh(): boolean {
+  return isFresh(categoryCountsCache, COUNTS_TTL_MS);
+}
+
+export function isCoordinateLooksCacheFresh(): boolean {
+  return isFresh(coordinateLooksCache, COORDINATE_TTL_MS);
+}
+
 export function setCachedCategoryCounts(counts: Map<string, number>) {
   categoryCountsCache = { value: counts, at: Date.now() };
 }

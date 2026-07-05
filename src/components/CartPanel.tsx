@@ -292,18 +292,6 @@ const CartPanel: React.FC<CartPanelProps> = ({ variant, onClose }) => {
             );
           })}
         </AnimatePresence>
-
-        <Link
-          to="/catalog"
-          onClick={closeDrawer}
-          className={cn(
-            'mt-2 inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-catchy',
-            isRTL && 'font-arabic flex-row-reverse'
-          )}
-        >
-          <ArrowLeft size={14} className={cn(isRTL && 'rotate-180')} />
-          {t('cart.continueShopping')}
-        </Link>
       </div>
 
       <div
@@ -312,6 +300,22 @@ const CartPanel: React.FC<CartPanelProps> = ({ variant, onClose }) => {
           isDrawer && 'pb-[max(1rem,env(safe-area-inset-bottom,0px))]'
         )}
       >
+        <div className="mb-3 flex justify-center">
+          <Link
+            to="/catalog"
+            onClick={closeDrawer}
+            className={cn(
+              'group inline-flex items-center gap-1.5 font-bold text-catchy underline-offset-4 transition-colors hover:text-catchy-dark hover:underline',
+              isRTL ? 'font-arabic flex-row-reverse text-[12px]' : 'text-[11px] uppercase tracking-wide'
+            )}
+          >
+            <ArrowLeft
+              size={13}
+              className={cn('transition-transform group-hover:-translate-x-0.5', isRTL && 'rotate-180 group-hover:translate-x-0.5')}
+            />
+            {t('cart.continueShopping')}
+          </Link>
+        </div>
         <CartOrderSummary
           subtotal={cartTotal}
           onCheckout={checkout}

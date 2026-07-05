@@ -1,16 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search, Loader2, RefreshCw } from 'lucide-react';
-import { toast } from 'sonner';
 import AdminOrderDetailModal from '../components/orders/AdminOrderDetailModal';
 import OrderStatusBadge from '../components/orders/OrderStatusBadge';
 import { useOrdersList } from '../hooks/useOrdersList';
-import {
-  formatOrderDate,
-  formatOrderMoney,
-  shortOrderId,
-  updateOrderStatus,
-} from '../lib/orders';
+import { formatOrderDate, formatOrderMoney, shortOrderId } from '../lib/orders';
 import { ORDER_STATUSES, type OrderStatus } from '../types/order';
 import { cn } from '../lib/utils';
 
@@ -30,7 +24,6 @@ const AdminOrders = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [savingStatus, setSavingStatus] = useState(false);
 
   const highlightId = searchParams.get('order');
 
@@ -82,22 +75,6 @@ const AdminOrders = () => {
     });
     return map;
   }, [orders]);
-
-  const handleStatusChange = async (orderId: string, status: OrderStatus) => {
-    const previous = orders.find((o) => o.id === orderId)?.status;
-    patchOrder(orderId, { status });
-    setSavingStatus(true);
-    try {
-      await updateOrderStatus(orderId, status);
-      toast.success('Order status updated');
-    } catch (error) {
-      if (previous) patchOrder(orderId, { status: previous });
-      console.error('Failed to update order status:', error);
-      toast.error('Could not update order status');
-    } finally {
-      setSavingStatus(false);
-    }
-  };
 
   const selectOrder = (id: string) => {
     setSelectedId(id);
@@ -276,9 +253,7 @@ const AdminOrders = () => {
         open={!!selected}
         order={selected}
         onClose={closeDetail}
-        onStatusChange={handleStatusChange}
-        onCustomerPatch={patchOrder}
-        savingStatus={savingStatus}
+        onOrderPatch={patchOrder}
       />
     </div>
   );

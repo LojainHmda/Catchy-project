@@ -35,7 +35,7 @@ export function validateDeliveryDetails(values: DeliveryFormValues): DeliveryVal
 
   const customerPhone = normalizePhone(values.customerPhone.trim());
   const digits = customerPhone.replace(/\D/g, '');
-  if (digits.length < 9 || digits.length > 15) {
+  if (digits.length !== 10) {
     return { ok: false, field: 'customerPhone', messageKey: 'cart.deliveryPhoneInvalid' };
   }
 

@@ -7,7 +7,6 @@ import { useLanguage } from '../context/LanguageContext';
 import {
   checkoutErrorCode,
   checkoutProductName,
-  isOrderError,
   placeGuestOrderFromCart,
   placeOrderFromCart,
 } from '../lib/orders';
@@ -76,7 +75,13 @@ export function useCheckout(options: CheckoutOptions = {}) {
       } catch (error) {
         const code = checkoutErrorCode(error);
         const productName = checkoutProductName(error);
+        // Log the technical detail for debugging; the customer only ever sees a friendly reason.
         console.error('Checkout failed:', error);
+
+        const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+        const isNetwork =
+          offline ||
+          (error instanceof Error && /network|failed to fetch|fetch failed|timeout|unavailable/i.test(error.message));
 
         if (code === 'OUT_OF_STOCK') {
           toast.error(t('cart.outOfStock').replace('{name}', productName ?? ''));
@@ -84,8 +89,10 @@ export function useCheckout(options: CheckoutOptions = {}) {
           toast.error(t('cart.productUnavailable'));
         } else if (code === 'DELIVERY_INVALID') {
           toast.error(t('cart.deliveryInvalid'));
-        } else if (isOrderError(error)) {
-          toast.error(error.message);
+        } else if (code === 'NOT_SIGNED_IN') {
+          toast.error(t('cart.signInToCheckout'));
+        } else if (code === 'EMPTY_CART') {
+          toast.error(t('cart.emptyTitle'));
         } else if (code === 'permission-denied' || code === 'PERMISSION_DENIED') {
           toast.error(t('cart.permissionDenied'));
         } else if (
@@ -93,9 +100,8 @@ export function useCheckout(options: CheckoutOptions = {}) {
           error.message.includes('exceeds the maximum allowed size')
         ) {
           toast.error(t('cart.orderTooLarge'));
-        } else if (error instanceof Error && error.message) {
-          console.error('Checkout detail:', error.message);
-          toast.error(t('cart.orderFailed'));
+        } else if (isNetwork) {
+          toast.error(t('cart.networkError'));
         } else {
           toast.error(t('cart.orderFailed'));
         }

@@ -97,6 +97,8 @@ gcloud run deploy $Service `
   --region $Region `
   --source . `
   --allow-unauthenticated `
+  --cpu 2 `
+  --memory 4Gi `
   --set-env-vars $runtimeEnv `
   --quiet
 

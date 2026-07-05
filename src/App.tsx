@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
@@ -10,17 +10,6 @@ import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import Catalog from './pages/Catalog';
 import ProductDetail from './pages/ProductDetail';
-import AdminDashboard from './pages/AdminDashboard';
-import AdminProducts from './pages/AdminProducts';
-import AdminDiscounts from './pages/AdminDiscounts';
-import AdminCoordinates from './pages/AdminCoordinates';
-import AdminStock from './pages/AdminStock';
-import AdminHero from './pages/AdminHero';
-import AdminHeroVideo from './pages/AdminHeroVideo';
-import AdminCategoryTiles from './pages/AdminCategoryTiles';
-import AdminCustomers from './pages/AdminCustomers';
-import AdminOrders from './pages/AdminOrders';
-import AdminWhatsApp from './pages/AdminWhatsApp';
 import CoordinateDetail from './pages/CoordinateDetail';
 import AdminLayout from './components/AdminLayout';
 import Login from './pages/Login';
@@ -31,18 +20,45 @@ import OrderConfirmation from './pages/OrderConfirmation';
 import CartDrawer from './components/CartDrawer';
 import Footer from './components/Footer';
 import BottomNav from './components/BottomNav';
+import { prefetchCatalogIndex } from './lib/catalog/catalogService';
+
+// Admin pages — lazy loaded so public users never download this code
+const AdminDashboard    = lazy(() => import('./pages/AdminDashboard'));
+const AdminProducts     = lazy(() => import('./pages/AdminProducts'));
+const AdminDiscounts    = lazy(() => import('./pages/AdminDiscounts'));
+const AdminCoordinates  = lazy(() => import('./pages/AdminCoordinates'));
+const AdminStock        = lazy(() => import('./pages/AdminStock'));
+const AdminHero         = lazy(() => import('./pages/AdminHero'));
+const AdminHeroVideo    = lazy(() => import('./pages/AdminHeroVideo'));
+const AdminCategoryTiles = lazy(() => import('./pages/AdminCategoryTiles'));
+const AdminCustomers    = lazy(() => import('./pages/AdminCustomers'));
+const AdminOrders       = lazy(() => import('./pages/AdminOrders'));
+const AdminWhatsApp     = lazy(() => import('./pages/AdminWhatsApp'));
+
+function CatalogWarmup() {
+  useEffect(() => {
+    prefetchCatalogIndex();
+  }, []);
+  return null;
+}
+
+const AdminSpinner = () => (
+  <div className="flex min-h-screen items-center justify-center bg-gray-50/50">
+    <Loader2 className="h-7 w-7 animate-spin text-gray-400" aria-label="Loading" />
+  </div>
+);
 
 const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, role, loading } = useAuth();
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50/50">
-        <Loader2 className="h-7 w-7 animate-spin text-gray-400" aria-label="Loading" />
-      </div>
-    );
-  }
+  if (loading) return <AdminSpinner />;
   if (!user || role !== 'admin') return <Navigate to="/login" replace />;
-  return <AdminLayout>{children}</AdminLayout>;
+  return (
+    <AdminLayout>
+      <Suspense fallback={<AdminSpinner />}>
+        {children}
+      </Suspense>
+    </AdminLayout>
+  );
 };
 
 const AppContent = () => {
@@ -112,6 +128,7 @@ export default function App() {
               }}
             />
             <AppContent />
+            <CatalogWarmup />
           </Router>
         </CartProvider>
       </LanguageProvider>
