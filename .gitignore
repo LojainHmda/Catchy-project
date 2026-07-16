@@ -10,3 +10,10 @@ coverage/
 # Local tooling / deploy caches
 .firebase/
 memory/
+
+# Service account keys — never commit
+service-account*.json
+*firebase-adminsdk*.json
+
+# Local migration backups
+backups/

@@ -21,6 +21,10 @@ export type ProductRecord = {
   /** Legacy alias — treated the same as `onSale`. */
   sale?: boolean;
   category?: string;
+  /** Extra storefront collections this product also appears in, alongside its primary `category` (e.g. `["Offers", "Offers Bundle"]`). */
+  collections?: string[];
+  /** Admin-controlled storefront visibility, independent of stock. Defaults to true (visible) when unset. */
+  visible?: boolean;
   /** Storefront tags — e.g. `new-arrived` for the home page Latest Arrivals row. */
   tags?: string[];
   images?: string[];

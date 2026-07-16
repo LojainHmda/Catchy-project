@@ -83,7 +83,10 @@ type ProductFormData = {
   description: string;
   price: string;
   category: string;
+  /** Extra collections this product also belongs to, alongside `category` (e.g. Offers, Offers Bundle). */
+  collections: string[];
   isNewArrival: boolean;
+  visible: boolean;
   images: string[];
   videos: string[];
   sizeRows: SizeRow[];
@@ -98,7 +101,9 @@ const emptyForm = (): ProductFormData => ({
   description: '',
   price: '',
   category: '',
+  collections: [],
   isNewArrival: false,
+  visible: true,
   images: [],
   videos: [],
   sizeRows: [],
@@ -139,7 +144,11 @@ function formFromProduct(product: any): ProductFormData {
       ? String(Number(product.compareAtPrice))
       : product.price?.toString() ?? '',
     category: legacyNewArrivalCategory ? '' : (product.category ?? ''),
+    collections: Array.isArray(product.collections)
+      ? product.collections.filter((c: unknown): c is string => typeof c === 'string' && c.trim().length > 0)
+      : [],
     isNewArrival: hasNewArrivalTag(product),
+    visible: product.visible !== false,
     images: coerceProductImages(product),
     videos: Array.isArray(product.videos) ? product.videos : [],
     sizeRows: rows.length ? rows : [newSizeRow('One Size', String(product.stock ?? 0))],
@@ -334,6 +343,7 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
 
     const tags = withNewArrivalTag(productTags(product), formData.isNewArrival);
     const category = isLegacyNewArrivalCategory(formData.category) ? '' : formData.category;
+    const collections = [...new Set(formData.collections)].filter((c) => c && c !== category);
 
     if (!category.trim()) {
       toast.error('Category required', {
@@ -404,6 +414,7 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
         name: formData.name.trim(),
         description: (formData.description ?? '').trim(),
         category,
+        collections,
         tags,
         images: remoteImages.filter(Boolean),
         videos,
@@ -412,6 +423,7 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
         lifestyleImage,
         price: finalPrice,
         stock,
+        visible: formData.visible,
         ...discountFields,
         ...colorVariantsPayload,
         updatedAt: serverTimestamp(),
@@ -557,6 +569,45 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                       ))}
                     </select>
                   </div>
+                  <div className="rounded-md border border-gray-200 px-3 py-2">
+                    <p className={LABEL}>
+                      Also show in these collections
+                      <span className="ml-1 normal-case text-gray-400">(optional — kept in addition to Category above)</span>
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {storeCategories
+                        .filter((cat) => cat.id !== formData.category && !cat.locked)
+                        .map((cat) => {
+                          const checked = formData.collections.includes(cat.id);
+                          return (
+                            <label
+                              key={cat.id}
+                              className={cn(
+                                'inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition',
+                                checked
+                                  ? 'border-catchy bg-catchy/10 text-catchy-dark'
+                                  : 'border-gray-200 text-gray-600 hover:border-catchy/40'
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) =>
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    collections: e.target.checked
+                                      ? [...prev.collections, cat.id]
+                                      : prev.collections.filter((c) => c !== cat.id),
+                                  }))
+                                }
+                                className="h-3.5 w-3.5 accent-catchy"
+                              />
+                              {cat.name}
+                            </label>
+                          );
+                        })}
+                    </div>
+                  </div>
                   <div className="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2">
                     <label className="text-xs text-gray-600">
                       New Arrivals on home page
@@ -576,6 +627,17 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                       All {MAX_NEW_ARRIVAL_PRODUCTS} slots are taken. Remove the tag from another product first.
                     </p>
                   ) : null}
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2">
+                    <label className="text-xs text-gray-600">
+                      Visible on Shop page
+                      <span className="ml-1 text-gray-400">(hide without affecting stock)</span>
+                    </label>
+                    <AdminToggle
+                      checked={formData.visible}
+                      onChange={(checked) => setFormData({ ...formData, visible: checked })}
+                      aria-label="Show this product on the Shop page"
+                    />
+                  </div>
                   <div>
                     <label className={LABEL}>
                       {formData.discount.enabled ? 'Original price (ILS)' : 'Price (ILS)'}

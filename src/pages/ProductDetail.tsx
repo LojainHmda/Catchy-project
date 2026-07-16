@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { db, doc, getDoc } from '../firebase';
 import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { CATEGORY_KEYS } from '../constants';
 import { ShoppingCart, Heart, Share2, ArrowLeft, ZoomIn } from 'lucide-react';
@@ -29,6 +30,7 @@ import SizeRequiredModal from '../components/product/SizeRequiredModal';
 const ProductDetail = () => {
   const { id } = useParams();
   const { addToCart, openCart } = useCart();
+  const { role } = useAuth();
   const { t, isRTL, language } = useLanguage();
   const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -252,7 +254,7 @@ const ProductDetail = () => {
     );
   }
 
-  if (!product) {
+  if (!product || (product.visible === false && role !== 'admin')) {
     return (
       <div
         className="flex min-h-[50vh] flex-col items-center justify-center gap-4 p-4"
@@ -459,7 +461,7 @@ const ProductDetail = () => {
                             'flex min-w-[2.75rem] flex-col items-center rounded-lg border px-3 py-1.5 text-sm font-bold transition-all',
                             active
                               ? 'border-catchy bg-catchy text-white shadow-sm shadow-catchy/20'
-                              : 'border-gray-200 bg-white text-gray-700 hover:border-catchy hover:text-catchy'
+                              : 'border-gray-200 bg-white text-catchy hover:border-catchy'
                           )}
                         >
                           <span>{size}</span>

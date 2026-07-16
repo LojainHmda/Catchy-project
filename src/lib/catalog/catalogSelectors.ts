@@ -1,6 +1,6 @@
 import { canonicalCategory } from '../category';
 import { isProductDiscounted } from '../catalogSale';
-import { catalogProductInStock, type CatalogListProduct } from '../catalogProductList';
+import { catalogProductInStock, productCollectionKeys, type CatalogListProduct } from '../catalogProductList';
 import type { StoreCategory } from '../categoriesService';
 import {
   catalogCoordinateLooks,
@@ -34,12 +34,13 @@ export function filterCatalogProducts(
   const needle = query.search.trim().toLowerCase();
 
   return products.filter((p) => {
+    if (!p.visible) return false;
     if (!catalogProductInStock(p)) return false;
     if (query.saleOnly && !isProductDiscounted(p)) return false;
     if (needle && !String(p.name).toLowerCase().includes(needle)) return false;
     if (query.selectedCats.length) {
-      const pc = p.category ? canonicalCategory(p.category).toLowerCase() : '';
-      const ok = query.selectedCats.some((c) => canonicalCategory(c).toLowerCase() === pc);
+      const productKeys = productCollectionKeys(p).map((k) => k.toLowerCase());
+      const ok = query.selectedCats.some((c) => productKeys.includes(canonicalCategory(c).toLowerCase()));
       if (!ok) return false;
     }
     return true;

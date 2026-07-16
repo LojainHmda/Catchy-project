@@ -1,7 +1,7 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { db, collection, getDocs, deleteDoc, doc, query, orderBy, limit, startAfter } from '../firebase';
-import { Plus, Search, Edit2, Trash2, Package, Loader2, RefreshCw, ImageIcon, ChevronDown } from 'lucide-react';
+import { db, collection, getDocs, deleteDoc, doc, updateDoc, query, orderBy, limit, startAfter } from '../firebase';
+import { Plus, Search, Edit2, Trash2, Package, Loader2, RefreshCw, ImageIcon, ChevronDown, Eye, EyeOff } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { CATEGORY_KEYS, CATEGORY_ICONS } from '../constants';
 import { cn } from '../lib/utils';
@@ -146,6 +146,21 @@ const AdminProducts = () => {
   const openEditModal = (product: any) => {
     setEditingProduct(product);
     setIsModalOpen(true);
+  };
+
+  const handleToggleVisibility = async (product: any) => {
+    const nextVisible = product.visible === false;
+    setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, visible: nextVisible } : p)));
+    try {
+      await updateDoc(doc(db, 'products', product.id), { visible: nextVisible });
+      toast.success(nextVisible ? 'Product shown on Shop page' : 'Product hidden from Shop page');
+    } catch (error) {
+      console.error('Error toggling product visibility:', error);
+      setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, visible: !nextVisible } : p)));
+      toast.error('Could not update visibility', {
+        description: error instanceof Error ? error.message : 'Check console and Firestore rules.',
+      });
+    }
   };
 
   const stats = useMemo(() => {
@@ -452,6 +467,11 @@ const AdminProducts = () => {
                                     New arrived
                                   </span>
                                 ) : null}
+                                {product.visible === false ? (
+                                  <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                                    Hidden
+                                  </span>
+                                ) : null}
                                 {images.length > 1 ? (
                                   <span className="inline-flex items-center gap-0.5 text-gray-400">
                                     <ImageIcon size={10} />
@@ -493,6 +513,15 @@ const AdminProducts = () => {
                         </td>
                         <td className="px-4 py-2.5">
                           <div className="flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleVisibility(product)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition hover:bg-gray-100 hover:text-gray-900"
+                              aria-label={product.visible === false ? 'Show on Shop page' : 'Hide from Shop page'}
+                              title={product.visible === false ? 'Show on Shop page' : 'Hide from Shop page'}
+                            >
+                              {product.visible === false ? <EyeOff size={15} /> : <Eye size={15} />}
+                            </button>
                             <button
                               type="button"
                               onClick={() => openEditModal(product)}
@@ -537,6 +566,11 @@ const AdminProducts = () => {
                               New arrived
                             </span>
                           ) : null}
+                          {product.visible === false ? (
+                            <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                              Hidden
+                            </span>
+                          ) : null}
                         </p>
                       </div>
                       <p className="shrink-0 text-sm font-medium tabular-nums text-gray-900">ILS {product.price}</p>
@@ -545,6 +579,14 @@ const AdminProducts = () => {
                       <ProductSizeStockChips sizeStock={sizeStock} totalStock={stock} compact maxVisible={4} />
                     </div>
                     <div className="flex shrink-0 gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleVisibility(product)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100"
+                        aria-label={product.visible === false ? 'Show on Shop page' : 'Hide from Shop page'}
+                      >
+                        {product.visible === false ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
                       <button
                         type="button"
                         onClick={() => openEditModal(product)}

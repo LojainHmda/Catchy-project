@@ -123,10 +123,52 @@ function imageProxyDevApi() {
   };
 }
 
+function cloudinaryUploadDevApi(env: Record<string, string>) {
+  return {
+    name: 'cloudinary-upload-dev-api',
+    configureServer(server: any) {
+      // vite's loadEnv() doesn't populate process.env — but the shared server/lib handler
+      // reads Cloudinary config from process.env (matching how the Express server, which
+      // uses dotenv/config, sees it). Bridge that gap here for local dev only.
+      for (const key of ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET']) {
+        if (env[key]) process.env[key] = env[key];
+      }
+      server.middlewares.use('/api/admin/upload-image', (req: any, res: any) => {
+        const json = (status: number, payload: unknown) => {
+          res.statusCode = status;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(payload));
+        };
+        if (req.method !== 'POST') return json(405, {ok: false, message: 'Method Not Allowed'});
+
+        let body = '';
+        req.on('data', (chunk: Buffer) => (body += chunk));
+        req.on('end', async () => {
+          try {
+            const parsed = JSON.parse(body || '{}');
+            const {handleImageUploadRequest} = await import('./server/lib/cloudinaryUpload.js');
+            const result = await handleImageUploadRequest(req, parsed);
+            json(result.status, result.body);
+          } catch (err: any) {
+            json(500, {ok: false, message: err?.message || 'Upload failed.'});
+          }
+        });
+      });
+    },
+  };
+}
+
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
-    plugins: [react(), tailwindcss(), guestCheckoutDevApi(env), whatsappDevApi(env), imageProxyDevApi()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      guestCheckoutDevApi(env),
+      whatsappDevApi(env),
+      imageProxyDevApi(),
+      cloudinaryUploadDevApi(env),
+    ],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },

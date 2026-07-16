@@ -3,10 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { db, doc, onSnapshot } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
 import { cn } from '../lib/utils';
-import { fetchNewArrivalProducts } from '../lib/productTags';
+import { fetchLatestProducts, LATEST_PRODUCTS_COUNT } from '../lib/latestProducts';
 import { coerceProductImages, PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
-import { catalogDisplaySizes } from '../lib/catalogProductList';
-import { resolveProductInventory } from '../lib/productInventory';
 import { useStoreCategories } from '../hooks/useStoreCategories';
 import { categoryLabel, isSaleCategory } from '../lib/categoriesService';
 import { getCategoryIcon } from '../lib/categoryIcons';
@@ -16,6 +14,13 @@ import {
   readCachedHeroSlides,
   subscribeHeroSlides,
 } from '../lib/heroSlidesCache';
+import {
+  DEFAULT_NEW_ARRIVALS_BACKGROUND,
+  NEW_ARRIVALS_BACKGROUND_COLLECTION,
+  NEW_ARRIVALS_BACKGROUND_DOC,
+  parseNewArrivalsBackground,
+  type NewArrivalsBackgroundSettings,
+} from '../lib/newArrivalsBackground';
 
 const DEFAULT_HERO_IMAGE =
   'https://images.unsplash.com/photo-1539109132374-348058a1f7b6?auto=format&fit=crop&q=80&w=800';
@@ -99,6 +104,9 @@ const Home = () => {
   const [newArrivals, setNewArrivals] = useState<any[]>([]);
   const [newArrivalsReady, setNewArrivalsReady] = useState(false);
   const [heroAspect, setHeroAspect] = useState('16 / 9');
+  const [newArrivalsBg, setNewArrivalsBg] = useState<NewArrivalsBackgroundSettings>(
+    DEFAULT_NEW_ARRIVALS_BACKGROUND
+  );
 
   const normSlides = useMemo(() => normalizeHeroSlides(heroSlides), [heroSlides]);
   const heroImage = normSlides[0]?.url || normSlides[0]?.image || DEFAULT_HERO_IMAGE;
@@ -121,13 +129,22 @@ const Home = () => {
   }), []);
 
   useEffect(() => {
+    const ref = doc(db, NEW_ARRIVALS_BACKGROUND_COLLECTION, NEW_ARRIVALS_BACKGROUND_DOC);
+    return onSnapshot(
+      ref,
+      (snap) => setNewArrivalsBg(parseNewArrivalsBackground(snap.data())),
+      () => { /* Firestore error — keep the section exactly as it is today */ }
+    );
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const list = await fetchNewArrivalProducts(db);
+        const list = await fetchLatestProducts(db);
         if (!cancelled) setNewArrivals(list);
       } catch (err) {
-        console.error('Could not load new arrivals:', err);
+        console.error('Could not load latest products:', err);
       } finally {
         if (!cancelled) setNewArrivalsReady(true);
       }
@@ -188,53 +205,48 @@ const Home = () => {
 
       {/* ── Latest Arrivals (only real tagged products — no stock placeholders) ── */}
       {newArrivalsReady && newArrivals.length > 0 ? (
-      <section className="relative z-10 -mt-5 bg-surface px-5 pt-10 mb-12 sm:-mt-16">
+      <section
+        className={cn(
+          'relative z-10 -mt-5 bg-surface px-5 pt-10 mb-2 sm:-mt-16',
+          newArrivalsBg.enabled && 'overflow-hidden'
+        )}
+      >
+        {newArrivalsBg.enabled ? (
+          <div className="absolute inset-0" aria-hidden>
+            <img src={newArrivalsBg.imageUrl} alt="" className="h-full w-full object-cover" />
+          </div>
+        ) : null}
         <h2
-          className={cn('text-xl text-primary text-center mb-8', isAr ? 'font-arabic' : '')}
+          className={cn('relative text-xl text-primary text-center mb-8', isAr ? 'font-arabic' : '')}
           style={!isAr ? { fontFamily: 'var(--font-display)' } : undefined}
         >
           {isAr ? 'وصل حديثاً' : 'Latest Arrivals'}
         </h2>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 max-w-5xl mx-auto">
-            {newArrivals.slice(0, 6).map((product) => {
+          <div className="relative grid grid-cols-2 gap-0.5 sm:grid-cols-3 lg:grid-cols-5 max-w-5xl mx-auto">
+            {newArrivals.slice(0, LATEST_PRODUCTS_COUNT).map((product) => {
               const image = coerceProductImages(product)[0] ?? PRODUCT_IMAGE_PLACEHOLDER;
-              const { sizeStock } = resolveProductInventory(product);
-              const displaySizes = catalogDisplaySizes({ sizeStock, sizes: product.sizes });
+              const price = Number(product.price).toLocaleString('en-GB', { minimumFractionDigits: 0 });
               return (
               <Link
                 key={product.id}
                 to={`/product/${product.id}`}
-                className="group block overflow-hidden rounded-2xl bg-white p-1.5 ring-1 ring-black/5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:ring-primary/30"
+                className="group block"
               >
-                <div className="relative aspect-[3/4] overflow-hidden rounded-xl bg-surface-container">
+                <div className="relative aspect-[3/4] overflow-hidden rounded-sm bg-surface-container">
                   <img
                     src={image}
                     alt={product.name}
                     className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-                </div>
-                <div className="px-1.5 pb-1 pt-2">
-                  <p
-                    className={cn('truncate text-sm font-medium text-on-surface', isAr ? 'font-arabic text-right' : '')}
-                    style={!isAr ? { fontFamily: 'var(--font-display)' } : undefined}
-                  >
-                    {product.name}
-                  </p>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                    <span className="text-xs text-primary" style={{ fontFamily: 'var(--font-body)' }}>
-                      {Number(product.price).toLocaleString('en-GB', { minimumFractionDigits: 0 })} ILS
-                    </span>
-                    {displaySizes.length > 0 && (
-                      <div className="flex flex-wrap gap-0.5">
-                        {displaySizes.map((s) => (
-                          <span key={s} className="rounded bg-surface-container px-1 py-px text-[9px] font-bold text-on-surface-variant leading-tight">
-                            {s}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+
+                  {/* Price — hidden by default, revealed as a glass overlay on hover (desktop) / tap (mobile). */}
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 transition-opacity duration-300 ease-out group-hover:opacity-100 group-active:opacity-100">
+                    <div className="rounded-xl border border-white/30 bg-white/15 px-4 py-2 shadow-xl backdrop-blur-md">
+                      <span className="text-sm font-bold tracking-wide text-white sm:text-base">
+                        {price} ILS
+                      </span>
+                    </div>
                   </div>
                 </div>
               </Link>

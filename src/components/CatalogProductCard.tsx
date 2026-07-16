@@ -1,13 +1,9 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { Edit2 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import {
-  catalogDisplaySizes,
-  type CatalogColorSwatch,
-  type CatalogListProduct,
-} from '../lib/catalogProductList';
+import { type CatalogColorSwatch, type CatalogListProduct } from '../lib/catalogProductList';
 import { isRemoteImageUrl, sanitizeImageSrc } from '../lib/productImages';
-import { useLanguage } from '../context/LanguageContext';
 import { ProductSaleBadge } from './ProductPriceDisplay';
 
 export interface CatalogProductCardProps {
@@ -17,36 +13,45 @@ export interface CatalogProductCardProps {
   saleLabel: string;
   colorSwatches?: CatalogColorSwatch[];
   priority?: boolean;
+  /** When provided, an admin-only edit button is overlaid on the card. */
+  onEdit?: () => void;
 }
-
-const MAX_VISIBLE_SWATCHES = 4;
 
 const CatalogProductCard: React.FC<CatalogProductCardProps> = ({
   product,
   compareAtPrice,
   discountPercent,
   saleLabel,
-  colorSwatches,
   priority = false,
+  onEdit,
 }) => {
-  const { isRTL } = useLanguage();
   const src = sanitizeImageSrc(product.images?.[0] ?? '');
   const onSale = typeof compareAtPrice === 'number' && compareAtPrice > product.price;
-  const swatches = colorSwatches ?? [];
-  const visibleSwatches = swatches.slice(0, MAX_VISIBLE_SWATCHES);
-  const extraSwatches = swatches.length - visibleSwatches.length;
-  const displaySizes = catalogDisplaySizes(product);
 
   return (
-    <article className="group mx-auto w-full max-w-[10.5rem] font-sans sm:max-w-[11.5rem] lg:max-w-[12rem]">
+    <article className="group w-full font-sans">
       <Link to={`/product/${product.id}`} className="block">
-        <div className="relative aspect-[5/6] overflow-hidden rounded-md bg-neutral-100 ring-1 ring-black/[0.04]">
+        <div className="relative aspect-[3/4] overflow-hidden rounded-sm bg-neutral-100">
           {onSale && (
             <ProductSaleBadge
               label={saleLabel}
               percent={discountPercent}
               className="left-1.5 top-1.5"
             />
+          )}
+          {onEdit && (
+            <button
+              type="button"
+              aria-label="Edit product"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onEdit();
+              }}
+              className="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-catchy-dark shadow-sm ring-1 ring-black/[0.06] transition hover:bg-catchy hover:text-white"
+            >
+              <Edit2 className="h-3 w-3" aria-hidden />
+            </button>
           )}
           {src ? (
             <img
@@ -55,64 +60,31 @@ const CatalogProductCard: React.FC<CatalogProductCardProps> = ({
               loading={priority ? 'eager' : 'lazy'}
               decoding="async"
               fetchPriority={priority ? 'high' : 'auto'}
-              className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]"
+              className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
               referrerPolicy={isRemoteImageUrl(src) ? 'no-referrer' : undefined}
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center bg-neutral-100" aria-hidden />
           )}
+
+          {/* Price — hidden by default, revealed as a glass overlay on hover (desktop) / tap (mobile). */}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 transition-opacity duration-300 ease-out group-hover:opacity-100 group-active:opacity-100">
+            <div className="rounded-xl border border-white/30 bg-white/15 px-4 py-2 shadow-xl backdrop-blur-md">
+              <span
+                className={cn(
+                  'text-sm font-bold tracking-wide sm:text-base',
+                  onSale ? 'text-red-200' : 'text-white'
+                )}
+              >
+                ILS {product.price}
+              </span>
+              {onSale && compareAtPrice != null && (
+                <span className="ms-1.5 text-xs text-white/70 line-through">ILS {compareAtPrice}</span>
+              )}
+            </div>
+          </div>
         </div>
       </Link>
-      <div className="mt-2 space-y-1 px-0">
-        <div dir="ltr" className="flex flex-row items-start justify-between gap-1.5">
-          <Link
-            to={`/product/${product.id}`}
-            className="min-w-0 flex-1 text-start text-xs font-bold leading-snug text-catchy-dark transition hover:text-catchy sm:text-[13px]"
-          >
-            <span dir="auto" className="line-clamp-2 block">
-              {product.name}
-            </span>
-          </Link>
-          <span
-            className={cn(
-              'shrink-0 text-xs font-bold tabular-nums sm:text-[13px]',
-              onSale ? 'text-red-600' : 'text-catchy-dark'
-            )}
-          >
-            ILS {product.price}
-          </span>
-        </div>
-        <div dir="ltr" className="flex flex-row items-center justify-between gap-1.5 text-[11px] leading-tight text-gray-500">
-          <div className="flex flex-wrap items-center gap-1">
-            {visibleSwatches.length > 0 && (
-              <span className="flex shrink-0 items-center gap-1">
-                <span className="flex items-center -space-x-1">
-                  {visibleSwatches.map((swatch, i) => (
-                    <span
-                      key={`${swatch.name}-${i}`}
-                      title={isRTL ? swatch.nameAr || swatch.name : swatch.name}
-                      aria-label={isRTL ? swatch.nameAr || swatch.name : swatch.name}
-                      className="h-3 w-3 rounded-full ring-1 ring-black/15 ring-offset-1 ring-offset-white"
-                      style={{ backgroundColor: swatch.hex }}
-                    />
-                  ))}
-                </span>
-                {extraSwatches > 0 && (
-                  <span className="text-[9px] font-bold tabular-nums text-gray-400">+{extraSwatches}</span>
-                )}
-              </span>
-            )}
-            {displaySizes.map((s) => (
-              <span key={s} className="rounded bg-gray-100 px-1 py-px text-[9px] font-bold text-gray-500 leading-tight">
-                {s}
-              </span>
-            ))}
-          </div>
-          {onSale && compareAtPrice != null && (
-            <span className="tabular-nums text-gray-400 line-through">ILS {compareAtPrice}</span>
-          )}
-        </div>
-      </div>
     </article>
   );
 };

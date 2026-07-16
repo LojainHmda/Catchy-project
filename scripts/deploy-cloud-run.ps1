@@ -39,7 +39,10 @@ function Get-DotEnvPairs {
     'VITE_ADMIN_PASSWORD',
     'VITE_OWNER_EMAILS',
     'WHATSAPP_API_TOKEN',
-    'WHATSAPP_WEBHOOK_SECRET'
+    'WHATSAPP_WEBHOOK_SECRET',
+    'CLOUDINARY_CLOUD_NAME',
+    'CLOUDINARY_API_KEY',
+    'CLOUDINARY_API_SECRET'
   )
   $map = @{}
   $raw = [System.IO.File]::ReadAllText($Path)
@@ -82,7 +85,7 @@ Set-Location $RepoRoot
 # WHATSAPP_FIRESTORE_PROJECT tells the webhook which Firestore to write inbound messages into
 # (must match the project the app reads from = VITE_FIREBASE_PROJECT_ID).
 $runtimePairs = @()
-foreach ($k in @('WHATSAPP_API_TOKEN', 'WHATSAPP_WEBHOOK_SECRET')) {
+foreach ($k in @('WHATSAPP_API_TOKEN', 'WHATSAPP_WEBHOOK_SECRET', 'CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET')) {
   if ($m[$k]) { $runtimePairs += "$k=$($m[$k])" }
 }
 if ($m['VITE_FIREBASE_PROJECT_ID']) {

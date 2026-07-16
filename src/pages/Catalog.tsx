@@ -1,7 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { lazy, Suspense, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, X, Loader2 } from 'lucide-react';
+import { Search, X, Loader2, Plus } from 'lucide-react';
+import { toast } from 'sonner';
 import { useLanguage } from '../context/LanguageContext';
+import { useAuth } from '../context/AuthContext';
+import { db, doc, getDoc } from '../firebase';
 import { cn } from '../lib/utils';
 import { getCatalogSaleMeta } from '../lib/catalogSale';
 import CatalogProductCard from '../components/CatalogProductCard';
@@ -10,8 +13,14 @@ import { canonicalCategory } from '../lib/category';
 import { categoryLabel, findCategoryById } from '../lib/categoriesService';
 import { CATALOG_VIEW_PAGE_SIZE, useCatalog } from '../hooks/useCatalog';
 
+const AdminProductFormModal = lazy(() => import('../components/admin/AdminProductFormModal'));
+
 const Catalog = () => {
   const { t, isRTL } = useLanguage();
+  const { role } = useAuth();
+  const isAdmin = role === 'admin';
+  const [adminModalOpen, setAdminModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<any>(null);
   const {
     searchParams,
     setSearchParams,
@@ -40,6 +49,31 @@ const Catalog = () => {
     indexComplete,
     debouncedSearch,
   } = useCatalog();
+
+  const openAddProduct = () => {
+    setEditingProduct(null);
+    setAdminModalOpen(true);
+  };
+
+  const openEditProduct = async (productId: string) => {
+    try {
+      const snap = await getDoc(doc(db, 'products', productId));
+      if (!snap.exists()) {
+        toast.error('Product not found');
+        return;
+      }
+      setEditingProduct({ id: snap.id, ...snap.data() });
+      setAdminModalOpen(true);
+    } catch (error) {
+      console.error('Error loading product for edit:', error);
+      toast.error('Could not load product');
+    }
+  };
+
+  const closeAdminModal = () => {
+    setAdminModalOpen(false);
+    setEditingProduct(null);
+  };
 
   const filterPills = useMemo(() => {
     const pills: { key: string; label: string; onRemove: () => void }[] = [];
@@ -103,30 +137,24 @@ const Catalog = () => {
   ]);
 
   const gridSkeleton = (
-    <div className="grid grid-cols-2 justify-items-center gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 lg:gap-x-5 lg:gap-y-6">
+    <div className="grid grid-cols-2 gap-0.5 sm:grid-cols-3 lg:grid-cols-4">
       {Array.from({ length: 8 }, (_, i) => (
-        <div
-          key={i}
-          className="aspect-[5/6] w-full max-w-[10.5rem] animate-pulse rounded-md bg-neutral-200 sm:max-w-[11rem]"
-        />
+        <div key={i} className="aspect-[3/4] w-full animate-pulse rounded-sm bg-neutral-200" />
       ))}
     </div>
   );
 
   const coordinateSkeleton = (
-    <div className="mb-4 grid grid-cols-2 justify-items-center gap-x-4 gap-y-4 sm:grid-cols-3 lg:grid-cols-4 lg:gap-x-5 lg:gap-y-5">
+    <div className="mb-0.5 grid grid-cols-2 gap-0.5 sm:grid-cols-3 lg:grid-cols-4">
       {Array.from({ length: 2 }, (_, i) => (
-        <div
-          key={`coord-${i}`}
-          className="aspect-[5/6] w-full max-w-[10.5rem] animate-pulse rounded-md bg-neutral-200 sm:max-w-[11rem]"
-        />
+        <div key={`coord-${i}`} className="aspect-[3/4] w-full animate-pulse rounded-sm bg-neutral-200" />
       ))}
     </div>
   );
 
   const chipClass = (active: boolean) =>
     cn(
-      'shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors',
+      'shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors',
       active
         ? 'border-catchy bg-catchy text-white shadow-sm'
         : 'border-gray-200 bg-white text-catchy-dark hover:border-catchy/35 hover:bg-catchy/5'
@@ -156,7 +184,17 @@ const Catalog = () => {
               <span className="truncate font-medium text-catchy-dark">{t('catalog.breadcrumbCatalog')}</span>
             </nav>
 
-            <div className="flex h-6 shrink-0 flex-nowrap items-center">
+            <div className="flex h-6 shrink-0 flex-nowrap items-center gap-1.5">
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={openAddProduct}
+                  className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md bg-catchy px-2 text-[10px] font-semibold leading-none text-white shadow-sm transition hover:bg-catchy-dark"
+                >
+                  <Plus size={12} aria-hidden />
+                  Add product
+                </button>
+              )}
               <select
                 id="catalog-sort"
                 name="catalog-sort"
@@ -302,7 +340,7 @@ const Catalog = () => {
                 {coordinatesSectionLoading ? coordinateSkeleton : null}
                 {totalGridCount > 0 ? (
                   <>
-                    <div className="grid grid-cols-2 justify-items-center gap-x-4 gap-y-4 sm:grid-cols-3 lg:grid-cols-4 lg:gap-x-5 lg:gap-y-5">
+                    <div className="grid grid-cols-2 gap-0.5 sm:grid-cols-3 lg:grid-cols-4">
                       {pagedGridEntries.map((entry, index) => {
                         if (entry.kind === 'look') {
                           return (
@@ -326,6 +364,7 @@ const Catalog = () => {
                               entry.product.colorCount > 1 ? entry.product.colorSwatches : undefined
                             }
                             priority={index < 4}
+                            onEdit={isAdmin ? () => openEditProduct(entry.product.id) : undefined}
                           />
                         );
                       })}
@@ -395,6 +434,19 @@ const Catalog = () => {
           </div>
         </div>
       </div>
+      {isAdmin && adminModalOpen && (
+        <Suspense fallback={null}>
+          <AdminProductFormModal
+            open={adminModalOpen}
+            onClose={closeAdminModal}
+            product={editingProduct}
+            onSaved={() => {
+              closeAdminModal();
+              retryLoad();
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };

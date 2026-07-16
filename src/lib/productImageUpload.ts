@@ -1,37 +1,29 @@
-import { getDownloadURL, storage, storageRef, uploadBytes } from '../firebase';
+import { auth } from '../firebase';
 import { fileToAdminImageDataUrl } from './images';
 
 export function isEmbeddedImageUrl(url: string): boolean {
   return url.trim().startsWith('data:image/');
 }
 
-function dataUrlToBlob(dataUrl: string): Blob {
-  const [header, base64] = dataUrl.split(',');
-  if (!base64) throw new Error('Invalid image data');
-  const mime = header.match(/:(.*?);/)?.[1] ?? 'image/jpeg';
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return new Blob([bytes], { type: mime });
-}
+async function uploadDataUrlToCloudinary(dataUrl: string): Promise<string> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('You must be signed in as an admin to upload images.');
+  const idToken = await user.getIdToken();
 
-function productStoragePath(): string {
-  return `products/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.jpg`;
-}
-
-async function uploadBlob(blob: Blob): Promise<string> {
-  if (!storage) {
-    throw new Error('Firebase Storage is not configured. Set VITE_FIREBASE_STORAGE_BUCKET in .env');
+  const res = await fetch('/api/admin/upload-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ dataUrl }),
+  });
+  const payload = await res.json().catch(() => ({}) as { url?: string; message?: string });
+  if (!res.ok || !payload?.url) {
+    throw new Error(payload?.message || `Image upload failed (${res.status})`);
   }
-  const ref = storageRef(storage, productStoragePath());
-  await uploadBytes(ref, blob, { contentType: blob.type || 'image/jpeg' });
-  return getDownloadURL(ref);
+  return payload.url;
 }
 
 export async function uploadProductImageDataUrl(dataUrl: string): Promise<string> {
-  return uploadBlob(dataUrlToBlob(dataUrl));
+  return uploadDataUrlToCloudinary(dataUrl);
 }
 
 export async function uploadProductImageFile(file: File): Promise<string> {

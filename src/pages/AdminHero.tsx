@@ -1,14 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { db, collection, query, orderBy, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, onSnapshot, getDocs, limit } from '../firebase';
+import { db, collection, query, orderBy, addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp, onSnapshot, getDocs, limit } from '../firebase';
 import { Plus, Trash2, Image as ImageIcon, MoveUp, MoveDown, Loader2, Upload, ExternalLink, Eye, EyeOff, Search, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { fileToAdminImageDataUrl } from '../lib/images';
 import { coerceProductImages, PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
+import AdminToggle from '../components/admin/AdminToggle';
+import {
+  DEFAULT_NEW_ARRIVALS_BACKGROUND,
+  NEW_ARRIVALS_BACKGROUND_COLLECTION,
+  NEW_ARRIVALS_BACKGROUND_DOC,
+  parseNewArrivalsBackground,
+  type NewArrivalsBackgroundSettings,
+} from '../lib/newArrivalsBackground';
 
 const SHOWCASE_MAX_PRODUCTS = 4;
 const SEARCH_RESULTS_CAP = 12;
+/** Firestore documents cap out at 1MB; keep the background photo well under that. */
+const MAX_BACKGROUND_PAYLOAD_BYTES = 900 * 1024;
 
 const AdminHero = () => {
   const [slides, setSlides] = useState<any[]>([]);
@@ -17,6 +27,53 @@ const AdminHero = () => {
   const [uploadingSlideId, setUploadingSlideId] = useState<string | null>(null);
   /** Per showcase slide: search query for picking products (not a full catalog list). */
   const [pickerQuery, setPickerQuery] = useState<Record<string, string>>({});
+
+  const [newArrivalsBg, setNewArrivalsBg] = useState<NewArrivalsBackgroundSettings>(
+    DEFAULT_NEW_ARRIVALS_BACKGROUND
+  );
+  const [uploadingBg, setUploadingBg] = useState(false);
+
+  useEffect(() => {
+    const ref = doc(db, NEW_ARRIVALS_BACKGROUND_COLLECTION, NEW_ARRIVALS_BACKGROUND_DOC);
+    return onSnapshot(ref, (snap) => {
+      setNewArrivalsBg(parseNewArrivalsBackground(snap.data()));
+    });
+  }, []);
+
+  const updateNewArrivalsBg = async (patch: Partial<NewArrivalsBackgroundSettings>) => {
+    const ref = doc(db, NEW_ARRIVALS_BACKGROUND_COLLECTION, NEW_ARRIVALS_BACKGROUND_DOC);
+    try {
+      await setDoc(ref, { ...patch, updatedAt: serverTimestamp() }, { merge: true });
+    } catch (error) {
+      console.error('Error updating New Arrivals background:', error);
+      alert('Could not save the background setting. Check your connection and try again.');
+    }
+  };
+
+  const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !file.type.startsWith('image/')) return;
+    if (file.size > 15 * 1024 * 1024) {
+      alert('Image must be under 15MB.');
+      return;
+    }
+    setUploadingBg(true);
+    try {
+      const dataUrl = await fileToAdminImageDataUrl(file, { maxWidth: 1920, quality: 0.8 });
+      const payloadBytes = new Blob([dataUrl]).size;
+      if (payloadBytes > MAX_BACKGROUND_PAYLOAD_BYTES) {
+        alert('That image is too large even after compression. Try a smaller or simpler photo.');
+        return;
+      }
+      await updateNewArrivalsBg({ imageUrl: dataUrl, enabled: true });
+    } catch (err) {
+      console.error(err);
+      alert('Could not process that image.');
+    } finally {
+      setUploadingBg(false);
+    }
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'hero_slides'), orderBy('order', 'asc'));
@@ -135,6 +192,55 @@ const AdminHero = () => {
           </button>
         </div>
       </header>
+
+      <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-black uppercase tracking-widest text-gray-900">
+              New Arrivals Section Background
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Optional photo behind the "New Arrivals" product cards on the homepage. Leave off to keep the
+              section exactly as it is today.
+            </p>
+          </div>
+          <AdminToggle
+            checked={newArrivalsBg.enabled}
+            disabled={!newArrivalsBg.imageUrl}
+            onChange={(checked) => updateNewArrivalsBg({ enabled: checked })}
+            aria-label="Enable New Arrivals section background image"
+          />
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+          {newArrivalsBg.imageUrl ? (
+            <div className="relative h-24 w-40 shrink-0 overflow-hidden rounded-xl border border-gray-100 bg-gray-50">
+              <img src={newArrivalsBg.imageUrl} alt="" className="h-full w-full object-cover" />
+            </div>
+          ) : (
+            <div className="flex h-24 w-40 shrink-0 items-center justify-center rounded-xl border border-dashed border-gray-200 bg-gray-50 text-gray-300">
+              <ImageIcon size={22} />
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-wider text-gray-600 transition-colors hover:border-catchy hover:text-catchy">
+              {uploadingBg ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              {newArrivalsBg.imageUrl ? 'Replace' : 'Upload'}
+              <input type="file" accept="image/*" className="hidden" onChange={handleBgUpload} />
+            </label>
+            {newArrivalsBg.imageUrl && (
+              <button
+                type="button"
+                onClick={() => updateNewArrivalsBg({ imageUrl: '', enabled: false })}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] font-black uppercase tracking-wider text-red-500 transition-colors hover:bg-red-50 hover:text-red-600"
+              >
+                <Trash2 size={14} />
+                Remove
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 gap-4">
         <AnimatePresence>

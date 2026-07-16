@@ -41,7 +41,8 @@ async function getFirestore() {
 
 const app = express();
 // Capture the raw body so we can verify the broker's HMAC signature over exact bytes.
-app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
+// 12mb ceiling accommodates base64-encoded product images for the Cloudinary upload route.
+app.use(express.json({ limit: '12mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 
 // The broker (Interakt/whatsappbiz) signs each webhook with HMAC-SHA256 over the raw
 // body, keyed by your webhook secret, and sends it in the `Interakt-Signature` header.
@@ -171,6 +172,13 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
 app.get('/api/image-proxy', async (req, res) => {
   const { proxyImage } = await import('./lib/imageProxy.js');
   await proxyImage(req.query.url, res);
+});
+
+// ── Admin product image upload → Cloudinary (secret stays server-side) ──
+app.post('/api/admin/upload-image', async (req, res) => {
+  const { handleImageUploadRequest } = await import('./lib/cloudinaryUpload.js');
+  const result = await handleImageUploadRequest(req, req.body);
+  res.status(result.status).json(result.body);
 });
 
 // ── Static SPA + client-side routing fallback ──

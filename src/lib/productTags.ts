@@ -9,9 +9,8 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 import type { ProductRecord } from '../types/product';
-import { isProductInStock } from './productVariants';
 
-/** Tag shown in the home page "Latest Arrivals" section (max 6 products). */
+/** Admin-only tag; no longer drives the home page (see lib/latestProducts.ts), kept for admin labeling/filtering. */
 export const NEW_ARRIVAL_TAG = 'new-arrived';
 
 export const MAX_NEW_ARRIVAL_PRODUCTS = 6;
@@ -80,19 +79,6 @@ async function fetchTaggedNewArrivalProducts(db: Firestore): Promise<NewArrivalP
   }
 
   return merged;
-}
-
-/**
- * Load products for the home page Latest Arrivals row. Sold-out products are
- * hidden (storefront-only) but stay tagged in admin; we filter before slicing so
- * the row still fills up to `max` from the in-stock arrivals.
- */
-export async function fetchNewArrivalProducts(
-  db: Firestore,
-  max = MAX_NEW_ARRIVAL_PRODUCTS
-): Promise<NewArrivalProduct[]> {
-  const merged = await fetchTaggedNewArrivalProducts(db);
-  return merged.filter((p) => isProductInStock(p)).slice(0, max);
 }
 
 /** Count tagged products excluding one id (for admin slot validation — counts all tagged). */
