@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { db, collection, getDocs, query, orderBy, limit, addDoc, serverTimestamp, doc, getDoc, setDoc } from '../firebase';
+import { db, collection, getDocs, query, where, orderBy, limit, addDoc, serverTimestamp, doc, getDoc, setDoc, getCountFromServer, getAggregateFromServer, sum } from '../firebase';
 import { Package, ShoppingCart, Users, TrendingUp, ArrowUpRight, ArrowDownRight, Database, Loader2, Image as ImageIcon, Megaphone } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
+import { CANCELLED_ORDER_STATUS } from '../types/order';
 
 const FONT_OPTIONS = [
   { label: 'Inter',        value: 'Inter, sans-serif' },
@@ -17,6 +19,7 @@ const FONT_OPTIONS = [
 ];
 
 const AdminDashboard = () => {
+  const { t, language } = useLanguage();
   const [stats, setStats] = useState({
     products: 0,
     orders: 0,
@@ -59,9 +62,9 @@ const AdminDashboard = () => {
     try {
       await setDoc(doc(db, 'site_settings', 'site'), { tickerBannerEnabled: next }, { merge: true });
       setTickerEnabled(next);
-      toast.success(next ? 'Banner enabled' : 'Banner hidden');
+      toast.success(next ? t('admin.dashboard.toastBannerEnabled') : t('admin.dashboard.toastBannerHidden'));
     } catch {
-      toast.error('Failed to save setting');
+      toast.error(t('admin.dashboard.toastSettingFailed'));
     } finally {
       setTickerSaving(false);
     }
@@ -81,9 +84,9 @@ const AdminDashboard = () => {
         },
         { merge: true }
       );
-      toast.success('Banner settings saved — changes are live instantly');
+      toast.success(t('admin.dashboard.toastBannerSaved'));
     } catch {
-      toast.error('Failed to save banner settings');
+      toast.error(t('admin.dashboard.toastBannerSaveFailed'));
     } finally {
       setBannerSaving(false);
     }
@@ -220,14 +223,14 @@ const AdminDashboard = () => {
       for (const slide of dummyHeroSlides) {
         await addDoc(collection(db, 'hero_slides'), slide);
       }
-      toast.success('Firestore seeded', {
-        description: 'Sample products and hero slides were added. Reloading…',
+      toast.success(t('admin.dashboard.toastSeeded'), {
+        description: t('admin.dashboard.toastSeededDesc'),
       });
       window.location.reload();
     } catch (error) {
       console.error('Error seeding data:', error);
-      toast.error('Could not seed Firestore', {
-        description: error instanceof Error ? error.message : 'Deploy security rules and sign in as an admin.',
+      toast.error(t('admin.dashboard.toastSeedFailed'), {
+        description: error instanceof Error ? error.message : t('admin.dashboard.toastSeedFailedDesc'),
       });
     } finally {
       setIsSeeding(false);
@@ -242,20 +245,44 @@ const AdminDashboard = () => {
     }
     const fetchStats = async () => {
       try {
-        const [productsSnap, ordersSnap, usersSnap] = await Promise.all([
-          getDocs(collection(db, 'products')),
-          getDocs(collection(db, 'orders')),
-          getDocs(collection(db, 'users'))
-        ]);
+        // Server-side aggregation — only the count/sum numbers cross the wire,
+        // not every product/order/user document (was 3 full-collection reads).
+        // Orders count stays a plain, unfiltered count (every order ever
+        // placed, cancelled included — same "Total Orders" meaning as before
+        // and as AdminOrders.tsx's own count) — only revenue changes meaning.
+        //
+        // Revenue excludes cancelled orders (see CANCELLED_ORDER_STATUS), but
+        // NOT via a status-filtered `sum('total')` aggregate: verified live
+        // against the real project that Firestore requires a brand-new
+        // composite index for *any* status-filtered sum aggregate (`==` or
+        // `!=` alike) — a plain unfiltered sum, as used today, does not need
+        // one, and this task's boundaries don't allow publishing a new index
+        // without separate approval. Instead: take the existing unfiltered
+        // sum (no index needed) and subtract the cancelled subset's total,
+        // fetched via a plain equality-filtered document query — a basic
+        // single-field-equality query, already covered by Firestore's
+        // automatic per-field index, so this also needs no new index. The
+        // extra read cost is bounded by how many orders are cancelled, not by
+        // the size of the whole collection.
+        const [productsCountSnap, usersCountSnap, ordersCountSnap, totalRevenueAggSnap, cancelledOrdersSnap] =
+          await Promise.all([
+            getCountFromServer(collection(db, 'products')),
+            getCountFromServer(collection(db, 'users')),
+            getCountFromServer(collection(db, 'orders')),
+            getAggregateFromServer(collection(db, 'orders'), { revenue: sum('total') }),
+            getDocs(query(collection(db, 'orders'), where('status', '==', CANCELLED_ORDER_STATUS))),
+          ]);
 
-        const orders = ordersSnap.docs.map(doc => doc.data());
-        const totalRevenue = orders.reduce((acc, curr) => acc + (curr.total || 0), 0);
+        const cancelledRevenue = cancelledOrdersSnap.docs.reduce(
+          (total, docSnap) => total + (Number(docSnap.data().total) || 0),
+          0
+        );
 
         setStats({
-          products: productsSnap.size,
-          orders: ordersSnap.size,
-          users: usersSnap.size,
-          revenue: totalRevenue,
+          products: productsCountSnap.data().count,
+          orders: ordersCountSnap.data().count,
+          users: usersCountSnap.data().count,
+          revenue: (totalRevenueAggSnap.data().revenue || 0) - cancelledRevenue,
         });
 
         try {
@@ -276,11 +303,11 @@ const AdminDashboard = () => {
   }, [authLoading, role]);
 
   const statCards = [
-    { label: 'Total Revenue', value: `ILS ${stats.revenue.toLocaleString()}`, icon: TrendingUp, color: 'bg-emerald-500', trend: '+12.5%', isUp: true },
-    { label: 'Total Orders', value: stats.orders, icon: ShoppingCart, color: 'bg-blue-500', trend: '+5.2%', isUp: true, path: '/admin/orders' },
-    { label: 'Total Products', value: stats.products, icon: Package, color: 'bg-purple-500', trend: '-2.1%', isUp: false, path: '/admin/products' },
-    { label: 'Total Customers', value: stats.users, icon: Users, color: 'bg-orange-500', trend: '+8.4%', isUp: true, path: '/admin/customers' },
-    { label: 'Hero Reels', value: 'Manage', icon: ImageIcon, color: 'bg-pink-500', trend: 'Live', isUp: true, path: '/admin/hero' },
+    { label: t('admin.dashboard.statRevenue'), value: `ILS ${stats.revenue.toLocaleString('en-GB')}`, icon: TrendingUp, color: 'bg-emerald-500', trend: '+12.5%', isUp: true },
+    { label: t('admin.dashboard.statOrders'), value: stats.orders, icon: ShoppingCart, color: 'bg-blue-500', trend: '+5.2%', isUp: true, path: '/admin/orders' },
+    { label: t('admin.dashboard.statProducts'), value: stats.products, icon: Package, color: 'bg-purple-500', trend: '-2.1%', isUp: false, path: '/admin/products' },
+    { label: t('admin.dashboard.statCustomers'), value: stats.users, icon: Users, color: 'bg-orange-500', trend: '+8.4%', isUp: true, path: '/admin/customers' },
+    { label: t('admin.dashboard.statHeroReels'), value: t('admin.dashboard.manage'), icon: ImageIcon, color: 'bg-pink-500', trend: t('admin.dashboard.live'), isUp: true, path: '/admin/hero' },
   ];
 
   return (
@@ -288,10 +315,10 @@ const AdminDashboard = () => {
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="mb-2 text-2xl font-black tracking-tight text-gray-900 sm:text-3xl md:text-4xl">
-            Dashboard Overview
+            {t('admin.dashboard.title')}
           </h1>
           <p className="text-sm font-medium text-gray-500 sm:text-base">
-            Welcome back! Here&apos;s what&apos;s happening with Catchy Clothing today.
+            {t('admin.dashboard.welcome')}
           </p>
         </div>
         <button
@@ -301,7 +328,7 @@ const AdminDashboard = () => {
           className="flex w-full shrink-0 items-center justify-center gap-2 rounded-2xl bg-[#4ba673] px-5 py-3 text-xs font-black uppercase tracking-widest text-white shadow-lg shadow-[#4ba673]/20 transition-all hover:bg-[#3d8a5f] disabled:opacity-50 sm:w-auto sm:px-6 touch-manipulation min-h-[48px]"
         >
           {isSeeding ? <Loader2 className="animate-spin" size={18} /> : <Database size={18} />}
-          {isSeeding ? 'Seeding...' : 'Seed Sample Data'}
+          {isSeeding ? t('admin.dashboard.seeding') : t('admin.dashboard.seedButton')}
         </button>
       </header>
 
@@ -339,7 +366,7 @@ const AdminDashboard = () => {
 
       {/* Site Settings — Ticker Banner Editor */}
       <div className="min-w-0 rounded-3xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6 md:p-8">
-        <h2 className="mb-6 text-xl font-black tracking-tight text-gray-900 sm:text-2xl">Site Settings</h2>
+        <h2 className="mb-6 text-xl font-black tracking-tight text-gray-900 sm:text-2xl">{t('admin.dashboard.siteSettings')}</h2>
 
         {/* Toggle row */}
         <div className="mb-6 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -348,12 +375,12 @@ const AdminDashboard = () => {
               <Megaphone size={20} />
             </div>
             <div>
-              <p className="text-sm font-black text-gray-900">Offers Ticker Banner</p>
-              <p className="text-xs font-medium text-gray-400">Scrolling banner shown below the navigation bar</p>
+              <p className="text-sm font-black text-gray-900">{t('admin.dashboard.tickerBanner')}</p>
+              <p className="text-xs font-medium text-gray-400">{t('admin.dashboard.tickerBannerDesc')}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs font-bold text-gray-400">{tickerEnabled ? 'Visible' : 'Hidden'}</span>
+            <span className="text-xs font-bold text-gray-400">{tickerEnabled ? t('admin.dashboard.visible') : t('coordinates.hiddenBadge')}</span>
             <button
               type="button"
               disabled={tickerLoading || tickerSaving}
@@ -362,7 +389,7 @@ const AdminDashboard = () => {
                 'relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50',
                 tickerEnabled ? 'bg-catchy' : 'bg-gray-200'
               )}
-              aria-label="Toggle ticker banner"
+              aria-label={t('admin.dashboard.toggleTicker')}
             >
               <span
                 className={cn(
@@ -376,7 +403,7 @@ const AdminDashboard = () => {
 
         {/* Live Preview */}
         <div className="mb-6">
-          <p className="mb-2 text-xs font-black uppercase tracking-widest text-gray-400">Live Preview</p>
+          <p className="mb-2 text-xs font-black uppercase tracking-widest text-gray-400">{t('coordinates.livePreview')}</p>
           <div
             className="overflow-hidden rounded-xl py-2.5 text-center"
             style={{
@@ -389,7 +416,7 @@ const AdminDashboard = () => {
               fontFamily: bannerFontFamily,
             }}
           >
-            {bannerText || '  ◆  Banner Text Preview  ◆  '}
+            {bannerText || t('admin.dashboard.previewPlaceholder')}
           </div>
         </div>
 
@@ -397,7 +424,7 @@ const AdminDashboard = () => {
           {/* Banner text */}
           <div>
             <label className="mb-1.5 block text-xs font-black uppercase tracking-widest text-gray-500">
-              Banner Text
+              {t('admin.dashboard.bannerTextLabel')}
             </label>
             <input
               type="text"
@@ -406,7 +433,7 @@ const AdminDashboard = () => {
               placeholder="  ◆  عروض وتخفيضات  ◆  Offers & Discounts"
               className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-300 focus:border-catchy focus:outline-none focus:ring-1 focus:ring-catchy"
             />
-            <p className="mt-1 text-[11px] text-gray-400">This segment is repeated across the full banner. Use ◆ as a separator.</p>
+            <p className="mt-1 text-[11px] text-gray-400">{t('admin.dashboard.bannerTextHint')}</p>
           </div>
 
           {/* Color + font size row */}
@@ -414,7 +441,7 @@ const AdminDashboard = () => {
             {/* Background color */}
             <div>
               <label className="mb-1.5 block text-xs font-black uppercase tracking-widest text-gray-500">
-                Background Color
+                {t('admin.dashboard.bgColorLabel')}
               </label>
               <div className="flex items-center gap-2.5 rounded-xl border border-gray-200 bg-white px-3 py-2">
                 <input
@@ -422,7 +449,7 @@ const AdminDashboard = () => {
                   value={bannerBgColor}
                   onChange={(e) => setBannerBgColor(e.target.value)}
                   className="h-7 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
-                  title="Pick background color"
+                  title={t('admin.dashboard.pickBgColor')}
                 />
                 <span className="font-mono text-xs text-gray-500">{bannerBgColor}</span>
               </div>
@@ -431,7 +458,7 @@ const AdminDashboard = () => {
             {/* Text color */}
             <div>
               <label className="mb-1.5 block text-xs font-black uppercase tracking-widest text-gray-500">
-                Text Color
+                {t('admin.dashboard.textColorLabel')}
               </label>
               <div className="flex items-center gap-2.5 rounded-xl border border-gray-200 bg-white px-3 py-2">
                 <input
@@ -439,7 +466,7 @@ const AdminDashboard = () => {
                   value={bannerTextColor}
                   onChange={(e) => setBannerTextColor(e.target.value)}
                   className="h-7 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
-                  title="Pick text color"
+                  title={t('admin.dashboard.pickTextColor')}
                 />
                 <span className="font-mono text-xs text-gray-500">{bannerTextColor}</span>
               </div>
@@ -448,8 +475,8 @@ const AdminDashboard = () => {
             {/* Font size */}
             <div>
               <label className="mb-1.5 flex items-center justify-between text-xs font-black uppercase tracking-widest text-gray-500">
-                Font Size
-                <span className="ml-1 font-mono text-catchy">{bannerFontSize}px</span>
+                {t('admin.dashboard.fontSizeLabel')}
+                <span className="ms-1 font-mono text-catchy">{bannerFontSize}px</span>
               </label>
               <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-3">
                 <span className="text-[9px] font-bold text-gray-400">A</span>
@@ -470,7 +497,7 @@ const AdminDashboard = () => {
           {/* Font family */}
           <div>
             <label className="mb-2 block text-xs font-black uppercase tracking-widest text-gray-500">
-              Font Family
+              {t('admin.dashboard.fontFamilyLabel')}
             </label>
             <div className="flex flex-wrap gap-2">
               {FONT_OPTIONS.map((opt) => (
@@ -501,7 +528,7 @@ const AdminDashboard = () => {
               className="flex items-center gap-2 rounded-2xl bg-catchy px-6 py-3 text-xs font-black uppercase tracking-widest text-white shadow-md shadow-catchy/20 transition-all hover:bg-catchy-dark disabled:opacity-50"
             >
               {bannerSaving ? <Loader2 size={15} className="animate-spin" /> : <Megaphone size={15} />}
-              {bannerSaving ? 'Saving…' : 'Save Banner Settings'}
+              {bannerSaving ? t('admin.products.form.saving') : t('admin.dashboard.saveBannerButton')}
             </button>
           </div>
         </div>
@@ -511,12 +538,12 @@ const AdminDashboard = () => {
       <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-10">
         <div className="min-w-0 overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm lg:col-span-2">
           <div className="flex flex-col gap-3 border-b border-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-6 md:p-8">
-            <h2 className="text-xl font-black tracking-tight text-gray-900 sm:text-2xl">Recent Orders</h2>
+            <h2 className="text-xl font-black tracking-tight text-gray-900 sm:text-2xl">{t('admin.dashboard.recentOrders')}</h2>
             <button
               type="button"
               className="self-start text-sm font-bold text-catchy hover:underline sm:self-auto touch-manipulation min-h-[44px] px-1"
             >
-              View All
+              {t('admin.dashboard.viewAll')}
             </button>
           </div>
 
@@ -537,33 +564,33 @@ const AdminDashboard = () => {
                             : 'bg-blue-50 text-blue-600'
                       )}
                     >
-                      {order.status}
+                      {t(`orders.status.${order.status}`)}
                     </span>
                   </div>
                   <p className="break-all text-sm font-medium text-gray-600">{String(order.userId ?? '—')}</p>
                   <div className="flex items-center justify-between gap-2 text-sm">
                     <span className="font-black text-gray-900">ILS {order.total}</span>
                     <span className="text-xs text-gray-400">
-                      {order.createdAt?.toDate ? order.createdAt.toDate().toLocaleDateString() : 'N/A'}
+                      {order.createdAt?.toDate ? order.createdAt.toDate().toLocaleDateString(language === 'ar' ? 'ar' : 'en-GB') : t('admin.dashboard.notAvailable')}
                     </span>
                   </div>
                 </div>
               ))
             ) : (
-              <p className="p-8 text-center text-sm font-medium text-gray-400">No recent orders found.</p>
+              <p className="p-8 text-center text-sm font-medium text-gray-400">{t('admin.dashboard.noRecentOrders')}</p>
             )}
           </div>
 
           {/* md+: table */}
           <div className="hidden min-w-0 overflow-x-auto md:block">
-            <table className="w-full min-w-0 text-left text-sm">
+            <table className="w-full min-w-0 text-start text-sm">
               <thead>
                 <tr className="bg-gray-50/50 text-xs font-black uppercase tracking-widest text-gray-400">
-                  <th className="px-4 py-4 md:px-8 md:py-5">Order ID</th>
-                  <th className="px-4 py-4 md:px-8 md:py-5">Customer</th>
-                  <th className="px-4 py-4 md:px-8 md:py-5">Status</th>
-                  <th className="px-4 py-4 md:px-8 md:py-5">Total</th>
-                  <th className="px-4 py-4 md:px-8 md:py-5">Date</th>
+                  <th className="px-4 py-4 md:px-8 md:py-5">{t('admin.dashboard.colOrderId')}</th>
+                  <th className="px-4 py-4 md:px-8 md:py-5">{t('admin.orders.detail.customer')}</th>
+                  <th className="px-4 py-4 md:px-8 md:py-5">{t('admin.common.status')}</th>
+                  <th className="px-4 py-4 md:px-8 md:py-5">{t('admin.common.total')}</th>
+                  <th className="px-4 py-4 md:px-8 md:py-5">{t('admin.common.date')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -585,19 +612,19 @@ const AdminDashboard = () => {
                                 : 'bg-blue-50 text-blue-600'
                           )}
                         >
-                          {order.status}
+                          {t(`orders.status.${order.status}`)}
                         </span>
                       </td>
                       <td className="px-4 py-4 font-black text-gray-900 md:px-8 md:py-6">ILS {order.total}</td>
                       <td className="px-4 py-4 font-medium text-gray-400 md:px-8 md:py-6">
-                        {order.createdAt?.toDate ? order.createdAt.toDate().toLocaleDateString() : 'N/A'}
+                        {order.createdAt?.toDate ? order.createdAt.toDate().toLocaleDateString(language === 'ar' ? 'ar' : 'en-GB') : t('admin.dashboard.notAvailable')}
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
                     <td colSpan={5} className="px-8 py-16 text-center font-medium text-gray-400 md:py-20">
-                      No recent orders found.
+                      {t('admin.dashboard.noRecentOrders')}
                     </td>
                   </tr>
                 )}
@@ -607,7 +634,7 @@ const AdminDashboard = () => {
         </div>
 
         <div className="min-w-0 rounded-3xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6 md:p-8">
-          <h2 className="mb-6 text-xl font-black tracking-tight text-gray-900 sm:text-2xl">Inventory Alerts</h2>
+          <h2 className="mb-6 text-xl font-black tracking-tight text-gray-900 sm:text-2xl">{t('admin.dashboard.inventoryAlerts')}</h2>
           <div className="space-y-4 sm:space-y-6">
             {/* Low stock items would go here */}
             <div className="flex items-center gap-3 rounded-2xl border border-orange-100 bg-orange-50 p-3 sm:gap-4 sm:p-4">
@@ -615,11 +642,11 @@ const AdminDashboard = () => {
                 <Package size={22} className="sm:h-6 sm:w-6" />
               </div>
               <div className="min-w-0">
-                <h4 className="font-bold text-orange-900">Low Stock Alert</h4>
-                <p className="text-sm font-medium text-orange-700">5 items are below threshold</p>
+                <h4 className="font-bold text-orange-900">{t('admin.dashboard.lowStockAlert')}</h4>
+                <p className="text-sm font-medium text-orange-700">{t('admin.dashboard.lowStockDesc').replace('{n}', '5')}</p>
               </div>
             </div>
-            <p className="text-center text-sm font-medium text-gray-400">All systems operational.</p>
+            <p className="text-center text-sm font-medium text-gray-400">{t('admin.dashboard.allOperational')}</p>
           </div>
         </div>
       </div>

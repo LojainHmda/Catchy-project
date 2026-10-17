@@ -21,7 +21,11 @@ export function normalizePhone(raw: string): string {
   return digits;
 }
 
-export async function sendWhatsAppText(fullPhoneNumber: string, message: string): Promise<SendResult> {
+export async function sendWhatsAppText(
+  fullPhoneNumber: string,
+  message: string,
+  t?: (key: string) => string
+): Promise<SendResult> {
   const phone = normalizePhone(fullPhoneNumber);
   const res = await fetch('/api/whatsapp/send', {
     method: 'POST',
@@ -29,14 +33,17 @@ export async function sendWhatsAppText(fullPhoneNumber: string, message: string)
     body: JSON.stringify({fullPhoneNumber: phone, message}),
   });
 
+  const httpFallback = () =>
+    t ? t('admin.whatsapp.sendFailedHttp').replace('{status}', String(res.status)) : `Send failed (HTTP ${res.status})`;
+
   let payload: SendResult;
   try {
     payload = (await res.json()) as SendResult;
   } catch {
-    throw new Error(`Send failed (HTTP ${res.status})`);
+    throw new Error(httpFallback());
   }
   if (!res.ok || !payload.result) {
-    throw new Error(payload?.message || `Send failed (HTTP ${res.status})`);
+    throw new Error(payload?.message || httpFallback());
   }
   return payload;
 }

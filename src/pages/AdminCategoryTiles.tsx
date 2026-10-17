@@ -44,11 +44,11 @@ const AdminCategoryTiles = () => {
   const applyUrlForCategory = async (category: string) => {
     const raw = (urlDraftByCategory[category] ?? '').trim();
     if (!raw) {
-      alert('Paste an image URL first.');
+      alert(t('admin.categoryTiles.pasteUrlFirst'));
       return;
     }
     if (!/^https?:\/\//i.test(raw) && !raw.startsWith('data:image/')) {
-      alert('Use an http(s) link or a data:image URL.');
+      alert(t('admin.categoryTiles.invalidUrlFormat'));
       return;
     }
     setUploadingCategory(category);
@@ -71,9 +71,9 @@ const AdminCategoryTiles = () => {
     <div className="space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-gray-900 sm:text-3xl">Category tile images</h1>
+          <h1 className="text-2xl font-black tracking-tight text-gray-900 sm:text-3xl">{t('admin.categoryTiles.heading')}</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Backgrounds for the shop-by-category grid on the home page (#products-grid). Changes apply immediately.
+            {t('admin.categoryTiles.subtitle')}
           </p>
         </div>
         <Link
@@ -83,7 +83,7 @@ const AdminCategoryTiles = () => {
           className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-wider text-gray-700 transition-colors hover:border-catchy hover:text-catchy"
         >
           <ExternalLink size={14} />
-          Preview section
+          {t('admin.categoryTiles.previewSection')}
         </Link>
       </header>
 
@@ -100,15 +100,15 @@ const AdminCategoryTiles = () => {
               <div className="relative aspect-[16/10] bg-neutral-100">
                 <img src={src} alt="" className="h-full w-full object-cover" loading="lazy"/>
                 {isCustom && (
-                  <span className="absolute left-3 top-3 rounded-full bg-catchy px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
-                    Custom
+                  <span className="absolute start-3 top-3 rounded-full bg-catchy px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                    {t('admin.categoryTiles.customBadge')}
                   </span>
                 )}
               </div>
               <div className="space-y-3 p-4">
                 <p className="text-sm font-bold text-gray-900">{label}</p>
                 <p className="truncate text-xs text-gray-400" title={tile.category}>
-                  Key: {tile.category}
+                  {t('admin.categoryTiles.keyLabel').replace('{key}', tile.category)}
                 </p>
                 <div className="space-y-2">
                   <div className="flex gap-2">
@@ -117,7 +117,7 @@ const AdminCategoryTiles = () => {
                       inputMode="url"
                       autoComplete="off"
                       spellCheck={false}
-                      placeholder="https://… or data:image/…"
+                      placeholder={t('admin.categoryTiles.urlPlaceholder')}
                       value={urlDraftByCategory[tile.category] ?? ''}
                       onChange={(e) =>
                         setUrlDraftByCategory((d) => ({ ...d, [tile.category]: e.target.value }))
@@ -136,7 +136,7 @@ const AdminCategoryTiles = () => {
                       ) : (
                         <Link2 className="h-3.5 w-3.5" aria-hidden />
                       )}
-                      Apply
+                      {t('admin.categoryTiles.apply')}
                     </button>
                   </div>
                   <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 bg-gray-50 py-2.5 text-xs font-bold uppercase tracking-wider text-gray-700 transition hover:border-catchy hover:bg-white hover:text-catchy">
@@ -145,7 +145,7 @@ const AdminCategoryTiles = () => {
                   ) : (
                     <Upload className="h-4 w-4" />
                   )}
-                  Replace image
+                  {t('admin.categoryTiles.replaceImage')}
                   <input
                     type="file"
                     accept="image/*"
@@ -156,7 +156,7 @@ const AdminCategoryTiles = () => {
                       e.target.value = '';
                       if (!file || !file.type.startsWith('image/')) return;
                       if (file.size > 15 * 1024 * 1024) {
-                        alert('Image must be under 15MB.');
+                        alert(t('admin.hero.imageTooLarge15mb'));
                         return;
                       }
                       setUploadingCategory(tile.category);
@@ -165,7 +165,7 @@ const AdminCategoryTiles = () => {
                         await patchImage(tile.category, dataUrl);
                       } catch (err) {
                         console.error(err);
-                        alert('Could not process that image.');
+                        alert(t('admin.hero.imageProcessFailed'));
                       } finally {
                         setUploadingCategory(null);
                       }
@@ -183,7 +183,7 @@ const AdminCategoryTiles = () => {
                   )}
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
-                  Reset to default
+                  {t('admin.categoryTiles.resetToDefault')}
                 </button>
               </div>
             </div>

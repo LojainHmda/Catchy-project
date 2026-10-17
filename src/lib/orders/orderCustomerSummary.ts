@@ -1,4 +1,5 @@
 import type { OrderRecord } from '../../types/order';
+import { CANCELLED_ORDER_STATUS } from '../../types/order';
 
 export type OrderCustomerSummary = {
   key: string;
@@ -18,23 +19,25 @@ export type OrderCustomerSummary = {
   lastOrderAt: Date | null;
 };
 
-const ZONE_LABELS: Record<string, string> = {
-  west_bank: 'West Bank',
-  jerusalem: 'Jerusalem',
-  abu_ghosh: 'Abu Ghosh Areas',
-  inside_israel: 'Inside Israel',
+const ZONE_LABEL_KEYS: Record<string, string> = {
+  west_bank: 'shipping.zone.westBank',
+  jerusalem: 'shipping.zone.jerusalem',
+  abu_ghosh: 'shipping.zone.abuGhosh',
+  inside_israel: 'shipping.zone.insideIsrael',
 };
 
-export function shippingZoneLabel(zoneId: string | null | undefined): string | null {
+/** Translated zone label for display. `zoneId` stays the stable identity (used for filtering/grouping) — only this label is language-dependent. */
+export function shippingZoneLabel(zoneId: string | null | undefined, t: (key: string) => string): string | null {
   if (!zoneId?.trim()) return null;
-  return ZONE_LABELS[zoneId] ?? zoneId.replace(/_/g, ' ');
+  const labelKey = ZONE_LABEL_KEYS[zoneId];
+  return labelKey ? t(labelKey) : zoneId.replace(/_/g, ' ');
 }
 
-export function orderDeliveryLabel(order: OrderRecord): string {
-  const zone = shippingZoneLabel(order.deliveryZone);
+export function orderDeliveryLabel(order: OrderRecord, t: (key: string) => string): string {
+  const zone = shippingZoneLabel(order.deliveryZone, t);
   const address = order.deliveryAddress?.trim();
   if (zone && address) return `${zone} · ${address}`;
-  return zone ?? address ?? 'Unknown location';
+  return zone ?? address ?? t('admin.customers.unknownLocationFallback');
 }
 
 function customerKey(order: OrderRecord): string {
@@ -52,7 +55,7 @@ function customerKey(order: OrderRecord): string {
   return `order:${order.id}`;
 }
 
-export function aggregateOrderCustomers(orders: OrderRecord[]): OrderCustomerSummary[] {
+export function aggregateOrderCustomers(orders: OrderRecord[], t: (key: string) => string): OrderCustomerSummary[] {
   const map = new Map<string, OrderCustomerSummary>();
 
   for (const order of orders) {
@@ -62,7 +65,7 @@ export function aggregateOrderCustomers(orders: OrderRecord[]): OrderCustomerSum
     if (!row) {
       row = {
         key,
-        name: order.customerName?.trim() || 'Guest',
+        name: order.customerName?.trim() || t('admin.customers.guestName'),
         phone: order.customerPhone?.trim() || null,
         email: order.customerEmail?.trim() || null,
         deliveryLocations: [],
@@ -81,20 +84,27 @@ export function aggregateOrderCustomers(orders: OrderRecord[]): OrderCustomerSum
     }
 
     row.orderCount += 1;
-    row.totalSpent += order.total;
+    // A cancelled order (web — never fulfilled/paid; POS — voided, stock
+    // restored) never contributes to spend, even though it still counts
+    // toward orderCount/cancelledCount below — same rule as sumOrderRevenue.
+    if (order.status !== CANCELLED_ORDER_STATUS) {
+      row.totalSpent += order.total;
+    }
 
     if (order.customerName?.trim()) row.name = order.customerName.trim();
     if (order.customerPhone?.trim()) row.phone = order.customerPhone.trim();
     if (order.customerEmail?.trim()) row.email = order.customerEmail.trim();
 
-    const location = orderDeliveryLabel(order);
+    const location = orderDeliveryLabel(order, t);
     if (!row.deliveryLocations.includes(location)) {
       row.deliveryLocations.push(location);
     }
 
-    const zone = shippingZoneLabel(order.deliveryZone);
-    if (zone && !row.zones.includes(zone)) {
-      row.zones.push(zone);
+    // row.zones stores the stable zone id (not the translated label) so zone
+    // filtering keeps working correctly after an admin-language switch.
+    const zoneId = order.deliveryZone?.trim();
+    if (zoneId && !row.zones.includes(zoneId)) {
+      row.zones.push(zoneId);
     }
 
     if (order.deliveryAddress?.trim()) {
@@ -134,11 +144,12 @@ export function aggregateOrderCustomers(orders: OrderRecord[]): OrderCustomerSum
   );
 }
 
+/** Keyed by the stable zone id (e.g. "west_bank"), not the translated label — see shippingZoneLabel. */
 export function zoneOrderCounts(orders: OrderRecord[]): Record<string, number> {
   const counts: Record<string, number> = { all: orders.length };
   for (const order of orders) {
-    const zone = shippingZoneLabel(order.deliveryZone) ?? 'Unknown';
-    counts[zone] = (counts[zone] ?? 0) + 1;
+    const zoneId = order.deliveryZone?.trim() || 'unknown';
+    counts[zoneId] = (counts[zoneId] ?? 0) + 1;
   }
   return counts;
 }

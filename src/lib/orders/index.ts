@@ -18,6 +18,7 @@ export {
   parseOrderLineItems,
   parseLineItemDisplay,
   shortOrderId,
+  sumOrderRevenue,
   toDate,
 } from './orderUtils';
 export {

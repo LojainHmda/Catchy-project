@@ -1,5 +1,4 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
-import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import {
   getAuth,
   GoogleAuthProvider,
@@ -12,9 +11,6 @@ import {
 } from 'firebase/auth';
 import {
   getFirestore,
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
   collection,
   doc,
   getDoc,
@@ -34,6 +30,10 @@ import {
   runTransaction,
   documentId,
   deleteField,
+  getCountFromServer,
+  getAggregateFromServer,
+  count,
+  sum,
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -64,25 +64,14 @@ function getOrInitApp(): FirebaseApp {
 
 const app = getOrInitApp();
 
-let db: ReturnType<typeof getFirestore>;
-try {
-  // Persistent cache makes catalog getDocsFromCache instant after the first load (including dev).
-  db = initializeFirestore(app, {
-    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-  });
-} catch {
-  db = getFirestore(app);
-}
+const db: ReturnType<typeof getFirestore> = getFirestore(app);
 
 export const auth = getAuth(app);
-export { db };
+export { app, db };
 
-// Storage is optional — wrap so a missing bucket never breaks the rest of the app
-let _storage: ReturnType<typeof getStorage> | null = null;
-try { _storage = getStorage(app); } catch { /* Storage not configured */ }
-export const storage = _storage as ReturnType<typeof getStorage>;
-export { storageRef, uploadBytesResumable, getDownloadURL, deleteObject };
-export { uploadBytes } from 'firebase/storage';
+// Firebase Storage is only used by one admin page (AdminHeroVideo) — its SDK is
+// loaded on demand from src/lib/firebaseStorage.ts instead of being imported here,
+// so its code doesn't ship to every visitor.
 
 export {
   collection,
@@ -104,6 +93,10 @@ export {
   runTransaction,
   documentId,
   deleteField,
+  getCountFromServer,
+  getAggregateFromServer,
+  count,
+  sum,
   GoogleAuthProvider,
   signInWithPopup,
   signOut,

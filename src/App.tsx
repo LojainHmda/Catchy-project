@@ -34,6 +34,8 @@ const AdminCategoryTiles = lazy(() => import('./pages/AdminCategoryTiles'));
 const AdminCustomers    = lazy(() => import('./pages/AdminCustomers'));
 const AdminOrders       = lazy(() => import('./pages/AdminOrders'));
 const AdminWhatsApp     = lazy(() => import('./pages/AdminWhatsApp'));
+const PosTerminal       = lazy(() => import('./pages/PosTerminal'));
+const PosRegisterClose  = lazy(() => import('./pages/PosRegisterClose'));
 
 function CatalogWarmup() {
   useEffect(() => {
@@ -61,7 +63,16 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   );
 };
 
+/** POS is a dedicated full-screen, touch-first surface — deliberately not wrapped in AdminLayout. */
+const PosRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, role, loading } = useAuth();
+  if (loading) return <AdminSpinner />;
+  if (!user || (role !== 'admin' && role !== 'cashier')) return <Navigate to="/login" replace />;
+  return <Suspense fallback={<AdminSpinner />}>{children}</Suspense>;
+};
+
 const AppContent = () => {
+  const { t } = useLanguage();
   return (
     <div className="min-h-screen flex flex-col">
       <Routes>
@@ -77,7 +88,11 @@ const AppContent = () => {
         <Route path="/admin/orders" element={<AdminRoute><AdminOrders /></AdminRoute>} />
         <Route path="/admin/customers" element={<AdminRoute><AdminCustomers /></AdminRoute>} />
         <Route path="/admin/whatsapp" element={<AdminRoute><AdminWhatsApp /></AdminRoute>} />
-        <Route path="/admin/settings" element={<AdminRoute><div className="p-10 text-center">Settings Coming Soon</div></AdminRoute>} />
+        <Route path="/admin/settings" element={<AdminRoute><div className="p-10 text-center">{t('admin.settings.comingSoon')}</div></AdminRoute>} />
+
+        {/* Point of Sale — admin or cashier, own full-screen layout */}
+        <Route path="/pos" element={<PosRoute><PosTerminal /></PosRoute>} />
+        <Route path="/pos/close" element={<PosRoute><PosRegisterClose /></PosRoute>} />
 
         {/* Public Routes */}
         <Route path="*" element={

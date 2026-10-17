@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { Percent, Search, Trash2, Tag, Loader2, RefreshCw, X, Square, CheckSquare, ChevronDown, Megaphone } from 'lucide-react';
 import AnnouncementBannerPanel from '../components/admin/AnnouncementBannerPanel';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CATEGORY_ICONS } from '../constants';
+import { CATEGORY_ICONS, CATEGORY_KEYS } from '../constants';
 import { canonicalCategory } from '../lib/category';
 import { subscribeCoordinateLooks } from '../lib/coordinatesService';
 import {
@@ -23,7 +23,7 @@ import {
   startAfter,
   serverTimestamp,
 } from '../firebase';
-import { cn } from '../lib/utils';
+import { cn, sanitizeIntegerInput } from '../lib/utils';
 import { coerceProductImages } from '../lib/productImages';
 import {
   applyPercentToPrice,
@@ -35,6 +35,7 @@ import {
   validateDiscountInputs,
 } from '../lib/productDiscount';
 import type { ProductRecord } from '../types/product';
+import { useLanguage } from '../context/LanguageContext';
 
 const INPUT =
   'h-9 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-400 focus:ring-0';
@@ -44,6 +45,7 @@ const PAGE_SIZE = 50;
 type DiscountTab = 'discounts' | 'banner';
 
 const AdminDiscounts = () => {
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<DiscountTab>('discounts');
   const [products, setProducts] = useState<ProductRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,7 +73,7 @@ const AdminDiscounts = () => {
       setProducts(snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as ProductRecord)));
     } catch (error) {
       console.error('Error fetching products:', error);
-      toast.error('Could not load products');
+      toast.error(t('admin.discounts.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -209,7 +211,7 @@ const AdminDiscounts = () => {
   };
 
   const handleRemoveDiscount = async (product: ProductRecord) => {
-    if (!window.confirm(`Remove discount from "${product.name}"? Price will restore to original.`)) return;
+    if (!window.confirm(t('admin.discounts.confirmRemove').replace('{name}', product.name))) return;
     setSaving(true);
     try {
       await updateDoc(doc(db, 'products', product.id), {
@@ -217,10 +219,10 @@ const AdminDiscounts = () => {
         updatedAt: serverTimestamp(),
       });
       await fetchProducts();
-      toast.success('Discount removed', { description: `"${product.name}" is back at full price.` });
+      toast.success(t('admin.discounts.toastRemoved'), { description: t('admin.discounts.toastRemovedDesc').replace('{name}', product.name) });
     } catch (error) {
       console.error(error);
-      toast.error('Could not remove discount');
+      toast.error(t('admin.discounts.removeFailed'));
     } finally {
       setSaving(false);
     }
@@ -229,11 +231,11 @@ const AdminDiscounts = () => {
   const handleBulkApply = async () => {
     const percent = parseFloat(bulkPercent);
     if (!Number.isFinite(percent) || percent < 1 || percent > 99) {
-      toast.error('Enter a discount between 1% and 99%');
+      toast.error(t('admin.discounts.invalidPercent'));
       return;
     }
     if (selectedIds.size === 0) {
-      toast.error('Select at least one product');
+      toast.error(t('admin.discounts.selectAtLeastOne'));
       return;
     }
 
@@ -275,10 +277,10 @@ const AdminDiscounts = () => {
     await fetchProducts();
 
     if (ok > 0) {
-      toast.success(`Applied ${percent}% off to ${ok} product${ok === 1 ? '' : 's'}`);
+      toast.success(t('admin.discounts.toastApplied').replace('{percent}', String(percent)).replace('{n}', String(ok)).replace('{plural}', ok === 1 ? '' : 's'));
     }
     if (failed > 0) {
-      toast.warning(`${failed} product${failed === 1 ? '' : 's'} could not be updated`);
+      toast.warning(t('admin.discounts.toastFailedCount').replace('{n}', String(failed)).replace('{plural}', failed === 1 ? '' : 's'));
     }
   };
 
@@ -291,11 +293,11 @@ const AdminDiscounts = () => {
       <header className="border-b border-gray-200 pb-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">Discounts</h1>
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">{t('admin.nav.discounts')}</h1>
             <p className="mt-0.5 text-sm text-gray-500">
               {activeTab === 'discounts'
-                ? 'Create, apply, and remove product sales. Discounts appear on the catalog and product pages.'
-                : 'Show, hide, and edit the top announcement bar shown on every page.'}
+                ? t('admin.discounts.subtitleDiscounts')
+                : t('admin.discounts.subtitleBanner')}
             </p>
           </div>
           {activeTab === 'discounts' && (
@@ -307,7 +309,7 @@ const AdminDiscounts = () => {
                 className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
               >
                 <RefreshCw size={14} className={cn(loading && 'animate-spin')} />
-                Refresh
+                {t('admin.common.refresh')}
               </button>
               <button
                 type="button"
@@ -315,7 +317,7 @@ const AdminDiscounts = () => {
                 className="inline-flex h-9 items-center gap-1.5 rounded-md bg-catchy px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-catchy-dark"
               >
                 <Percent size={14} />
-                Apply discount
+                {t('admin.discounts.applyDiscount')}
               </button>
             </div>
           )}
@@ -323,11 +325,11 @@ const AdminDiscounts = () => {
         {activeTab === 'discounts' && (
           <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm">
             <div className="flex gap-1.5">
-              <dt className="text-gray-500">On sale</dt>
+              <dt className="text-gray-500">{t('admin.discounts.onSale')}</dt>
               <dd className="font-medium tabular-nums text-red-600">{discountedProducts.length}</dd>
             </div>
             <div className="flex gap-1.5">
-              <dt className="text-gray-500">Full price</dt>
+              <dt className="text-gray-500">{t('admin.discounts.fullPrice')}</dt>
               <dd className="font-medium tabular-nums text-gray-900">{notOnSaleProducts.length}</dd>
             </div>
           </dl>
@@ -337,8 +339,8 @@ const AdminDiscounts = () => {
       {/* Tabs */}
       <div className="mt-4 flex gap-1 border-b border-gray-200">
         {([
-          { key: 'discounts', label: 'Product discounts', icon: Percent },
-          { key: 'banner', label: 'Banner', icon: Megaphone },
+          { key: 'discounts', label: t('admin.discounts.tabDiscounts'), icon: Percent },
+          { key: 'banner', label: t('admin.discounts.tabBanner'), icon: Megaphone },
         ] as const).map((tab) => {
           const active = activeTab === tab.key;
           const Icon = tab.icon;
@@ -369,13 +371,13 @@ const AdminDiscounts = () => {
       <>
       <div className="mt-4 flex flex-col gap-2 border-b border-gray-200 pb-3 sm:flex-row sm:items-center">
         <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             type="search"
-            placeholder="Search discounted products…"
+            placeholder={t('admin.discounts.searchPlaceholder')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="h-9 w-full rounded-md border border-gray-200 bg-white pl-9 pr-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-400 focus:ring-0"
+            className="h-9 w-full rounded-md border border-gray-200 bg-white ps-9 pe-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-400 focus:ring-0"
           />
         </div>
       </div>
@@ -384,14 +386,14 @@ const AdminDiscounts = () => {
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-10 text-sm text-gray-500">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Loading discounts…
+            {t('admin.discounts.loading')}
           </div>
         ) : filteredDiscounted.length === 0 ? (
           <div className="px-4 py-12 text-center">
             <Tag className="mx-auto mb-2 h-8 w-8 text-gray-300" />
-            <p className="text-sm font-medium text-gray-900">No active discounts</p>
+            <p className="text-sm font-medium text-gray-900">{t('admin.discounts.emptyTitle')}</p>
             <p className="mt-1 text-xs text-gray-500">
-              Apply a percentage discount to products, or set a sale when editing a product.
+              {t('admin.discounts.emptyHint')}
             </p>
             <button
               type="button"
@@ -399,19 +401,19 @@ const AdminDiscounts = () => {
               className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-catchy px-3 text-xs font-semibold text-white hover:bg-catchy-dark"
             >
               <Percent size={14} />
-              Apply discount
+              {t('admin.discounts.applyDiscount')}
             </button>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-start text-sm">
               <thead>
                 <tr className="border-b border-gray-200 text-xs font-medium text-gray-500">
-                  <th className="px-4 py-2.5 font-medium">Product</th>
-                  <th className="px-4 py-2.5 font-medium">Original</th>
-                  <th className="px-4 py-2.5 font-medium">Sale price</th>
-                  <th className="px-4 py-2.5 font-medium">Off</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Actions</th>
+                  <th className="px-4 py-2.5 font-medium">{t('admin.orders.table.product')}</th>
+                  <th className="px-4 py-2.5 font-medium">{t('admin.discounts.original')}</th>
+                  <th className="px-4 py-2.5 font-medium">{t('admin.discounts.salePrice')}</th>
+                  <th className="px-4 py-2.5 font-medium">{t('admin.discounts.off')}</th>
+                  <th className="px-4 py-2.5 text-end font-medium">{t('admin.products.page.colActions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -428,7 +430,7 @@ const AdminDiscounts = () => {
                           </div>
                           <div className="min-w-0">
                             <p className="truncate font-medium text-gray-900">{product.name}</p>
-                            <p className="text-xs text-gray-500">{product.category || '—'}</p>
+                            <p className="text-xs text-gray-500">{product.category ? t(CATEGORY_KEYS[product.category] || product.category) : '—'}</p>
                           </div>
                         </div>
                       </td>
@@ -452,7 +454,7 @@ const AdminDiscounts = () => {
                             className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50"
                           >
                             <Trash2 size={14} />
-                            Remove
+                            {t('admin.common.remove')}
                           </button>
                         </div>
                       </td>
@@ -474,7 +476,7 @@ const AdminDiscounts = () => {
             className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
           >
             {loadingMore ? <Loader2 size={14} className="animate-spin" /> : <ChevronDown size={14} />}
-            Load more products
+            {t('admin.products.page.loadMore')}
           </button>
         </div>
       ) : null}
@@ -499,8 +501,8 @@ const AdminDiscounts = () => {
             >
               <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
                 <div>
-                  <h2 className="text-base font-semibold text-gray-900">Apply discount</h2>
-                  <p className="text-xs text-gray-500">Select products and set a percentage off their current price.</p>
+                  <h2 className="text-base font-semibold text-gray-900">{t('admin.discounts.applyDiscount')}</h2>
+                  <p className="text-xs text-gray-500">{t('admin.discounts.applyModalSubtitle')}</p>
                 </div>
                 <button
                   type="button"
@@ -513,28 +515,29 @@ const AdminDiscounts = () => {
 
               <div className="space-y-3 border-b border-gray-100 px-4 py-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-500">Discount percentage</label>
+                  <label className="mb-1 block text-xs font-medium text-gray-500">{t('admin.discounts.discountPercentLabel')}</label>
                   <div className="flex items-center gap-2">
                     <input
-                      type="number"
-                      min={1}
-                      max={99}
+                      type="text"
+                      inputMode="numeric"
+                      lang="en"
+                      dir="ltr"
                       value={bulkPercent}
-                      onChange={(e) => setBulkPercent(e.target.value)}
+                      onChange={(e) => setBulkPercent(sanitizeIntegerInput(e.target.value))}
                       className={cn(INPUT, 'max-w-[6rem]')}
                     />
-                    <span className="text-sm text-gray-500">% off current price</span>
+                    <span className="text-sm text-gray-500">{t('admin.discounts.offCurrentPrice')}</span>
                   </div>
                 </div>
 
                 <div className="relative">
-                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                  <Search className="pointer-events-none absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
                   <input
                     type="search"
                     value={applySearch}
                     onChange={(e) => setApplySearch(e.target.value)}
-                    placeholder="Search name, category, ID…"
-                    className="h-8 w-full rounded-md border border-gray-200 bg-white pl-8 pr-3 text-xs outline-none focus:border-catchy"
+                    placeholder={t('admin.products.page.searchPlaceholder')}
+                    className="h-8 w-full rounded-md border border-gray-200 bg-white ps-8 pe-3 text-xs outline-none focus:border-catchy"
                   />
                 </div>
 
@@ -546,7 +549,7 @@ const AdminDiscounts = () => {
                       onClick={() => setApplyCategoryFilter(cat)}
                       className={applyChipClass(applyCategoryFilter === cat)}
                     >
-                      {cat === 'all' ? 'All' : cat}
+                      {cat === 'all' ? t('cat.all') : t(CATEGORY_KEYS[cat] || cat)}
                       <span className="ms-1 tabular-nums opacity-70">{applyCategoryCounts[cat] ?? 0}</span>
                     </button>
                   ))}
@@ -554,7 +557,7 @@ const AdminDiscounts = () => {
 
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[11px] text-gray-500">
-                    {selectedIds.size} selected · {filteredForApply.length} shown
+                    {t('admin.products.picker.selectedCount').replace('{n}', String(selectedIds.size))} · {t('admin.products.picker.shownCount').replace('{n}', String(filteredForApply.length))}
                   </p>
                   <div className="flex gap-2">
                     {filteredForApply.length > 0 ? (
@@ -563,7 +566,7 @@ const AdminDiscounts = () => {
                         onClick={selectAllVisible}
                         className="text-[10px] font-semibold text-catchy hover:underline"
                       >
-                        Select all shown
+                        {t('admin.products.picker.selectAllShown')}
                       </button>
                     ) : null}
                     {selectedIds.size > 0 ? (
@@ -572,7 +575,7 @@ const AdminDiscounts = () => {
                         onClick={clearSelection}
                         className="text-[10px] font-medium text-gray-500 hover:underline"
                       >
-                        Clear
+                        {t('admin.products.picker.clear')}
                       </button>
                     ) : null}
                   </div>
@@ -581,7 +584,7 @@ const AdminDiscounts = () => {
 
               <div className="overflow-y-auto px-4 py-3" style={{ maxHeight: '50vh' }}>
                 {filteredForApply.length === 0 ? (
-                  <p className="py-8 text-center text-xs text-gray-500">No products match this search or category.</p>
+                  <p className="py-8 text-center text-xs text-gray-500">{t('admin.discounts.noMatchApply')}</p>
                 ) : (
                 <ul className="divide-y divide-gray-100 rounded-md border border-gray-200">
                   {filteredForApply.map((product) => {
@@ -594,7 +597,7 @@ const AdminDiscounts = () => {
                           type="button"
                           onClick={() => toggleSelect(product.id)}
                           className={cn(
-                            'flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-gray-50',
+                            'flex w-full items-center gap-3 px-3 py-2.5 text-start transition hover:bg-gray-50',
                             checked && 'bg-catchy/5'
                           )}
                         >
@@ -611,7 +614,7 @@ const AdminDiscounts = () => {
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium text-gray-900">{product.name}</p>
                             <p className="text-xs text-gray-500">
-                              {product.category ? `${product.category} · ` : ''}
+                              {product.category ? `${t(CATEGORY_KEYS[product.category] || product.category)} · ` : ''}
                               ILS {base.toFixed(2)} →{' '}
                               <span className="font-semibold text-red-600">ILS {preview.toFixed(2)}</span>
                             </p>
@@ -630,7 +633,7 @@ const AdminDiscounts = () => {
                   onClick={() => setApplyModalOpen(false)}
                   className="h-9 flex-1 rounded-md border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
                 >
-                  Cancel
+                  {t('admin.common.cancel')}
                 </button>
                 <button
                   type="button"
@@ -638,7 +641,9 @@ const AdminDiscounts = () => {
                   onClick={handleBulkApply}
                   className="h-9 flex-[2] rounded-md bg-catchy text-sm font-semibold text-white hover:bg-catchy-dark disabled:opacity-50"
                 >
-                  {saving ? 'Applying…' : `Apply to ${selectedIds.size} product${selectedIds.size === 1 ? '' : 's'}`}
+                  {saving
+                    ? t('admin.discounts.applying')
+                    : t('admin.discounts.applyToCount').replace('{n}', String(selectedIds.size)).replace('{plural}', selectedIds.size === 1 ? '' : 's')}
                 </button>
               </div>
             </motion.div>

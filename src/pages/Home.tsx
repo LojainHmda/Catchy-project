@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { cn } from '../lib/utils';
 import { fetchLatestProducts, LATEST_PRODUCTS_COUNT } from '../lib/latestProducts';
 import { coerceProductImages, PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
+import { cloudinaryTransform } from '../lib/cloudinaryTransform';
 import { useStoreCategories } from '../hooks/useStoreCategories';
 import { categoryLabel, isSaleCategory } from '../lib/categoriesService';
 import { getCategoryIcon } from '../lib/categoryIcons';
@@ -224,7 +225,7 @@ const Home = () => {
         </h2>
 
           <div className="relative grid grid-cols-2 gap-0.5 sm:grid-cols-3 lg:grid-cols-5 max-w-5xl mx-auto">
-            {newArrivals.slice(0, LATEST_PRODUCTS_COUNT).map((product) => {
+            {newArrivals.slice(0, LATEST_PRODUCTS_COUNT).map((product, index) => {
               const image = coerceProductImages(product)[0] ?? PRODUCT_IMAGE_PLACEHOLDER;
               const price = Number(product.price).toLocaleString('en-GB', { minimumFractionDigits: 0 });
               return (
@@ -235,8 +236,10 @@ const Home = () => {
               >
                 <div className="relative aspect-[3/4] overflow-hidden rounded-sm bg-surface-container">
                   <img
-                    src={image}
+                    src={cloudinaryTransform(image, { width: 320, height: 427 })}
                     alt={product.name}
+                    loading={index < 2 ? 'eager' : 'lazy'}
+                    decoding="async"
                     className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
                   />
 

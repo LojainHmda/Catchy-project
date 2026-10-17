@@ -27,6 +27,8 @@ export type ProductRecord = {
   visible?: boolean;
   /** Storefront tags — e.g. `new-arrived` for the home page Latest Arrivals row. */
   tags?: string[];
+  /** POS barcode/SKU for scanner lookup. Admin-set, not enforced unique. */
+  barcode?: string;
   images?: string[];
   videos?: string[];
   sizes?: string[];

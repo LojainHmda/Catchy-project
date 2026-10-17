@@ -12,7 +12,11 @@ export function firestoreErrorMessage(error: unknown): string {
 }
 
 /** Surfaces permission-denied with deploy-rules guidance (same as Admin Products). */
-export function toastFirestoreWriteError(error: unknown, title: string) {
+export function toastFirestoreWriteError(
+  error: unknown,
+  title: string,
+  t: (key: string) => string = (key) => key
+) {
   const code = firestoreErrorCode(error);
   const msg = firestoreErrorMessage(error);
 
@@ -21,12 +25,11 @@ export function toastFirestoreWriteError(error: unknown, title: string) {
     const rulesUrl = pid
       ? `https://console.firebase.google.com/project/${pid}/firestore/rules`
       : 'https://console.firebase.google.com/';
-    toast.error('Firestore: permission denied', {
-      description:
-        `${title} — cloud rules may not include coordinate_looks yet. Run "npm run firebase:deploy:firestore" or publish firestore.rules in the Firebase console, then sign out and in again.`,
+    toast.error(t('admin.firestoreError.permissionDeniedTitle'), {
+      description: t('admin.firestoreError.permissionDeniedDesc').replace('{title}', title),
       duration: 25_000,
       action: {
-        label: 'Open Rules',
+        label: t('admin.firestoreError.openRules'),
         onClick: () => window.open(rulesUrl, '_blank', 'noopener,noreferrer'),
       },
     });
@@ -34,9 +37,9 @@ export function toastFirestoreWriteError(error: unknown, title: string) {
   }
 
   if (msg.includes('Quota') || msg.includes('RESOURCE_EXHAUSTED') || code === 'resource-exhausted') {
-    toast.error(title, { description: 'Firestore quota exceeded. Try again later.' });
+    toast.error(title, { description: t('admin.firestoreError.quotaExceeded') });
     return;
   }
 
-  toast.error(title, { description: msg || code || 'See the browser console for details.' });
+  toast.error(title, { description: msg || code || t('admin.firestoreError.seeConsole') });
 }

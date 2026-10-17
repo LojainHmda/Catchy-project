@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { db, doc, getDoc } from '../firebase';
 import { cn } from '../lib/utils';
 import { getCatalogSaleMeta } from '../lib/catalogSale';
+import { deleteProductPermanently } from '../lib/admin/deleteProduct';
 import CatalogProductCard from '../components/CatalogProductCard';
 import CoordinateCatalogCard from '../components/CoordinateCatalogCard';
 import { canonicalCategory } from '../lib/category';
@@ -14,6 +15,9 @@ import { categoryLabel, findCategoryById } from '../lib/categoriesService';
 import { CATALOG_VIEW_PAGE_SIZE, useCatalog } from '../hooks/useCatalog';
 
 const AdminProductFormModal = lazy(() => import('../components/admin/AdminProductFormModal'));
+const AdminProductQrModal = lazy(() => import('../components/admin/AdminProductQrModal'));
+const AdminProductBarcodeModal = lazy(() => import('../components/admin/AdminProductBarcodeModal'));
+const AdminDeleteProductModal = lazy(() => import('../components/admin/AdminDeleteProductModal'));
 
 const Catalog = () => {
   const { t, isRTL } = useLanguage();
@@ -21,6 +25,11 @@ const Catalog = () => {
   const isAdmin = role === 'admin';
   const [adminModalOpen, setAdminModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
+  const [qrProduct, setQrProduct] = useState<{ id: string; name: string; price?: number } | null>(null);
+  const [barcodeProduct, setBarcodeProduct] = useState<{ id: string; name: string; price?: number; barcode?: string | null } | null>(
+    null
+  );
+  const [deleteProduct, setDeleteProduct] = useState<{ id: string; name: string } | null>(null);
   const {
     searchParams,
     setSearchParams,
@@ -67,6 +76,21 @@ const Catalog = () => {
     } catch (error) {
       console.error('Error loading product for edit:', error);
       toast.error('Could not load product');
+    }
+  };
+
+  const confirmDeleteProduct = async () => {
+    if (!deleteProduct) return;
+    try {
+      await deleteProductPermanently(deleteProduct.id);
+      toast.success('Product permanently deleted');
+      setDeleteProduct(null);
+      retryLoad();
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      toast.error('Could not delete product', {
+        description: error instanceof Error ? error.message : 'Check console and Firestore rules.',
+      });
     }
   };
 
@@ -365,6 +389,32 @@ const Catalog = () => {
                             }
                             priority={index < 4}
                             onEdit={isAdmin ? () => openEditProduct(entry.product.id) : undefined}
+                            onShowQr={
+                              isAdmin
+                                ? () =>
+                                    setQrProduct({
+                                      id: entry.product.id,
+                                      name: entry.product.name,
+                                      price: entry.product.price,
+                                    })
+                                : undefined
+                            }
+                            onShowBarcode={
+                              isAdmin
+                                ? () =>
+                                    setBarcodeProduct({
+                                      id: entry.product.id,
+                                      name: entry.product.name,
+                                      price: entry.product.price,
+                                      barcode: entry.product.barcode,
+                                    })
+                                : undefined
+                            }
+                            onDelete={
+                              isAdmin
+                                ? () => setDeleteProduct({ id: entry.product.id, name: entry.product.name })
+                                : undefined
+                            }
                           />
                         );
                       })}
@@ -444,6 +494,30 @@ const Catalog = () => {
               closeAdminModal();
               retryLoad();
             }}
+          />
+        </Suspense>
+      )}
+      {isAdmin && qrProduct && (
+        <Suspense fallback={null}>
+          <AdminProductQrModal open={!!qrProduct} onClose={() => setQrProduct(null)} product={qrProduct} />
+        </Suspense>
+      )}
+      {isAdmin && barcodeProduct && (
+        <Suspense fallback={null}>
+          <AdminProductBarcodeModal
+            open={!!barcodeProduct}
+            onClose={() => setBarcodeProduct(null)}
+            product={barcodeProduct}
+          />
+        </Suspense>
+      )}
+      {isAdmin && deleteProduct && (
+        <Suspense fallback={null}>
+          <AdminDeleteProductModal
+            open={!!deleteProduct}
+            onClose={() => setDeleteProduct(null)}
+            onConfirm={confirmDeleteProduct}
+            productName={deleteProduct.name}
           />
         </Suspense>
       )}

@@ -45,7 +45,7 @@ export function useCatalog() {
   );
   const [coordStatus, setCoordStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
 
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get('q') ?? '');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sortBy, setSortBy] = useState<CatalogSortKey>('newest');
   const [viewPage, setViewPage] = useState(0);

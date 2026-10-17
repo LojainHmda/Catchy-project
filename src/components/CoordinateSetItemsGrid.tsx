@@ -4,6 +4,7 @@ import { Loader2, ShoppingCart } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '../lib/utils';
 import { coerceProductImages, isRemoteImageUrl, PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
+import { cloudinaryTransform } from '../lib/cloudinaryTransform';
 import { useCart } from '../context/CartContext';
 import { useLanguage } from '../context/LanguageContext';
 import { resolveVariantSelection } from '../lib/productVariants';
@@ -53,8 +54,9 @@ const QuickAddItem: React.FC<{
       <Link to={`/product/${product.id}`} className="block">
         <div className="aspect-square overflow-hidden bg-gray-50">
           <img
-            src={src}
+            src={cloudinaryTransform(src, { width: 200, height: 200 })}
             alt=""
+            loading="lazy"
             className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
             referrerPolicy={isRemoteImageUrl(src) ? 'no-referrer' : undefined}
             onError={(e) => {

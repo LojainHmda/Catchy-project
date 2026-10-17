@@ -4,6 +4,7 @@ import { db, doc, getDoc } from '../../firebase';
 import { loadCatalogIndex } from '../../lib/catalog/catalogService';
 import type { CatalogListProduct } from '../../lib/catalogProductList';
 import { PRODUCT_IMAGE_PLACEHOLDER } from '../../lib/productImages';
+import { cloudinaryTransform } from '../../lib/cloudinaryTransform';
 import {
   parseColorVariants,
   resolveVariantSelection,
@@ -17,7 +18,8 @@ import {
 import { formatOrderMoney } from '../../lib/orders';
 import type { ProductColorVariant } from '../../types/product';
 import type { OrderLineItem } from '../../types/order';
-import { cn } from '../../lib/utils';
+import { useLanguage } from '../../context/LanguageContext';
+import { cn, sanitizeIntegerInput } from '../../lib/utils';
 
 type OrderProductPickerProps = {
   /** Hand a staged line item up to the editor (not yet saved to Firestore). */
@@ -29,6 +31,7 @@ const INPUT =
   'h-9 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-catchy focus:ring-1 focus:ring-catchy/20';
 
 const OrderProductPicker: React.FC<OrderProductPickerProps> = ({ onAdd, onClose }) => {
+  const { t } = useLanguage();
   const [products, setProducts] = useState<CatalogListProduct[]>([]);
   const [loadingList, setLoadingList] = useState(true);
   const [search, setSearch] = useState('');
@@ -112,7 +115,7 @@ const OrderProductPicker: React.FC<OrderProductPickerProps> = ({ onAdd, onClose 
 
   const confirm = () => {
     if (!selected || !selection || !canAdd) return;
-    const productName = String(selected.data.name ?? 'Item');
+    const productName = String(selected.data.name ?? t('admin.orders.picker.fallbackName'));
     const price = Number(selected.data.price) || 0;
     const colorName = selection.hasVariants ? selection.variant?.name ?? null : null;
     const variantPart = [colorName, size].filter(Boolean).join(' / ');
@@ -134,12 +137,12 @@ const OrderProductPicker: React.FC<OrderProductPickerProps> = ({ onAdd, onClose 
   return (
     <div className="rounded-lg border border-gray-200 bg-gray-50/70 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Add a product</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{t('admin.orders.picker.title')}</p>
         <button
           type="button"
           onClick={onClose}
           className="inline-flex h-6 w-6 items-center justify-center rounded-full text-gray-400 hover:bg-gray-200 hover:text-gray-700"
-          aria-label="Cancel adding a product"
+          aria-label={t('admin.orders.picker.close')}
         >
           <X size={14} />
         </button>
@@ -148,23 +151,23 @@ const OrderProductPicker: React.FC<OrderProductPickerProps> = ({ onAdd, onClose 
       {!selected ? (
         <>
           <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Search className="pointer-events-none absolute start-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               type="search"
               value={search}
               autoFocus
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search products…"
-              className={cn(INPUT, 'pl-8')}
+              placeholder={t('admin.orders.picker.searchPlaceholder')}
+              className={cn(INPUT, 'ps-8')}
             />
           </div>
           <div className="mt-2 max-h-64 overflow-y-auto rounded-md border border-gray-200 bg-white">
             {loadingList ? (
               <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-500">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading products…
+                <Loader2 className="h-4 w-4 animate-spin" /> {t('admin.orders.picker.loadingProducts')}
               </div>
             ) : filtered.length === 0 ? (
-              <p className="py-6 text-center text-sm text-gray-500">No products found.</p>
+              <p className="py-6 text-center text-sm text-gray-500">{t('admin.orders.picker.noProducts')}</p>
             ) : (
               <ul className="divide-y divide-gray-100">
                 {filtered.map((p) => (
@@ -172,11 +175,11 @@ const OrderProductPicker: React.FC<OrderProductPickerProps> = ({ onAdd, onClose 
                     <button
                       type="button"
                       onClick={() => selectProduct(p.id)}
-                      className="flex w-full items-center gap-3 px-3 py-2 text-left transition hover:bg-gray-50"
+                      className="flex w-full items-center gap-3 px-3 py-2 text-start transition hover:bg-gray-50"
                     >
                       <div className="size-10 shrink-0 overflow-hidden rounded-md bg-gray-100 ring-1 ring-black/5">
                         <img
-                          src={p.images[0] || PRODUCT_IMAGE_PLACEHOLDER}
+                          src={cloudinaryTransform(p.images[0] || PRODUCT_IMAGE_PLACEHOLDER, { width: 40, height: 40 })}
                           alt={p.name}
                           className="h-full w-full object-cover"
                           referrerPolicy="no-referrer"
@@ -202,26 +205,26 @@ const OrderProductPicker: React.FC<OrderProductPickerProps> = ({ onAdd, onClose 
         </>
       ) : loadingProduct ? (
         <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-500">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+          <Loader2 className="h-4 w-4 animate-spin" /> {t('admin.common.loading')}
         </div>
       ) : (
         <div className="rounded-md border border-gray-200 bg-white p-3">
           <div className="mb-3 flex items-center justify-between gap-2">
             <p className="truncate text-sm font-semibold text-gray-900">
-              {String(selected.data.name ?? 'Product')}
+              {String(selected.data.name ?? t('admin.orders.picker.fallbackProduct'))}
             </p>
             <button
               type="button"
               onClick={() => setSelected(null)}
               className="shrink-0 text-xs font-medium text-catchy hover:underline"
             >
-              Change
+              {t('admin.common.change')}
             </button>
           </div>
 
           {variants.length > 0 ? (
             <div className="mb-3">
-              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">Color</p>
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">{t('admin.common.color')}</p>
               <div className="flex flex-wrap gap-1.5">
                 {variants.map((v) => (
                   <button
@@ -248,7 +251,7 @@ const OrderProductPicker: React.FC<OrderProductPickerProps> = ({ onAdd, onClose 
 
           {sized ? (
             <div className="mb-3">
-              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">Size</p>
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">{t('admin.common.size')}</p>
               <div className="flex flex-wrap gap-1.5">
                 {sizeEntries.map(([s, qty]) => (
                   <button
@@ -266,7 +269,7 @@ const OrderProductPicker: React.FC<OrderProductPickerProps> = ({ onAdd, onClose 
                     )}
                   >
                     {s}
-                    <span className="ml-1 text-[10px] font-normal text-gray-400">{qty}</span>
+                    <span className="ms-1 text-[10px] font-normal text-gray-400">{qty}</span>
                   </button>
                 ))}
               </div>
@@ -275,16 +278,17 @@ const OrderProductPicker: React.FC<OrderProductPickerProps> = ({ onAdd, onClose 
 
           <div className="flex items-end justify-between gap-3">
             <div>
-              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">Qty</p>
+              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">{t('admin.common.qty')}</p>
               <input
-                type="number"
-                min={1}
-                max={Math.max(1, available)}
+                type="text"
+                inputMode="numeric"
+                lang="en"
+                dir="ltr"
                 value={quantity}
-                onChange={(e) => setQuantity(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+                onChange={(e) => setQuantity(Math.max(1, Math.floor(Number(sanitizeIntegerInput(e.target.value)) || 1)))}
                 className={cn(INPUT, 'w-20')}
               />
-              <p className="mt-1 text-[11px] text-gray-400">{available} in stock</p>
+              <p className="mt-1 text-[11px] text-gray-400">{t('admin.orders.picker.inStock').replace('{n}', String(available))}</p>
             </div>
             <button
               type="button"
@@ -293,7 +297,7 @@ const OrderProductPicker: React.FC<OrderProductPickerProps> = ({ onAdd, onClose 
               className="inline-flex h-9 items-center gap-1.5 rounded-md bg-catchy px-3 text-xs font-semibold text-white transition hover:bg-catchy-dark disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus size={14} />
-              Add to order
+              {t('admin.orders.picker.addToOrder')}
             </button>
           </div>
         </div>

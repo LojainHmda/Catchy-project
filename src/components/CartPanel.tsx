@@ -11,6 +11,7 @@ import { sortedSizeStockEntries } from '../lib/productInventory';
 import { isCoordinateCartId, coordinateLookIdFromCart } from '../lib/coordinateCart';
 import { cn } from '../lib/utils';
 import { PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
+import { cloudinaryTransform } from '../lib/cloudinaryTransform';
 
 type CartProductGroup = {
   productId: string;
@@ -170,8 +171,9 @@ const CartPanel: React.FC<CartPanelProps> = ({ variant, onClose }) => {
                   )}
                 >
                   <img
-                    src={group.image || PRODUCT_IMAGE_PLACEHOLDER}
+                    src={cloudinaryTransform(group.image || PRODUCT_IMAGE_PLACEHOLDER, { width: 100, height: 133 })}
                     alt={group.name}
+                    loading="lazy"
                     className="h-full w-full object-cover"
                     referrerPolicy="no-referrer"
                   />

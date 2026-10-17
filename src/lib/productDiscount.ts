@@ -37,19 +37,20 @@ export function applyPercentToPrice(originalPrice: number, percent: number): num
 
 export function validateDiscountInputs(
   compareAt: number,
-  salePrice: number
+  salePrice: number,
+  t: (key: string) => string = (key) => key
 ): { ok: true } | { ok: false; message: string } {
   if (!Number.isFinite(compareAt) || compareAt <= 0) {
-    return { ok: false, message: 'Enter a valid original price greater than 0.' };
+    return { ok: false, message: t('admin.products.form.invalidOriginalPrice') };
   }
   if (!Number.isFinite(salePrice) || salePrice < 0) {
-    return { ok: false, message: 'Enter a valid sale price.' };
+    return { ok: false, message: t('admin.products.form.invalidSalePrice') };
   }
   if (salePrice >= compareAt) {
-    return { ok: false, message: 'Sale price must be lower than the original price.' };
+    return { ok: false, message: t('admin.products.form.salePriceTooHigh') };
   }
   if (getDiscountPercent(compareAt, salePrice) < 1) {
-    return { ok: false, message: 'Discount must be at least 1%.' };
+    return { ok: false, message: t('admin.products.form.discountTooSmall') };
   }
   return { ok: true };
 }
@@ -108,23 +109,24 @@ export function discountFormFromProduct(product: ProductLike & { price: number }
 
 export function resolveDiscountFromForm(
   form: DiscountFormState,
-  basePrice: number
+  basePrice: number,
+  t: (key: string) => string = (key) => key
 ): { ok: true; compareAt: number; salePrice: number } | { ok: false; message: string } {
   if (!form.enabled) {
-    return { ok: false, message: 'Discount is disabled.' };
+    return { ok: false, message: t('admin.products.form.discountDisabled') };
   }
 
   if (form.mode === 'percent') {
     const percent = parseFloat(form.percent);
     if (!Number.isFinite(percent) || percent < 1 || percent > 99) {
-      return { ok: false, message: 'Enter a discount between 1% and 99%.' };
+      return { ok: false, message: t('admin.discounts.invalidPercent') };
     }
     const compareAt = Number.isFinite(basePrice) && basePrice > 0 ? basePrice : parsePriceInput(form.compareAtPrice);
     if (compareAt == null || compareAt <= 0) {
-      return { ok: false, message: 'Enter a valid base price for the discount.' };
+      return { ok: false, message: t('admin.products.form.invalidBasePrice') };
     }
     const salePrice = applyPercentToPrice(compareAt, percent);
-    const check = validateDiscountInputs(compareAt, salePrice);
+    const check = validateDiscountInputs(compareAt, salePrice, t);
     if (!check.ok) return check;
     return { ok: true, compareAt, salePrice };
   }
@@ -132,9 +134,9 @@ export function resolveDiscountFromForm(
   const compareAt = parsePriceInput(form.compareAtPrice);
   const salePrice = parsePriceInput(form.salePrice);
   if (compareAt == null || salePrice == null) {
-    return { ok: false, message: 'Enter valid original and sale prices.' };
+    return { ok: false, message: t('admin.products.form.invalidPricesPair') };
   }
-  const check = validateDiscountInputs(compareAt, salePrice);
+  const check = validateDiscountInputs(compareAt, salePrice, t);
   if (!check.ok) return check;
   return { ok: true, compareAt, salePrice };
 }

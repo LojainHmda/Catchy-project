@@ -23,25 +23,25 @@ const OrderLineItemsList: React.FC<OrderLineItemsListProps> = ({
   onItemClick,
   variant = 'list',
 }) => {
-  const { isRTL } = useLanguage();
+  const { t, isRTL } = useLanguage();
   const resolvedImages = useOrderItemImages(items);
 
   if (!items.length) {
-    return <p className="text-xs text-gray-500">No line items recorded.</p>;
+    return <p className="text-xs text-gray-500">{t('orders.noLineItems')}</p>;
   }
 
   if (variant === 'table') {
     return (
-      <div className="overflow-x-auto" dir="ltr">
+      <div className="overflow-x-auto" dir={isRTL ? 'rtl' : 'ltr'}>
         <table className="w-full min-w-[560px] text-start text-sm">
           <thead>
             <tr className="border-b border-gray-200 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-              <th className="pb-2 pe-3 text-start font-semibold w-[72px]">Image</th>
-              <th className="pb-2 pe-3 text-start font-semibold">Product</th>
-              <th className="pb-2 pe-3 text-start font-semibold w-24">Color</th>
-              <th className="pb-2 pe-3 text-center font-semibold w-16">Size</th>
-              <th className="pb-2 pe-3 text-center font-semibold w-14">Qty</th>
-              <th className="pb-2 text-end font-semibold w-24">Total</th>
+              <th className="pb-2 pe-3 text-start font-semibold w-[72px]">{t('admin.orders.table.image')}</th>
+              <th className="pb-2 pe-3 text-start font-semibold">{t('admin.orders.table.product')}</th>
+              <th className="pb-2 pe-3 text-start font-semibold w-24">{t('admin.common.color')}</th>
+              <th className="pb-2 pe-3 text-center font-semibold w-16">{t('admin.common.size')}</th>
+              <th className="pb-2 pe-3 text-center font-semibold w-14">{t('admin.common.qty')}</th>
+              <th className="pb-2 text-end font-semibold w-24">{t('admin.common.total')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">

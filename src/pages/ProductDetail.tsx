@@ -1,14 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import { db, doc, getDoc } from '../firebase';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { CATEGORY_KEYS } from '../constants';
-import { ShoppingCart, Heart, Share2, ArrowLeft, ZoomIn } from 'lucide-react';
+import { ShoppingCart, Heart, Share2, QrCode, Barcode, Trash2, ArrowLeft, ZoomIn } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { coerceProductImages, isRemoteImageUrl, PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
+import { cloudinaryTransform } from '../lib/cloudinaryTransform';
 import ImageLightbox from '../components/ImageLightbox';
 import {
   availableSizes,
@@ -24,13 +26,20 @@ import {
 } from '../lib/productVariants';
 import ColorSwatchPicker from '../components/product/ColorSwatchPicker';
 import { getCatalogSaleMeta } from '../lib/catalogSale';
+import { deleteProductPermanently } from '../lib/admin/deleteProduct';
 import ProductPriceDisplay, { ProductSaleBadge } from '../components/ProductPriceDisplay';
 import SizeRequiredModal from '../components/product/SizeRequiredModal';
 
+const AdminProductQrModal = lazy(() => import('../components/admin/AdminProductQrModal'));
+const AdminProductBarcodeModal = lazy(() => import('../components/admin/AdminProductBarcodeModal'));
+const AdminDeleteProductModal = lazy(() => import('../components/admin/AdminDeleteProductModal'));
+
 const ProductDetail = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { addToCart, openCart } = useCart();
   const { role } = useAuth();
+  const isAdmin = role === 'admin';
   const { t, isRTL, language } = useLanguage();
   const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -38,6 +47,9 @@ const ProductDetail = () => {
   const [quantity, setQuantity] = useState(1);
   const [isAdding, setIsAdding] = useState(false);
   const [isFavorited, setIsFavorited] = useState(false);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [barcodeModalOpen, setBarcodeModalOpen] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [selectedColorId, setSelectedColorId] = useState<string | null>(null);
   const [sizePromptOpen, setSizePromptOpen] = useState(false);
@@ -296,9 +308,13 @@ const ProductDetail = () => {
                   aria-label={t('product.tapToZoom')}
                 >
                   <img
-                    src={allMedia[selectedImage]?.url || PRODUCT_IMAGE_PLACEHOLDER}
+                    src={cloudinaryTransform(allMedia[selectedImage]?.url || PRODUCT_IMAGE_PLACEHOLDER, {
+                      width: 480,
+                      height: 640,
+                    })}
                     alt={product.name}
                     className="h-full w-full object-cover"
+                    fetchPriority="high"
                     referrerPolicy={
                       isRemoteImageUrl(allMedia[selectedImage]?.url || '') ? 'no-referrer' : undefined
                     }
@@ -352,8 +368,13 @@ const ProductDetail = () => {
                     )}
                   >
                     <img
-                      src={media.type === 'video' ? 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23333%22 width=%22100%22 height=%22100%22/%3E%3C/svg%3E' : media.url}
+                      src={
+                        media.type === 'video'
+                          ? 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23333%22 width=%22100%22 height=%22100%22/%3E%3C/svg%3E'
+                          : cloudinaryTransform(media.url, { width: 120, height: 120 })
+                      }
                       alt=""
+                      loading={i === 0 ? 'eager' : 'lazy'}
                       className="h-full w-full object-cover"
                       referrerPolicy={isRemoteImageUrl(media.url || '') ? 'no-referrer' : undefined}
                     />
@@ -547,12 +568,84 @@ const ProductDetail = () => {
                 >
                   <Share2 size={18} />
                 </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setQrModalOpen(true)}
+                    className="rounded-xl border border-gray-100 bg-gray-50 p-2.5 text-gray-400 transition-colors hover:text-catchy active:scale-95"
+                    aria-label="Show product QR code"
+                    title="Show product QR code"
+                  >
+                    <QrCode size={18} />
+                  </button>
+                )}
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setBarcodeModalOpen(true)}
+                    className="rounded-xl border border-gray-100 bg-gray-50 p-2.5 text-gray-400 transition-colors hover:text-catchy active:scale-95"
+                    aria-label="Show product barcode"
+                    title="Show product barcode"
+                  >
+                    <Barcode size={18} />
+                  </button>
+                )}
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setDeleteModalOpen(true)}
+                    className="rounded-xl border border-gray-100 bg-gray-50 p-2.5 text-gray-400 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 active:scale-95"
+                    aria-label="Delete product permanently"
+                    title="Delete product permanently"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </div>
       </div>
       <SizeRequiredModal open={sizePromptOpen} onClose={() => setSizePromptOpen(false)} />
+      {isAdmin && qrModalOpen && (
+        <Suspense fallback={null}>
+          <AdminProductQrModal
+            open={qrModalOpen}
+            onClose={() => setQrModalOpen(false)}
+            product={product ? { id: product.id, name: product.name, price: product.price } : null}
+          />
+        </Suspense>
+      )}
+      {isAdmin && barcodeModalOpen && (
+        <Suspense fallback={null}>
+          <AdminProductBarcodeModal
+            open={barcodeModalOpen}
+            onClose={() => setBarcodeModalOpen(false)}
+            product={product ? { id: product.id, name: product.name, price: product.price, barcode: product.barcode } : null}
+          />
+        </Suspense>
+      )}
+      {isAdmin && deleteModalOpen && product && (
+        <Suspense fallback={null}>
+          <AdminDeleteProductModal
+            open={deleteModalOpen}
+            onClose={() => setDeleteModalOpen(false)}
+            productName={product.name}
+            onConfirm={async () => {
+              try {
+                await deleteProductPermanently(product.id);
+                toast.success('Product permanently deleted');
+                navigate('/catalog');
+              } catch (error) {
+                console.error('Error deleting product:', error);
+                toast.error('Could not delete product', {
+                  description: error instanceof Error ? error.message : 'Check console and Firestore rules.',
+                });
+              }
+            }}
+          />
+        </Suspense>
+      )}
       <ImageLightbox
         images={lightboxImages.length > 0 ? lightboxImages : [PRODUCT_IMAGE_PLACEHOLDER]}
         index={lightboxIndex}

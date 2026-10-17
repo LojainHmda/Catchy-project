@@ -3,6 +3,7 @@ import type { OrderLineItem } from '../../types/order';
 import { cn } from '../../lib/utils';
 
 import { PRODUCT_IMAGE_PLACEHOLDER } from '../../lib/productImages';
+import { cloudinaryTransform } from '../../lib/cloudinaryTransform';
 import { orderItemImageSrc, useOrderItemImages } from '../../hooks/useOrderItemImages';
 
 type OrderItemThumbnailsProps = {
@@ -39,7 +40,7 @@ const OrderItemThumbnails: React.FC<OrderItemThumbnailsProps> = ({
           style={{ zIndex: visible.length - index }}
         >
           <img
-            src={orderItemImageSrc(item, resolvedImages) || PRODUCT_IMAGE_PLACEHOLDER}
+            src={cloudinaryTransform(orderItemImageSrc(item, resolvedImages) || PRODUCT_IMAGE_PLACEHOLDER, { width: 44, height: 44 })}
             alt=""
             className="h-full w-full object-cover"
             referrerPolicy="no-referrer"

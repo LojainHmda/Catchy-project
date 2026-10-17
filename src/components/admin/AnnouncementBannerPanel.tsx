@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { Loader2, Save, Truck } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import AdminToggle from './AdminToggle';
+import { useLanguage } from '../../context/LanguageContext';
 import {
   ANNOUNCEMENT_DEFAULTS,
   subscribeAnnouncement,
@@ -14,6 +15,7 @@ const INPUT =
   'h-9 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-400 focus:ring-0';
 
 const AnnouncementBannerPanel = () => {
+  const { t } = useLanguage();
   const [form, setForm] = useState<AnnouncementSettings>(ANNOUNCEMENT_DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -43,10 +45,10 @@ const AnnouncementBannerPanel = () => {
         textAr: form.textAr.trim() || ANNOUNCEMENT_DEFAULTS.textAr,
         textEn: form.textEn.trim() || ANNOUNCEMENT_DEFAULTS.textEn,
       });
-      toast.success('Banner updated — live on the site instantly');
+      toast.success(t('admin.discounts.announcement.toastSaved'));
     } catch (error) {
       console.error('Failed to save announcement banner:', error);
-      toast.error('Could not save banner');
+      toast.error(t('admin.discounts.announcement.toastSaveFailed'));
     } finally {
       setSaving(false);
     }
@@ -56,7 +58,7 @@ const AnnouncementBannerPanel = () => {
     return (
       <div className="flex items-center justify-center gap-2 py-12 text-sm text-gray-500">
         <Loader2 className="h-4 w-4 animate-spin" />
-        Loading banner settings…
+        {t('admin.discounts.announcement.loading')}
       </div>
     );
   }
@@ -65,7 +67,7 @@ const AnnouncementBannerPanel = () => {
     <div className="space-y-5">
       {/* Live preview */}
       <div>
-        <p className="mb-1.5 text-xs font-medium text-gray-500">Live preview</p>
+        <p className="mb-1.5 text-xs font-medium text-gray-500">{t('coordinates.livePreview')}</p>
         {form.enabled ? (
           <div
             className="flex w-full items-center justify-center gap-1.5 rounded-md bg-primary py-2 text-center text-xs tracking-wide text-on-primary"
@@ -76,7 +78,7 @@ const AnnouncementBannerPanel = () => {
           </div>
         ) : (
           <div className="rounded-md border border-dashed border-gray-200 bg-gray-50 py-2 text-center text-xs text-gray-400">
-            Banner is hidden — customers won't see it.
+            {t('admin.discounts.announcement.hiddenHint')}
           </div>
         )}
       </div>
@@ -84,20 +86,20 @@ const AnnouncementBannerPanel = () => {
       {/* Show / hide */}
       <div className="flex items-center justify-between rounded-md border border-gray-200 bg-white px-4 py-3">
         <div>
-          <p className="text-sm font-medium text-gray-900">Show banner</p>
-          <p className="text-xs text-gray-500">Toggle the top announcement bar on every page.</p>
+          <p className="text-sm font-medium text-gray-900">{t('admin.discounts.announcement.showBanner')}</p>
+          <p className="text-xs text-gray-500">{t('admin.discounts.announcement.showBannerHint')}</p>
         </div>
         <AdminToggle
           checked={form.enabled}
           onChange={(checked) => update({ enabled: checked })}
-          aria-label="Show announcement banner"
+          aria-label={t('admin.discounts.announcement.showBanner')}
         />
       </div>
 
       {/* Text fields */}
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">Arabic text</label>
+          <label className="mb-1 block text-xs font-medium text-gray-500">{t('admin.discounts.announcement.arabicText')}</label>
           <input
             type="text"
             dir="rtl"
@@ -108,7 +110,7 @@ const AnnouncementBannerPanel = () => {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-500">English text</label>
+          <label className="mb-1 block text-xs font-medium text-gray-500">{t('admin.discounts.announcement.englishText')}</label>
           <input
             type="text"
             dir="ltr"
@@ -130,7 +132,7 @@ const AnnouncementBannerPanel = () => {
           )}
         >
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-          {saving ? 'Saving…' : 'Save changes'}
+          {saving ? t('admin.products.form.saving') : t('admin.orders.edit.saveChanges')}
         </button>
       </div>
     </div>

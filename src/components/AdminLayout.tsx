@@ -8,6 +8,7 @@ import {
   Settings,
   LogOut,
   ChevronRight,
+  ChevronLeft,
   ClipboardList,
   Image as ImageIcon,
   Store,
@@ -17,13 +18,17 @@ import {
   Percent,
   Film,
   LayoutGrid,
+  CreditCard,
+  Languages,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import { cn } from '../lib/utils';
 
 const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { logout } = useAuth();
   const location = useLocation();
+  const { t, language, setLanguage, isRTL } = useLanguage();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
@@ -58,27 +63,31 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }, [mobileNavOpen]);
 
   const menuItems = [
-    { icon: LayoutDashboard, label: 'Dashboard', path: '/admin' },
-    { icon: Store, label: 'Shop Page', path: '/' },
-    { icon: ImageIcon, label: 'Hero Reels', path: '/admin/hero' },
-    { icon: Film, label: 'Hero Video', path: '/admin/hero-video' },
-    { icon: Package, label: 'Products', path: '/admin/products' },
-    { icon: Percent, label: 'Discounts', path: '/admin/discounts' },
-    { icon: LayoutGrid, label: 'Coordinates', path: '/admin/coordinates' },
-    { icon: ClipboardList, label: 'Stock', path: '/admin/stock' },
-    { icon: ShoppingCart, label: 'Orders', path: '/admin/orders' },
-    { icon: Users, label: 'Customers', path: '/admin/customers' },
-    { icon: MessageCircle, label: 'WhatsApp', path: '/admin/whatsapp' },
-    { icon: Settings, label: 'Settings', path: '/admin/settings' },
+    { icon: LayoutDashboard, label: t('admin.nav.dashboard'), path: '/admin' },
+    { icon: Store, label: t('admin.nav.shopPage'), path: '/' },
+    { icon: CreditCard, label: t('admin.nav.pointOfSale'), path: '/pos' },
+    { icon: ImageIcon, label: t('admin.nav.heroReels'), path: '/admin/hero' },
+    { icon: Film, label: t('admin.nav.heroVideo'), path: '/admin/hero-video' },
+    { icon: Package, label: t('admin.nav.products'), path: '/admin/products' },
+    { icon: Percent, label: t('admin.nav.discounts'), path: '/admin/discounts' },
+    { icon: LayoutGrid, label: t('admin.nav.coordinates'), path: '/admin/coordinates' },
+    { icon: ClipboardList, label: t('admin.nav.stock'), path: '/admin/stock' },
+    { icon: ShoppingCart, label: t('admin.nav.orders'), path: '/admin/orders' },
+    { icon: Users, label: t('admin.nav.customers'), path: '/admin/customers' },
+    { icon: MessageCircle, label: t('admin.nav.whatsapp'), path: '/admin/whatsapp' },
+    { icon: Settings, label: t('admin.nav.settings'), path: '/admin/settings' },
   ];
 
   const closeMobileNav = () => setMobileNavOpen(false);
 
   return (
     <div
-      dir="ltr"
-      lang="en"
-      className="flex min-h-screen min-w-0 max-w-[100vw] flex-col overflow-x-hidden bg-gray-50/50 font-sans md:flex-row"
+      dir={isRTL ? 'rtl' : 'ltr'}
+      lang={language}
+      className={cn(
+        'flex min-h-screen min-w-0 max-w-[100vw] flex-col overflow-x-hidden bg-gray-50/50 md:flex-row',
+        isRTL ? 'font-arabic' : 'font-sans'
+      )}
     >
       {/* Mobile top bar */}
       <header
@@ -90,7 +99,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           type="button"
           aria-expanded={mobileNavOpen}
           aria-controls="admin-mobile-drawer"
-          aria-label="Open admin menu"
+          aria-label={t('admin.nav.openMenu')}
           onClick={() => setMobileNavOpen(true)}
           className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-800 shadow-sm touch-manipulation active:bg-gray-50"
         >
@@ -104,15 +113,24 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-catchy text-base font-bold text-white shadow-md shadow-catchy/25">
             C
           </div>
-          <span className="truncate text-lg font-black tracking-tight text-gray-900">ADMIN</span>
+          <span className="truncate text-lg font-black tracking-tight text-gray-900">{t('admin.nav.brand')}</span>
         </Link>
+        <button
+          type="button"
+          onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')}
+          aria-label={t('admin.language.switch')}
+          className="inline-flex h-9 shrink-0 items-center gap-1 rounded-xl border border-gray-200 bg-white px-2.5 text-xs font-bold text-gray-600 transition hover:border-catchy/40 hover:text-catchy active:scale-[0.95]"
+        >
+          <Languages size={14} />
+          {language === 'en' ? 'ع' : 'EN'}
+        </button>
       </header>
 
       {/* Mobile drawer backdrop (not in DOM on desktop — avoids covering main) */}
       {mobileNavOpen ? (
         <button
           type="button"
-          aria-label="Close admin menu"
+          aria-label={t('admin.nav.closeMenu')}
           className="fixed inset-0 z-[60] bg-black/45 backdrop-blur-[1px] md:hidden"
           onClick={closeMobileNav}
         />
@@ -122,9 +140,12 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       <aside
         id="admin-mobile-drawer"
         className={cn(
-          'flex max-h-[100dvh] flex-col border-r border-gray-100 bg-white shadow-xl md:shadow-none',
-          'fixed inset-y-0 left-0 z-[70] w-[min(19rem,88vw)] max-w-[min(19rem,88vw)] transition-transform duration-300 ease-out motion-reduce:transition-none',
-          mobileNavOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none md:pointer-events-auto',
+          'flex max-h-[100dvh] flex-col border-e border-gray-100 bg-white shadow-xl md:shadow-none',
+          'fixed inset-y-0 z-[70] w-[min(19rem,88vw)] max-w-[min(19rem,88vw)] transition-transform duration-300 ease-out motion-reduce:transition-none',
+          isRTL ? 'right-0' : 'left-0',
+          mobileNavOpen
+            ? 'translate-x-0'
+            : cn(isRTL ? 'translate-x-full' : '-translate-x-full', 'pointer-events-none md:pointer-events-auto'),
           'md:relative md:z-0 md:h-screen md:max-h-none md:w-72 md:max-w-none md:translate-x-0 md:sticky md:top-0 md:shadow-none'
         )}
       >
@@ -133,11 +154,11 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-catchy text-xl font-bold text-white shadow-lg shadow-catchy/20">
               C
             </div>
-            <span className="text-xl font-black tracking-tight text-gray-900 md:text-2xl">ADMIN</span>
+            <span className="text-xl font-black tracking-tight text-gray-900 md:text-2xl">{t('admin.nav.brand')}</span>
           </Link>
           <button
             type="button"
-            aria-label="Close menu"
+            aria-label={t('admin.nav.closeMenuShort')}
             className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 text-gray-600 touch-manipulation active:bg-gray-50 md:hidden"
             onClick={closeMobileNav}
           >
@@ -167,13 +188,24 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                   />
                   <span className="truncate">{item.label}</span>
                 </div>
-                {isActive && <ChevronRight size={16} className="shrink-0" />}
+                {isActive ? (
+                  isRTL ? <ChevronLeft size={16} className="shrink-0" /> : <ChevronRight size={16} className="shrink-0" />
+                ) : null}
               </Link>
             );
           })}
         </nav>
 
         <div className="border-t border-gray-50 p-4 md:p-6">
+          <button
+            type="button"
+            onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')}
+            aria-label={t('admin.language.switch')}
+            className="mb-1.5 hidden min-h-[44px] w-full items-center gap-3 rounded-2xl px-4 text-sm font-bold text-gray-500 transition-all hover:bg-gray-50 hover:text-gray-900 md:flex"
+          >
+            <Languages size={20} className="text-gray-400" />
+            {language === 'en' ? 'العربية' : 'English'}
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -183,7 +215,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             className="flex min-h-[48px] w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-red-500 transition-all touch-manipulation hover:bg-red-50 active:bg-red-100 md:py-3.5"
           >
             <LogOut size={20} />
-            Logout
+            {t('admin.nav.logout')}
           </button>
         </div>
       </aside>

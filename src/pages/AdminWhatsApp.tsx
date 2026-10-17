@@ -11,6 +11,7 @@ import {
 } from '../firebase';
 import { sendWhatsAppText, normalizePhone } from '../lib/whatsapp';
 import { cn } from '../lib/utils';
+import { useLanguage } from '../context/LanguageContext';
 
 type Direction = 'in' | 'out';
 type Message = {
@@ -40,12 +41,14 @@ function toDate(value: unknown): Date | null {
   return null;
 }
 
-function formatTime(d: Date | null): string {
+function formatTime(d: Date | null, locale: string): string {
   if (!d) return '';
-  return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(locale, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
 const AdminWhatsApp = () => {
+  const { t, language, isRTL } = useLanguage();
+  const dateLocale = language === 'ar' ? 'ar' : 'en-GB';
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [activePhone, setActivePhone] = useState<string | null>(null);
@@ -81,7 +84,7 @@ const AdminWhatsApp = () => {
       },
       (err) => {
         console.error('whatsapp_messages listener error:', err);
-        setError('Could not load messages. Check Firestore rules are deployed.');
+        setError(t('admin.whatsapp.loadFailed'));
         setLoading(false);
       }
     );
@@ -128,7 +131,7 @@ const AdminWhatsApp = () => {
     setSending(true);
     setError(null);
     try {
-      const result = await sendWhatsAppText(phone, text);
+      const result = await sendWhatsAppText(phone, text, t);
       // Log the outbound message so it appears in the thread (realtime listener picks it up).
       await addDoc(collection(db, 'whatsapp_messages'), {
         phone,
@@ -141,7 +144,7 @@ const AdminWhatsApp = () => {
       });
       setDraft('');
     } catch (err: any) {
-      setError(err?.message || 'Failed to send message');
+      setError(err?.message || t('admin.whatsapp.sendFailed'));
     } finally {
       setSending(false);
     }
@@ -160,15 +163,15 @@ const AdminWhatsApp = () => {
       <header className="border-b border-gray-200 pb-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">WhatsApp</h1>
-            <p className="mt-0.5 text-sm text-gray-500">Send and receive customer messages.</p>
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">{t('admin.nav.whatsapp')}</h1>
+            <p className="mt-0.5 text-sm text-gray-500">{t('admin.whatsapp.subtitle')}</p>
           </div>
           <button
             type="button"
             onClick={() => setComposeOpen(true)}
             className="inline-flex h-9 items-center gap-1.5 rounded-md bg-catchy px-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-catchy-dark"
           >
-            <Plus size={16} /> New
+            <Plus size={16} /> {t('admin.whatsapp.newButton')}
           </button>
         </div>
       </header>
@@ -189,12 +192,12 @@ const AdminWhatsApp = () => {
         >
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-12 text-sm text-gray-500">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+              <Loader2 className="h-4 w-4 animate-spin" /> {t('admin.common.loading')}
             </div>
           ) : conversations.length === 0 ? (
             <div className="flex flex-col items-center gap-2 px-4 py-12 text-center text-sm text-gray-500">
               <MessageCircle className="h-6 w-6 text-gray-300" />
-              No conversations yet. Tap “New” to message a customer.
+              {t('admin.whatsapp.noConversations')}
             </div>
           ) : (
             <ul className="divide-y divide-gray-100">
@@ -204,7 +207,7 @@ const AdminWhatsApp = () => {
                     type="button"
                     onClick={() => setActivePhone(c.phone)}
                     className={cn(
-                      'flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50',
+                      'flex w-full items-center gap-3 px-4 py-3 text-start transition-colors hover:bg-gray-50',
                       activePhone === c.phone && 'bg-green-50/60'
                     )}
                   >
@@ -216,11 +219,11 @@ const AdminWhatsApp = () => {
                         {c.name || `+${c.phone}`}
                       </span>
                       <span className="block truncate text-xs text-gray-500">
-                        {c.last.direction === 'out' ? 'You: ' : ''}
+                        {c.last.direction === 'out' ? t('admin.whatsapp.youPrefix') : ''}
                         {c.last.text || '—'}
                       </span>
                     </span>
-                    <span className="shrink-0 text-[10px] text-gray-400">{formatTime(c.last.createdAt)}</span>
+                    <span className="shrink-0 text-[10px] text-gray-400">{formatTime(c.last.createdAt, dateLocale)}</span>
                   </button>
                 </li>
               ))}
@@ -237,7 +240,7 @@ const AdminWhatsApp = () => {
                   type="button"
                   onClick={() => setActivePhone(null)}
                   className="text-gray-400 hover:text-gray-700 md:hidden"
-                  aria-label="Back"
+                  aria-label={t('admin.common.back')}
                 >
                   <X size={18} />
                 </button>
@@ -251,7 +254,10 @@ const AdminWhatsApp = () => {
                 </span>
               </div>
 
-              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-gray-50/50 p-4">
+              {/* Bubble side (sent=right, received=left) is a fixed chat convention — it stays
+                  physically fixed regardless of admin UI language, like WhatsApp itself. Each
+                  message's own text still gets dir="auto" so Arabic/English content reads correctly. */}
+              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-gray-50/50 p-4" dir="ltr">
                 {(activeConversation?.messages ?? []).map((m) => (
                   <div
                     key={m.id}
@@ -265,14 +271,14 @@ const AdminWhatsApp = () => {
                           : 'rounded-bl-sm bg-white text-gray-900'
                       )}
                     >
-                      <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                      <p className="whitespace-pre-wrap break-words" dir="auto">{m.text}</p>
                       <p
                         className={cn(
                           'mt-1 text-[10px]',
                           m.direction === 'out' ? 'text-white/70' : 'text-gray-400'
                         )}
                       >
-                        {formatTime(m.createdAt)}
+                        {formatTime(m.createdAt, dateLocale)}
                         {m.direction === 'out' && m.status ? ` · ${m.status}` : ''}
                       </p>
                     </div>
@@ -292,7 +298,8 @@ const AdminWhatsApp = () => {
                     }
                   }}
                   rows={1}
-                  placeholder="Type a message…"
+                  placeholder={t('admin.whatsapp.typeMessagePlaceholder')}
+                  dir="auto"
                   className="max-h-32 min-h-[40px] flex-1 resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 outline-none focus:border-catchy"
                 />
                 <button
@@ -300,7 +307,7 @@ const AdminWhatsApp = () => {
                   onClick={send}
                   disabled={sending || !draft.trim()}
                   className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-catchy text-white shadow-sm transition-colors hover:bg-catchy-dark disabled:opacity-50"
-                  aria-label="Send"
+                  aria-label={t('admin.whatsapp.sendAria')}
                 >
                   {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send size={18} />}
                 </button>
@@ -308,7 +315,7 @@ const AdminWhatsApp = () => {
             </>
           ) : (
             <div className="flex flex-1 items-center justify-center text-sm text-gray-400">
-              Select a conversation
+              {t('admin.whatsapp.selectConversation')}
             </div>
           )}
         </section>
@@ -319,18 +326,19 @@ const AdminWhatsApp = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setComposeOpen(false)}>
           <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-900">New message</h2>
+              <h2 className="text-base font-semibold text-gray-900">{t('admin.whatsapp.newMessageHeading')}</h2>
               <button type="button" onClick={() => setComposeOpen(false)} className="text-gray-400 hover:text-gray-700">
                 <X size={18} />
               </button>
             </div>
-            <label className="mt-4 block text-xs font-medium text-gray-500">Phone number (international, no +)</label>
+            <label className="mt-4 block text-xs font-medium text-gray-500">{t('admin.whatsapp.phoneNumberLabel')}</label>
             <input
               value={newPhone}
               onChange={(e) => setNewPhone(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && startConversation()}
-              placeholder="e.g. 971585164944"
+              placeholder={t('admin.whatsapp.phoneExamplePlaceholder')}
               inputMode="tel"
+              dir="ltr"
               className="mt-1 h-10 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-900 outline-none focus:border-catchy"
             />
             <button
@@ -339,7 +347,7 @@ const AdminWhatsApp = () => {
               disabled={!normalizePhone(newPhone)}
               className="mt-4 h-10 w-full rounded-lg bg-catchy text-sm font-medium text-white transition-colors hover:bg-catchy-dark disabled:opacity-50"
             >
-              Start conversation
+              {t('admin.whatsapp.startConversation')}
             </button>
           </div>
         </div>

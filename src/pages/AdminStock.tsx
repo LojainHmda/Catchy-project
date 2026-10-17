@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { db, collection, getDocs, updateDoc, doc, query, orderBy, limit, startAfter } from '../firebase';
 import { Search, Loader2, ChevronDown } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, sanitizeIntegerInput } from '../lib/utils';
 import { coerceProductImages, PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
+import { useLanguage } from '../context/LanguageContext';
+import { CATEGORY_KEYS } from '../constants';
 
 type ProductRow = {
   id: string;
@@ -16,13 +18,14 @@ const PAGE_SIZE = 50;
 
 type StockFilter = 'all' | 'low' | 'out';
 
-function stockStatus(stock: number): { label: string; tone: string } {
-  if (stock === 0) return { label: 'Out of stock', tone: 'bg-gray-300' };
-  if (stock <= 10) return { label: 'Low', tone: 'bg-gray-500' };
-  return { label: 'In stock', tone: 'bg-gray-900' };
+function stockStatus(stock: number, t: (key: string) => string): { label: string; tone: string } {
+  if (stock === 0) return { label: t('admin.stock.statusOut'), tone: 'bg-gray-300' };
+  if (stock <= 10) return { label: t('admin.stock.statusLow'), tone: 'bg-gray-500' };
+  return { label: t('admin.stock.statusIn'), tone: 'bg-gray-900' };
 }
 
 const AdminStock = () => {
+  const { t } = useLanguage();
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -148,28 +151,28 @@ const AdminStock = () => {
     });
   }, [products, searchTerm, stockFilter]);
 
-  const stockFilters: { key: StockFilter; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'low', label: 'Low' },
-    { key: 'out', label: 'Out' },
+  const stockFilters: { key: StockFilter; labelKey: string }[] = [
+    { key: 'all', labelKey: 'cat.all' },
+    { key: 'low', labelKey: 'admin.products.page.statLow' },
+    { key: 'out', labelKey: 'admin.stock.statusOut' },
   ];
 
   return (
     <div className="min-w-0">
       <header className="border-b border-gray-200 pb-4">
-        <h1 className="text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">Stock</h1>
-        <p className="mt-0.5 text-sm text-gray-500">Update inventory levels across the catalog.</p>
+        <h1 className="text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">{t('admin.nav.stock')}</h1>
+        <p className="mt-0.5 text-sm text-gray-500">{t('admin.stock.subtitle')}</p>
         <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
           <div className="flex gap-1.5">
-            <dt className="text-gray-500">Products</dt>
+            <dt className="text-gray-500">{t('admin.nav.products')}</dt>
             <dd className="font-medium tabular-nums text-gray-900">{summary.total}</dd>
           </div>
           <div className="flex gap-1.5">
-            <dt className="text-gray-500">Low</dt>
+            <dt className="text-gray-500">{t('admin.products.page.statLow')}</dt>
             <dd className="font-medium tabular-nums text-gray-900">{summary.low}</dd>
           </div>
           <div className="flex gap-1.5">
-            <dt className="text-gray-500">Out of stock</dt>
+            <dt className="text-gray-500">{t('admin.stock.statusOut')}</dt>
             <dd className="font-medium tabular-nums text-gray-900">{summary.out}</dd>
           </div>
         </dl>
@@ -178,13 +181,13 @@ const AdminStock = () => {
       <div className="mt-4">
         <div className="flex flex-col gap-2 border-b border-gray-200 pb-3 sm:flex-row sm:items-center">
           <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               type="search"
-              placeholder="Search products…"
+              placeholder={t('admin.stock.searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="h-9 w-full rounded-md border border-gray-200 bg-white pl-9 pr-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-400 focus:ring-0"
+              className="h-9 w-full rounded-md border border-gray-200 bg-white ps-9 pe-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-400 focus:ring-0"
             />
           </div>
           <div className="flex flex-wrap gap-1">
@@ -200,8 +203,8 @@ const AdminStock = () => {
                     : 'text-gray-600 hover:bg-gray-100'
                 )}
               >
-                {f.label}
-                <span className="ml-1 tabular-nums opacity-70">{filterCounts[f.key]}</span>
+                {t(f.labelKey)}
+                <span className="ms-1 tabular-nums opacity-70">{filterCounts[f.key]}</span>
               </button>
             ))}
           </div>
@@ -211,28 +214,28 @@ const AdminStock = () => {
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-12 text-sm text-gray-500">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Loading…
+              {t('admin.common.loading')}
             </div>
           ) : filteredProducts.length === 0 ? (
-            <p className="py-10 text-center text-sm text-gray-500">No products match your filters.</p>
+            <p className="py-10 text-center text-sm text-gray-500">{t('admin.stock.noMatch')}</p>
           ) : (
             <>
               <div className="hidden overflow-x-auto md:block">
-                <table className="w-full text-left text-sm">
+                <table className="w-full text-start text-sm">
                   <thead>
                     <tr className="border-b border-gray-200 text-xs font-medium text-gray-500">
-                      <th className="px-4 py-2.5 font-medium">Product</th>
-                      <th className="px-4 py-2.5 font-medium">On hand</th>
-                      <th className="px-4 py-2.5 font-medium">Status</th>
-                      <th className="px-4 py-2.5 font-medium">New qty</th>
-                      <th className="px-4 py-2.5 text-right font-medium" />
+                      <th className="px-4 py-2.5 font-medium">{t('admin.orders.table.product')}</th>
+                      <th className="px-4 py-2.5 font-medium">{t('admin.stock.colOnHand')}</th>
+                      <th className="px-4 py-2.5 font-medium">{t('admin.common.status')}</th>
+                      <th className="px-4 py-2.5 font-medium">{t('admin.stock.colNewQty')}</th>
+                      <th className="px-4 py-2.5 text-end font-medium" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {filteredProducts.map((product) => {
                       const currentVal = stockUpdates[product.id] ?? product.stock;
                       const hasChanged = currentVal !== product.stock;
-                      const status = stockStatus(product.stock);
+                      const status = stockStatus(product.stock, t);
 
                       return (
                         <tr key={product.id} className="hover:bg-gray-50/60">
@@ -245,7 +248,7 @@ const AdminStock = () => {
                                 referrerPolicy="no-referrer" loading="lazy"/>
                               <div className="min-w-0">
                                 <p className="truncate font-medium text-gray-900">{product.name}</p>
-                                <p className="truncate text-xs text-gray-500">{product.category}</p>
+                                <p className="truncate text-xs text-gray-500">{t(CATEGORY_KEYS[product.category] || product.category)}</p>
                               </div>
                             </div>
                           </td>
@@ -258,10 +261,12 @@ const AdminStock = () => {
                           </td>
                           <td className="px-4 py-2.5">
                             <input
-                              type="number"
-                              min={0}
+                              type="text"
+                              inputMode="numeric"
+                              lang="en"
+                              dir="ltr"
                               value={currentVal}
-                              onChange={(e) => handleStockChange(product.id, e.target.value)}
+                              onChange={(e) => handleStockChange(product.id, sanitizeIntegerInput(e.target.value))}
                               className="h-8 w-20 rounded-md border border-gray-200 px-2 text-center text-sm tabular-nums text-gray-900 outline-none focus:border-gray-400"
                             />
                           </td>
@@ -277,7 +282,7 @@ const AdminStock = () => {
                                   : 'cursor-not-allowed text-gray-300'
                               )}
                             >
-                              {savingId === product.id ? 'Saving…' : 'Save'}
+                              {savingId === product.id ? t('admin.products.form.saving') : t('admin.stock.save')}
                             </button>
                           </td>
                         </tr>
@@ -291,7 +296,7 @@ const AdminStock = () => {
                 {filteredProducts.map((product) => {
                   const currentVal = stockUpdates[product.id] ?? product.stock;
                   const hasChanged = currentVal !== product.stock;
-                  const status = stockStatus(product.stock);
+                  const status = stockStatus(product.stock, t);
 
                   return (
                     <li key={product.id} className="px-4 py-3">
@@ -304,14 +309,16 @@ const AdminStock = () => {
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium text-gray-900">{product.name}</p>
                           <p className="text-xs text-gray-500">
-                            {product.stock} on hand · {status.label}
+                            {t('admin.stock.onHandMobile').replace('{n}', String(product.stock)).replace('{status}', status.label)}
                           </p>
                           <div className="mt-2 flex items-center gap-2">
                             <input
-                              type="number"
-                                          min={0}
+                              type="text"
+                              inputMode="numeric"
+                              lang="en"
+                              dir="ltr"
                               value={currentVal}
-                              onChange={(e) => handleStockChange(product.id, e.target.value)}
+                              onChange={(e) => handleStockChange(product.id, sanitizeIntegerInput(e.target.value))}
                               className="h-8 w-20 rounded-md border border-gray-200 px-2 text-center text-sm tabular-nums outline-none focus:border-gray-400"
                             />
                             <button
@@ -325,7 +332,7 @@ const AdminStock = () => {
                                   : 'cursor-not-allowed text-gray-300'
                               )}
                             >
-                              {savingId === product.id ? '…' : 'Save'}
+                              {savingId === product.id ? '…' : t('admin.stock.save')}
                             </button>
                           </div>
                         </div>
@@ -347,7 +354,7 @@ const AdminStock = () => {
             className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
           >
             {loadingMore ? <Loader2 size={14} className="animate-spin" /> : <ChevronDown size={14} />}
-            Load more products
+            {t('admin.products.page.loadMore')}
           </button>
         </div>
       )}

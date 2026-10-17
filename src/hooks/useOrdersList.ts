@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { db, collection, getDocs } from '../firebase';
 import { fetchAllOrders, fetchOrdersForUser } from '../lib/orders';
+import { fetchUserProfilesByIds } from '../lib/fetchUserProfilesByIds';
 import type { OrderRecord } from '../types/order';
 
 type OrdersListScope = 'admin' | 'user';
@@ -42,19 +42,8 @@ export function useOrdersList(scope: OrdersListScope | null, userId?: string | n
           return;
         }
 
-        const [ordersRows, usersSnap] = await Promise.all([
-          fetchAllOrders(),
-          getDocs(collection(db, 'users')),
-        ]);
-
-        const profiles = new Map<string, { email: string | null; displayName: string | null }>();
-        usersSnap.docs.forEach((docSnap) => {
-          const data = docSnap.data();
-          profiles.set(docSnap.id, {
-            email: (data.email as string) ?? null,
-            displayName: (data.displayName as string) ?? null,
-          });
-        });
+        const ordersRows = await fetchAllOrders();
+        const profiles = await fetchUserProfilesByIds(ordersRows.map((o) => o.userId));
 
         setOrders(
           ordersRows.map((order) => {

@@ -1,5 +1,13 @@
-import type { OrderLineItem, OrderRecord, OrderStatus } from '../../types/order';
-import { ORDER_STATUSES } from '../../types/order';
+import type {
+  OrderLineItem,
+  OrderRecord,
+  OrderStatus,
+  PosDiscount,
+  PosPayment,
+  PosSaleCancellation,
+  PosSaleCorrection,
+} from '../../types/order';
+import { CANCELLED_ORDER_STATUS, ORDER_STATUSES } from '../../types/order';
 import { getShippingCost } from '../shippingZones';
 
 export const ORDER_STATUS_FLOW: OrderStatus[] = ['pending', 'processing', 'shipped', 'delivered'];
@@ -25,7 +33,20 @@ export function orderStatusStep(status: OrderStatus): number {
 }
 
 export function isOrderActive(status: OrderStatus): boolean {
-  return status !== 'delivered' && status !== 'cancelled';
+  return status !== 'delivered' && status !== 'cancelled' && status !== 'completed';
+}
+
+/**
+ * Sums `total` across orders that still represent real revenue — i.e. every
+ * status except 'cancelled'. Shared by every revenue figure so web and POS
+ * totals stay consistent: a cancelled order (web — never fulfilled/paid; POS
+ * — voided and its stock restored) contributes nothing, while a *corrected*
+ * (but not cancelled) POS sale is counted at its current `total`, since that
+ * field is always the server-recomputed, authoritative corrected total (see
+ * posSaleCorrection.js) — there is nothing else to special-case here.
+ */
+export function sumOrderRevenue(orders: Pick<OrderRecord, 'status' | 'total'>[]): number {
+  return orders.reduce((sum, order) => (order.status === CANCELLED_ORDER_STATUS ? sum : sum + order.total), 0);
 }
 
 export function formatOrderMoney(amount: number, locale = 'en-GB'): string {
@@ -131,6 +152,94 @@ export function parseLineItemDisplay(item: Pick<OrderLineItem, 'name' | 'size' |
   return { productName, color, size };
 }
 
+function parsePosPayment(raw: unknown): PosPayment | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const payment = raw as Record<string, unknown>;
+  const method = payment.method === 'card' ? 'card' : payment.method === 'split' ? 'split' : 'cash';
+  return {
+    method,
+    cashAmount: Number(payment.cashAmount) || 0,
+    cardAmount: Number(payment.cardAmount) || 0,
+    changeGiven: Number(payment.changeGiven) || 0,
+  };
+}
+
+function parsePosDiscount(raw: unknown): PosDiscount | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const discount = raw as Record<string, unknown>;
+  const amount = Number(discount.amount) || 0;
+  if (amount <= 0) return null;
+  return {
+    mode: discount.mode === 'amount' ? 'amount' : 'percent',
+    value: Number(discount.value) || 0,
+    amount,
+    reason: typeof discount.reason === 'string' && discount.reason.trim() ? discount.reason.trim() : null,
+  };
+}
+
+function parseCorrectionBeforeSnapshot(raw: unknown): PosSaleCorrection['before'] {
+  const snap = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  return {
+    items: parseOrderLineItems(snap.items),
+    subtotal: snap.subtotal == null ? null : Number(snap.subtotal) || 0,
+    discount: parsePosDiscount(snap.discount),
+    total: snap.total == null ? null : Number(snap.total) || 0,
+  };
+}
+
+function parseCorrectionAfterSnapshot(raw: unknown): PosSaleCorrection['after'] {
+  const snap = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  return {
+    items: parseOrderLineItems(snap.items),
+    subtotal: Number(snap.subtotal) || 0,
+    discount: parsePosDiscount(snap.discount),
+    total: Number(snap.total) || 0,
+  };
+}
+
+/** Tolerant of any legacy/malformed entry — a corrupt correction entry is dropped, not fatal to the whole order. */
+function parsePosSaleCorrections(raw: unknown): PosSaleCorrection[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PosSaleCorrection[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const e = entry as Record<string, unknown>;
+    const correctedByUid = typeof e.correctedByUid === 'string' ? e.correctedByUid : '';
+    if (!correctedByUid) continue;
+    out.push({
+      correctedAt: toDate(e.correctedAt),
+      correctedByUid,
+      correctedByName: typeof e.correctedByName === 'string' ? e.correctedByName : null,
+      reason: typeof e.reason === 'string' ? e.reason : null,
+      registerSessionStatusAtCorrection:
+        e.registerSessionStatusAtCorrection === 'open' || e.registerSessionStatusAtCorrection === 'closed'
+          ? e.registerSessionStatusAtCorrection
+          : null,
+      before: parseCorrectionBeforeSnapshot(e.before),
+      after: parseCorrectionAfterSnapshot(e.after),
+    });
+  }
+  return out;
+}
+
+/** Tolerant of a malformed/legacy entry — a corrupt cancellation record is dropped, not fatal to the whole order. */
+function parsePosSaleCancellation(raw: unknown): PosSaleCancellation | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const e = raw as Record<string, unknown>;
+  const cancelledByUid = typeof e.cancelledByUid === 'string' ? e.cancelledByUid : '';
+  if (!cancelledByUid) return null;
+  return {
+    cancelledAt: toDate(e.cancelledAt),
+    cancelledByUid,
+    cancelledByName: typeof e.cancelledByName === 'string' ? e.cancelledByName : null,
+    reason: typeof e.reason === 'string' ? e.reason : null,
+    registerSessionStatusAtCancellation:
+      e.registerSessionStatusAtCancellation === 'open' || e.registerSessionStatusAtCancellation === 'closed'
+        ? e.registerSessionStatusAtCancellation
+        : null,
+  };
+}
+
 export function parseOrderDocument(
   id: string,
   data: Record<string, unknown>,
@@ -169,6 +278,16 @@ export function parseOrderDocument(
     itemCount,
     createdAt: toDate(data.createdAt),
     items,
+    source: data.source === 'pos' ? 'pos' : 'web',
+    registerSessionId: typeof data.registerSessionId === 'string' ? data.registerSessionId : null,
+    cashierUid: typeof data.cashierUid === 'string' ? data.cashierUid : null,
+    cashierName: typeof data.cashierName === 'string' ? data.cashierName : null,
+    payment: parsePosPayment(data.payment),
+    discount: parsePosDiscount(data.discount),
+    balanceDue: data.balanceDue == null ? null : Number(data.balanceDue) || 0,
+    correctionCount: Number(data.correctionCount) || 0,
+    corrections: parsePosSaleCorrections(data.corrections),
+    cancellation: parsePosSaleCancellation(data.cancellation),
   };
 }
 
@@ -177,6 +296,8 @@ export function orderStatusTone(status: OrderStatus): {
   dot: string;
 } {
   switch (status) {
+    case 'completed':
+      return { badge: 'bg-violet-50 text-violet-700 ring-violet-600/20', dot: 'bg-violet-500' };
     case 'delivered':
       return { badge: 'bg-catchy/10 text-catchy-dark ring-catchy/20', dot: 'bg-catchy' };
     case 'shipped':

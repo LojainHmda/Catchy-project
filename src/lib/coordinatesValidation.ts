@@ -88,34 +88,35 @@ export function coordinateLookStatus(
 
 export function validateCoordinateLook(
   look: Pick<CoordinateLook, 'title' | 'image' | 'images' | 'productIds' | 'price' | 'priceAutoSync'>,
-  products: ProductLike[] = []
+  products: ProductLike[] = [],
+  t: (key: string) => string = (key) => key
 ): { ok: true } | { ok: false; message: string } {
   if (!look.title?.trim()) {
-    return { ok: false, message: 'Title is required.' };
+    return { ok: false, message: t('admin.coordinates.validate.titleRequired') };
   }
   if (!look.productIds?.length) {
-    return { ok: false, message: 'Add at least one product to this set.' };
+    return { ok: false, message: t('admin.coordinates.validate.addProduct') };
   }
   if (products.length < look.productIds.length) {
-    return { ok: false, message: 'Some linked products could not be loaded. Refresh products and try again.' };
+    return { ok: false, message: t('admin.coordinates.validate.productsNotLoaded') };
   }
   if (getCoordinateImages(look, products).length === 0) {
-    return { ok: false, message: 'Linked products need photos (set collage is built from item images).' };
+    return { ok: false, message: t('admin.coordinates.validate.needsPhotos') };
   }
 
   const resolved = resolveCoordinate(look, products);
   if (!resolved) {
-    return { ok: false, message: 'Linked products could not be loaded.' };
+    return { ok: false, message: t('admin.coordinates.validate.productsLoadFailed') };
   }
   if (resolved.price <= 0) {
-    return { ok: false, message: 'Set a price or ensure linked products have valid prices.' };
+    return { ok: false, message: t('admin.coordinates.validate.invalidPrice') };
   }
   if (!products.every((p) => {
     const { sizeStock, stock } = resolveProductInventory(p);
     if (hasSizedInventory(sizeStock)) return Object.values(sizeStock).some((n) => n > 0);
     return stock > 0;
   })) {
-    return { ok: false, message: 'All linked products need stock before publishing.' };
+    return { ok: false, message: t('admin.coordinates.validate.needsStock') };
   }
 
   return { ok: true };

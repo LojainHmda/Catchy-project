@@ -4,6 +4,7 @@ import { formatOrderMoney, parseLineItemDisplay } from '../../lib/orders';
 import type { OrderLineItem } from '../../types/order';
 import { PRODUCT_IMAGE_PLACEHOLDER } from '../../lib/productImages';
 import { orderItemImageSrc, useOrderItemImages } from '../../hooks/useOrderItemImages';
+import { useLanguage } from '../../context/LanguageContext';
 import OrderProductPicker from './OrderProductPicker';
 
 type OrderItemsDraftTableProps = {
@@ -23,6 +24,7 @@ const OrderItemsDraftTable: React.FC<OrderItemsDraftTableProps> = ({
   onItemsChange,
   disabled = false,
 }) => {
+  const { t, isRTL } = useLanguage();
   const [pickerOpen, setPickerOpen] = useState(false);
   const resolvedImages = useOrderItemImages(items);
 
@@ -42,15 +44,15 @@ const OrderItemsDraftTable: React.FC<OrderItemsDraftTableProps> = ({
 
   return (
     <div>
-      <div className="overflow-x-auto" dir="ltr">
+      <div className="overflow-x-auto" dir={isRTL ? 'rtl' : 'ltr'}>
         <table className="w-full min-w-[560px] text-start text-sm">
           <thead>
             <tr className="border-b border-gray-200 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-              <th className="pb-2 pe-3 text-start font-semibold w-[60px]">Image</th>
-              <th className="pb-2 pe-3 text-start font-semibold">Product</th>
-              <th className="pb-2 pe-3 text-start font-semibold w-28">Variant</th>
-              <th className="pb-2 pe-3 text-center font-semibold w-28">Qty</th>
-              <th className="pb-2 pe-3 text-end font-semibold w-24">Total</th>
+              <th className="pb-2 pe-3 text-start font-semibold w-[60px]">{t('admin.orders.table.image')}</th>
+              <th className="pb-2 pe-3 text-start font-semibold">{t('admin.orders.table.product')}</th>
+              <th className="pb-2 pe-3 text-start font-semibold w-28">{t('admin.orders.table.variant')}</th>
+              <th className="pb-2 pe-3 text-center font-semibold w-28">{t('admin.common.qty')}</th>
+              <th className="pb-2 pe-3 text-end font-semibold w-24">{t('admin.common.total')}</th>
               <th className="pb-2 text-end font-semibold w-10" />
             </tr>
           </thead>
@@ -89,7 +91,7 @@ const OrderItemsDraftTable: React.FC<OrderItemsDraftTableProps> = ({
                         onClick={() => changeQty(index, item.quantity - 1)}
                         disabled={disabled || item.quantity <= 1}
                         className="inline-flex h-7 w-7 items-center justify-center text-gray-600 transition hover:bg-gray-100 disabled:opacity-40"
-                        aria-label="Decrease quantity"
+                        aria-label={t('admin.orders.table.decreaseQty')}
                       >
                         <Minus size={13} />
                       </button>
@@ -101,7 +103,7 @@ const OrderItemsDraftTable: React.FC<OrderItemsDraftTableProps> = ({
                         onClick={() => changeQty(index, item.quantity + 1)}
                         disabled={disabled}
                         className="inline-flex h-7 w-7 items-center justify-center text-gray-600 transition hover:bg-gray-100 disabled:opacity-40"
-                        aria-label="Increase quantity"
+                        aria-label={t('admin.orders.table.increaseQty')}
                       >
                         <Plus size={13} />
                       </button>
@@ -116,7 +118,7 @@ const OrderItemsDraftTable: React.FC<OrderItemsDraftTableProps> = ({
                       onClick={() => remove(index)}
                       disabled={disabled}
                       className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
-                      aria-label="Remove item"
+                      aria-label={t('admin.orders.table.removeItem')}
                     >
                       <Trash2 size={15} />
                     </button>
@@ -127,7 +129,7 @@ const OrderItemsDraftTable: React.FC<OrderItemsDraftTableProps> = ({
             {items.length === 0 ? (
               <tr>
                 <td colSpan={6} className="py-4 text-center text-sm text-gray-500">
-                  No items in this order.
+                  {t('admin.orders.table.emptyOrderItems')}
                 </td>
               </tr>
             ) : null}
@@ -146,7 +148,7 @@ const OrderItemsDraftTable: React.FC<OrderItemsDraftTableProps> = ({
             className="inline-flex h-9 items-center gap-1.5 rounded-md border border-dashed border-gray-300 px-3 text-xs font-semibold text-gray-700 transition hover:border-catchy hover:text-catchy disabled:opacity-50"
           >
             <Plus size={14} />
-            Add product
+            {t('admin.orders.table.addProduct')}
           </button>
         )}
       </div>

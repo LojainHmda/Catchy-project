@@ -76,7 +76,7 @@ const Login = () => {
 
   useEffect(() => {
     if (!loading && !sessionResolving && user && role !== null) {
-      const fallback = role === 'admin' ? '/admin' : '/';
+      const fallback = role === 'admin' ? '/admin' : role === 'cashier' ? '/pos' : '/';
       const destination =
         returnTo && returnTo.startsWith('/') && !returnTo.startsWith('/admin') ? returnTo : fallback;
       navigate(destination, { replace: true });

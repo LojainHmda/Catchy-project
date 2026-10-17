@@ -65,20 +65,23 @@ export function sizeStockToRows(sizeStock: SizeStock): SizeRow[] {
   );
 }
 
-export function rowsToSizeStock(rows: SizeRow[]): { sizeStock: SizeStock; error?: string } {
+export function rowsToSizeStock(
+  rows: SizeRow[],
+  t: (key: string) => string = (key) => key
+): { sizeStock: SizeStock; error?: string } {
   const sizeStock: SizeStock = {};
   for (const row of rows) {
     const size = row.size.trim();
     if (!size) continue;
     if (!SIZE_KEY.test(size)) {
-      return { sizeStock: {}, error: `Invalid size label "${size}".` };
+      return { sizeStock: {}, error: t('admin.sizeStock.invalidLabel').replace('{size}', size) };
     }
     if (sizeStock[size] !== undefined) {
-      return { sizeStock: {}, error: `Duplicate size "${size}".` };
+      return { sizeStock: {}, error: t('admin.sizeStock.duplicateSize').replace('{size}', size) };
     }
     const qty = Math.floor(Number(row.quantity));
     if (!Number.isFinite(qty) || qty < 0) {
-      return { sizeStock: {}, error: `Invalid quantity for size "${size}".` };
+      return { sizeStock: {}, error: t('admin.sizeStock.invalidQuantity').replace('{size}', size) };
     }
     sizeStock[size] = qty;
   }

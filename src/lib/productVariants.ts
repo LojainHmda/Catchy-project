@@ -185,7 +185,10 @@ export function legacyToSingleVariantForm(product: Record<string, unknown>): Col
   });
 }
 
-export function variantRowsToFirestore(rows: ColorVariantFormRow[]): {
+export function variantRowsToFirestore(
+  rows: ColorVariantFormRow[],
+  t: (key: string) => string = (key) => key
+): {
   colorVariants: ProductColorVariant[];
   defaultColorId: string;
   stock: number;
@@ -198,9 +201,9 @@ export function variantRowsToFirestore(rows: ColorVariantFormRow[]): {
 
   for (const row of rows) {
     const name = row.name.trim();
-    if (!name) return { colorVariants: [], defaultColorId: '', stock: 0, sizes: [], sizeStock: {}, images: [], error: 'Every color needs a name.' };
+    if (!name) return { colorVariants: [], defaultColorId: '', stock: 0, sizes: [], sizeStock: {}, images: [], error: t('admin.products.form.colorNeedsName') };
 
-    const { sizeStock, error } = rowsToSizeStock(row.sizeRows);
+    const { sizeStock, error } = rowsToSizeStock(row.sizeRows, t);
     if (error) return { colorVariants: [], defaultColorId: '', stock: 0, sizes: [], sizeStock: {}, images: [], error };
 
     const images = row.images.filter((u) => u.trim().length > 12);
@@ -212,7 +215,7 @@ export function variantRowsToFirestore(rows: ColorVariantFormRow[]): {
         sizes: [],
         sizeStock: {},
         images: [],
-        error: `Add at least one photo for "${name}".`,
+        error: t('admin.products.form.colorNeedsPhoto').replace('{name}', name),
       };
     }
 
@@ -227,17 +230,17 @@ export function variantRowsToFirestore(rows: ColorVariantFormRow[]): {
   }
 
   if (!colorVariants.length) {
-    return { colorVariants: [], defaultColorId: '', stock: 0, sizes: [], sizeStock: {}, images: [], error: 'Add at least one color.' };
+    return { colorVariants: [], defaultColorId: '', stock: 0, sizes: [], sizeStock: {}, images: [], error: t('admin.products.form.needsOneColor') };
   }
 
   const names = colorVariants.map((v) => v.name.toLowerCase());
   if (new Set(names).size !== names.length) {
-    return { colorVariants: [], defaultColorId: '', stock: 0, sizes: [], sizeStock: {}, images: [], error: 'Duplicate color names.' };
+    return { colorVariants: [], defaultColorId: '', stock: 0, sizes: [], sizeStock: {}, images: [], error: t('admin.products.form.duplicateColorNames') };
   }
 
   const agg = aggregateFromVariants(colorVariants);
   if (agg.stock <= 0) {
-    return { colorVariants: [], defaultColorId: '', stock: 0, sizes: [], sizeStock: {}, images: [], error: 'Add stock for at least one size in any color.' };
+    return { colorVariants: [], defaultColorId: '', stock: 0, sizes: [], sizeStock: {}, images: [], error: t('admin.products.form.needsStockAnyColor') };
   }
 
   return { colorVariants, ...agg };

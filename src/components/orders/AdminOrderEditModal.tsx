@@ -13,6 +13,7 @@ import {
   updateOrderStatus,
 } from '../../lib/orders';
 import { ORDER_STATUSES, type OrderLineItem, type OrderRecord, type OrderStatus } from '../../types/order';
+import { useLanguage } from '../../context/LanguageContext';
 import { cn } from '../../lib/utils';
 
 type AdminOrderEditModalProps = {
@@ -54,6 +55,7 @@ function itemsSignature(items: OrderLineItem[]): string {
 }
 
 const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, onClose, onOrderPatch }) => {
+  const { t, isRTL } = useLanguage();
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -109,7 +111,7 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
     try {
       // Items first: saveOrderItems validates stock and may throw before any write.
       if (itemsDirty) {
-        const result = await saveOrderItems(order, draft.items);
+        const result = await saveOrderItems(order, draft.items, t);
         onOrderPatch(order.id, {
           items: result.items,
           subtotal: result.subtotal,
@@ -131,10 +133,10 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
         await updateOrderStatus(order.id, draft.status);
         onOrderPatch(order.id, { status: draft.status });
       }
-      toast.success('Order updated');
+      toast.success(t('admin.orders.edit.updated'));
       onClose();
     } catch (error) {
-      const msg = isOrderError(error) ? error.message : 'Could not save the order.';
+      const msg = isOrderError(error) ? error.message : t('admin.orders.edit.saveFailed');
       console.error('Order save failed:', error);
       toast.error(msg);
     } finally {
@@ -150,7 +152,7 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
         <div className="fixed inset-0 z-[270]" role="presentation">
           <motion.button
             type="button"
-            aria-label="Close editor"
+            aria-label={t('admin.orders.edit.closeAria')}
             className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -167,7 +169,7 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
               role="dialog"
               aria-modal="true"
               aria-labelledby="admin-order-edit-title"
-              dir="ltr"
+              dir={isRTL ? 'rtl' : 'ltr'}
               className="pointer-events-auto flex max-h-[min(92vh,820px)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white text-start shadow-2xl"
               initial={{ opacity: 0, y: 24, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -177,7 +179,7 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
               <div className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-100 px-5 py-4 sm:px-6">
                 <div className="min-w-0">
                   <p id="admin-order-edit-title" className="text-lg font-semibold text-gray-900">
-                    Edit order
+                    {t('admin.orders.edit.title')}
                   </p>
                   <p className="mt-0.5 font-mono text-sm text-gray-500">{shortOrderId(order.id)}</p>
                 </div>
@@ -188,7 +190,7 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
                   }}
                   disabled={saving}
                   className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
-                  aria-label="Close editor"
+                  aria-label={t('admin.orders.edit.closeAria')}
                 >
                   <X size={20} />
                 </button>
@@ -197,13 +199,13 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 sm:px-6">
                 <section className="mb-4">
                   <h3 className="mb-2 text-start text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                    Customer
+                    {t('admin.orders.edit.customer')}
                   </h3>
                   <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                       <div className="flex min-w-[10rem] flex-1 items-center gap-1.5">
                         <label htmlFor="edit-customer-name" className="shrink-0 text-gray-500">
-                          Name:
+                          {t('admin.orders.edit.name')}
                         </label>
                         <input
                           id="edit-customer-name"
@@ -216,7 +218,7 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
                       </div>
                       <div className="flex min-w-[10rem] flex-1 items-center gap-1.5">
                         <label htmlFor="edit-customer-phone" className="shrink-0 text-gray-500">
-                          Phone:
+                          {t('admin.orders.edit.phone')}
                         </label>
                         <input
                           id="edit-customer-phone"
@@ -229,7 +231,7 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
                       </div>
                       <div className="flex min-w-[12rem] flex-[1.5] items-center gap-1.5">
                         <label htmlFor="edit-customer-email" className="shrink-0 text-gray-500">
-                          Email:
+                          {t('admin.orders.edit.email')}
                         </label>
                         <input
                           id="edit-customer-email"
@@ -243,7 +245,7 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
                     </div>
                     <div className="mt-2 flex items-center gap-1.5 border-t border-gray-200/80 pt-2">
                       <label htmlFor="edit-customer-address" className="shrink-0 text-gray-500">
-                        Address:
+                        {t('admin.orders.edit.address')}
                       </label>
                       <input
                         id="edit-customer-address"
@@ -259,7 +261,7 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
 
                 <section className="mb-4">
                   <h3 className="mb-1.5 text-start text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                    Order status
+                    {t('admin.orders.edit.orderStatus')}
                   </h3>
                   <div className="relative">
                     <select
@@ -272,9 +274,9 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
                         saving && 'cursor-not-allowed opacity-60'
                       )}
                     >
-                      {ORDER_STATUSES.map((s) => (
+                      {ORDER_STATUSES.filter((s) => s !== 'completed').map((s) => (
                         <option key={s} value={s}>
-                          {s.charAt(0).toUpperCase() + s.slice(1)}
+                          {t(`orders.status.${s}`)}
                         </option>
                       ))}
                     </select>
@@ -288,7 +290,7 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
 
                 <section>
                   <h3 className="mb-2 text-start text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                    Line items ({draft.items.length})
+                    {t('admin.orders.edit.lineItems').replace('{n}', String(draft.items.length))}
                   </h3>
                   <OrderItemsDraftTable
                     items={draft.items}
@@ -300,9 +302,9 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
 
               <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-5 py-3 sm:px-6">
                 <p className="text-sm text-gray-600">
-                  Total:{' '}
+                  {t('admin.common.total')}:{' '}
                   <span className="font-semibold tabular-nums text-gray-900">{formatOrderMoney(draftTotal)}</span>
-                  {dirty ? <span className="ml-1 text-xs text-gray-400">(unsaved)</span> : null}
+                  {dirty ? <span className="ms-1 text-xs text-gray-400">{t('admin.orders.edit.unsaved')}</span> : null}
                 </p>
                 <div className="flex items-center gap-2">
                   <button
@@ -313,7 +315,7 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
                     disabled={saving}
                     className="inline-flex h-9 items-center rounded-md border border-gray-200 px-3 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
                   >
-                    Cancel
+                    {t('admin.common.cancel')}
                   </button>
                   <button
                     type="button"
@@ -322,7 +324,7 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
                     className="inline-flex h-9 items-center gap-1.5 rounded-md bg-catchy px-4 text-xs font-semibold text-white transition hover:bg-catchy-dark disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {saving ? <Loader2 size={14} className="animate-spin" /> : null}
-                    Save changes
+                    {t('admin.orders.edit.saveChanges')}
                   </button>
                 </div>
               </div>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { X } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn, sanitizeIntegerInput } from '../../lib/utils';
 import {
   newSizeRow,
   parseSizeStock,
@@ -9,6 +9,7 @@ import {
   totalFromSizeStock,
   type SizeRow,
 } from '../../lib/productInventory';
+import { useLanguage } from '../../context/LanguageContext';
 
 const PRESET_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size'];
 
@@ -22,6 +23,7 @@ export type CoordinateSizeInventoryProps = {
 };
 
 const CoordinateSizeInventory: React.FC<CoordinateSizeInventoryProps> = ({ rows, onChange, onPersist }) => {
+  const { t } = useLanguage();
   const [customSize, setCustomSize] = React.useState('');
 
   const addRow = (size: string) => {
@@ -58,9 +60,9 @@ const CoordinateSizeInventory: React.FC<CoordinateSizeInventoryProps> = ({ rows,
   return (
     <div className="rounded-md border border-gray-200 bg-gray-50/60 p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-gray-700">Size inventory</span>
+        <span className="text-xs font-medium text-gray-700">{t('admin.coordinates.sizeInventory')}</span>
         <span className="text-xs tabular-nums text-gray-500">
-          Total: <strong className="text-gray-900">{total}</strong>
+          {t('admin.common.total')}: <strong className="text-gray-900">{total}</strong>
         </span>
       </div>
       <div className="mb-2 flex flex-wrap gap-1">
@@ -78,8 +80,8 @@ const CoordinateSizeInventory: React.FC<CoordinateSizeInventoryProps> = ({ rows,
       {rows.length > 0 ? (
         <div className="space-y-1.5">
           <div className="grid grid-cols-[1fr_4rem_1.75rem] gap-1.5 px-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-400">
-            <span>Size</span>
-            <span>Qty</span>
+            <span>{t('admin.common.size')}</span>
+            <span>{t('admin.common.qty')}</span>
             <span />
           </div>
           {rows.map((row) => (
@@ -92,18 +94,19 @@ const CoordinateSizeInventory: React.FC<CoordinateSizeInventoryProps> = ({ rows,
                 placeholder="M"
               />
               <input
-                type="number"
-                min={0}
-                step={1}
+                type="text"
+                inputMode="numeric"
+                lang="en"
+                dir="ltr"
                 value={row.quantity}
-                onChange={(e) => updateRow(row.id, { quantity: e.target.value })}
+                onChange={(e) => updateRow(row.id, { quantity: sanitizeIntegerInput(e.target.value) })}
                 className={cn(INPUT, 'tabular-nums')}
               />
               <button
                 type="button"
                 onClick={() => removeRow(row.id)}
                 className="inline-flex h-8 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-red-50 hover:text-red-600"
-                aria-label="Remove size"
+                aria-label={t('admin.coordinates.removeSize')}
               >
                 <X size={14} />
               </button>
@@ -111,7 +114,7 @@ const CoordinateSizeInventory: React.FC<CoordinateSizeInventoryProps> = ({ rows,
           ))}
         </div>
       ) : (
-        <p className="text-xs text-gray-500">Add sizes with stock counts — same as regular products.</p>
+        <p className="text-xs text-gray-500">{t('admin.coordinates.sizeEmptyHint')}</p>
       )}
       <div className="mt-2 flex gap-1.5">
         <input
@@ -125,14 +128,14 @@ const CoordinateSizeInventory: React.FC<CoordinateSizeInventoryProps> = ({ rows,
             }
           }}
           className={cn(INPUT, 'flex-1')}
-          placeholder="Custom size"
+          placeholder={t('admin.coordinates.customSizePlaceholder')}
         />
         <button
           type="button"
           onClick={() => addRow(customSize)}
           className="h-8 shrink-0 rounded-md border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-700 hover:border-catchy"
         >
-          Add
+          {t('admin.common.add')}
         </button>
       </div>
     </div>

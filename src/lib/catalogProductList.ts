@@ -30,6 +30,8 @@ export type CatalogListProduct = {
   visible: boolean;
   /** Creation time in epoch milliseconds, for "newest first" sorting. */
   createdAt?: number;
+  /** POS barcode/SKU, when set. */
+  barcode?: string;
 };
 
 /** Coerce a Firestore Timestamp / ISO string / number into epoch millis. */
@@ -89,6 +91,7 @@ export function toCatalogListProduct(id: string, data: Record<string, unknown>):
     ...(Object.keys(sizeStock).length > 0 ? { sizeStock } : {}),
     visible: data.visible !== false,
     ...(toMillis(data.createdAt) !== undefined ? { createdAt: toMillis(data.createdAt) } : {}),
+    ...(typeof data.barcode === 'string' && data.barcode.trim() ? { barcode: data.barcode.trim() } : {}),
   };
 }
 

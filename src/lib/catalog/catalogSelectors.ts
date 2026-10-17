@@ -37,7 +37,10 @@ export function filterCatalogProducts(
     if (!p.visible) return false;
     if (!catalogProductInStock(p)) return false;
     if (query.saleOnly && !isProductDiscounted(p)) return false;
-    if (needle && !String(p.name).toLowerCase().includes(needle)) return false;
+    if (needle) {
+      const haystack = [String(p.name), ...productCollectionKeys(p)].join(' ').toLowerCase();
+      if (!haystack.includes(needle)) return false;
+    }
     if (query.selectedCats.length) {
       const productKeys = productCollectionKeys(p).map((k) => k.toLowerCase());
       const ok = query.selectedCats.some((c) => productKeys.includes(canonicalCategory(c).toLowerCase()));

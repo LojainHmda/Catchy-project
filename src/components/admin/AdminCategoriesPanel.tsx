@@ -21,6 +21,7 @@ import {
   getCategoryIcon,
 } from '../../lib/categoryIcons';
 import { cn } from '../../lib/utils';
+import { useLanguage } from '../../context/LanguageContext';
 
 type DraftRow = StoreCategory & { _key: string };
 
@@ -35,6 +36,7 @@ const INPUT =
   'h-9 w-full rounded-md border border-gray-200 bg-white px-2.5 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-catchy focus:ring-1 focus:ring-catchy/20';
 
 const AdminCategoriesPanel: React.FC = () => {
+  const { t } = useLanguage();
   const { categories } = useStoreCategories();
   const [draft, setDraft] = useState<DraftRow[]>(() => toDraft(categories));
   const [dirty, setDirty] = useState(false);
@@ -65,7 +67,7 @@ const AdminCategoriesPanel: React.FC = () => {
 
   const removeRow = (row: DraftRow) => {
     if (row.locked) return;
-    if (row.id && !window.confirm(`Delete category "${row.name}"? Products in it keep the tag until reassigned.`)) {
+    if (row.id && !window.confirm(t('admin.categories.confirmDelete').replace('{name}', row.name))) {
       return;
     }
     setDraft((prev) => prev.filter((r) => r._key !== row._key));
@@ -99,14 +101,14 @@ const AdminCategoriesPanel: React.FC = () => {
     for (const row of draft) {
       const name = row.name.trim();
       if (!name) {
-        toast.error('Every category needs an English name.');
+        toast.error(t('admin.categories.needsEnglishName'));
         return;
       }
       // New rows derive their permanent id from the name; existing rows keep their id.
       const id = (row.id || name).trim();
       const key = id.toLowerCase();
       if (seen.has(key)) {
-        toast.error(`Duplicate category "${id}". Names must be unique.`);
+        toast.error(t('admin.categories.duplicateCategory').replace('{id}', id));
         return;
       }
       seen.add(key);
@@ -125,11 +127,11 @@ const AdminCategoriesPanel: React.FC = () => {
     try {
       await saveStoreCategories(cleaned);
       setDirty(false);
-      toast.success('Categories saved');
+      toast.success(t('admin.categories.toastSaved'));
     } catch (error) {
       console.error('Saving categories failed:', error);
-      toast.error('Could not save categories', {
-        description: error instanceof Error ? error.message : 'Check your connection and try again.',
+      toast.error(t('admin.categories.saveFailed'), {
+        description: error instanceof Error ? error.message : t('admin.products.form.checkConnection'),
       });
     } finally {
       setSaving(false);
@@ -145,9 +147,9 @@ const AdminCategoriesPanel: React.FC = () => {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">Categories</h3>
+          <h3 className="text-sm font-semibold text-gray-900">{t('admin.products.page.tabCategories')}</h3>
           <p className="text-xs text-gray-500">
-            Add, rename, hide, reorder, or remove the categories shown across the store.
+            {t('admin.categories.subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -159,7 +161,7 @@ const AdminCategoriesPanel: React.FC = () => {
               className="inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-50"
             >
               <RotateCcw size={13} />
-              Discard
+              {t('admin.categories.discard')}
             </button>
           ) : null}
           <button
@@ -169,7 +171,7 @@ const AdminCategoriesPanel: React.FC = () => {
             className="inline-flex h-9 items-center gap-1.5 rounded-md bg-catchy px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-catchy-dark disabled:opacity-50"
           >
             {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-            Save changes
+            {t('admin.orders.edit.saveChanges')}
           </button>
         </div>
       </div>
@@ -188,7 +190,7 @@ const AdminCategoriesPanel: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIconPickerFor(row._key)}
-                title="Change icon"
+                title={t('admin.categories.changeIcon')}
                 className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-catchy transition hover:border-catchy hover:bg-catchy/5"
               >
                 <Icon className="h-6 w-6" strokeWidth={1.3} />
@@ -199,12 +201,12 @@ const AdminCategoriesPanel: React.FC = () => {
                   <input
                     value={row.name}
                     onChange={(e) => update(row._key, { name: e.target.value })}
-                    placeholder="English name"
+                    placeholder={t('admin.categories.englishNamePlaceholder')}
                     className={INPUT}
                   />
                   <p className="mt-0.5 ps-0.5 text-[10px] text-gray-400">
-                    {row.id ? `id: ${row.id}` : 'new — id is set on save'}
-                    {row.locked ? ' · system' : ''}
+                    {row.id ? t('admin.categories.idLabel').replace('{id}', row.id) : t('admin.categories.newIdHint')}
+                    {row.locked ? t('admin.categories.systemSuffix') : ''}
                   </p>
                 </div>
                 <input
@@ -220,7 +222,7 @@ const AdminCategoriesPanel: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => update(row._key, { hidden: !row.hidden })}
-                  title={row.hidden ? 'Hidden — click to show' : 'Visible — click to hide'}
+                  title={row.hidden ? t('admin.categories.hiddenClickToShow') : t('admin.categories.visibleClickToHide')}
                   className={cn(
                     'inline-flex h-9 w-9 items-center justify-center rounded-md border transition',
                     row.hidden
@@ -236,7 +238,7 @@ const AdminCategoriesPanel: React.FC = () => {
                     onClick={() => move(row._key, -1)}
                     disabled={index === 0}
                     className="inline-flex h-5 w-7 items-center justify-center rounded text-gray-400 hover:bg-gray-100 disabled:opacity-30"
-                    aria-label="Move up"
+                    aria-label={t('admin.common.moveUp')}
                   >
                     <ChevronUp size={14} />
                   </button>
@@ -245,7 +247,7 @@ const AdminCategoriesPanel: React.FC = () => {
                     onClick={() => move(row._key, 1)}
                     disabled={index === draft.length - 1}
                     className="inline-flex h-5 w-7 items-center justify-center rounded text-gray-400 hover:bg-gray-100 disabled:opacity-30"
-                    aria-label="Move down"
+                    aria-label={t('admin.common.moveDown')}
                   >
                     <ChevronDown size={14} />
                   </button>
@@ -254,7 +256,7 @@ const AdminCategoriesPanel: React.FC = () => {
                   type="button"
                   onClick={() => removeRow(row)}
                   disabled={row.locked}
-                  title={row.locked ? 'System category — cannot be deleted' : 'Delete category'}
+                  title={row.locked ? t('admin.categories.systemCannotDelete') : t('admin.categories.deleteCategoryTitle')}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-400 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400"
                 >
                   <Trash2 size={16} />
@@ -271,7 +273,7 @@ const AdminCategoriesPanel: React.FC = () => {
         className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 text-sm font-medium text-gray-600 transition hover:border-catchy hover:text-catchy"
       >
         <Plus size={16} />
-        Add category
+        {t('admin.categories.addCategory')}
       </button>
 
       {pickerRow ? (
@@ -295,18 +297,19 @@ type IconPickerModalProps = {
 };
 
 const IconPickerModal: React.FC<IconPickerModalProps> = ({ selected, onClose, onSelect }) => {
+  const { t } = useLanguage();
   if (typeof document === 'undefined') return null;
   return createPortal(
     <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
       <button
         type="button"
-        aria-label="Close icon picker"
+        aria-label={t('admin.categories.closeIconPicker')}
         onClick={onClose}
         className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
       />
       <div className="relative z-10 w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
         <div className="mb-3 flex items-center justify-between">
-          <h4 className="text-sm font-semibold text-gray-900">Choose an icon</h4>
+          <h4 className="text-sm font-semibold text-gray-900">{t('admin.categories.chooseIcon')}</h4>
           <button
             type="button"
             onClick={onClose}

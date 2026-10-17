@@ -526,7 +526,8 @@ async function applyOrderStockChange(
   productId: string,
   colorId: string | null | undefined,
   size: string | null | undefined,
-  consume: number
+  consume: number,
+  t: (key: string) => string = (key) => key
 ): Promise<void> {
   if (!productId || isCoordinateCartId(productId) || !consume) return;
 
@@ -546,7 +547,7 @@ async function applyOrderStockChange(
     if (!key) return;
     const current = Math.max(0, sizeStock[key] ?? 0);
     if (consume > 0 && current < consume) {
-      throw new OrderError('OUT_OF_STOCK', 'Not enough stock for this product.');
+      throw new OrderError('OUT_OF_STOCK', t('admin.orders.edit.notEnoughStock'));
     }
     sizeStock[key] = Math.max(0, current - consume);
     const next = [...variants];
@@ -566,7 +567,7 @@ async function applyOrderStockChange(
     const key = size ?? sizeKeys[0]!;
     const current = Math.max(0, sizeStock[key] ?? 0);
     if (consume > 0 && current < consume) {
-      throw new OrderError('OUT_OF_STOCK', 'Not enough stock for this product.');
+      throw new OrderError('OUT_OF_STOCK', t('admin.orders.edit.notEnoughStock'));
     }
     const nextStock = { ...sizeStock, [key]: Math.max(0, current - consume) };
     await updateDoc(ref, { sizeStock: nextStock, stock: totalFromSizeStock(nextStock) });
@@ -574,7 +575,7 @@ async function applyOrderStockChange(
   }
 
   if (consume > 0 && stock < consume) {
-    throw new OrderError('OUT_OF_STOCK', 'Not enough stock for this product.');
+    throw new OrderError('OUT_OF_STOCK', t('admin.orders.edit.notEnoughStock'));
   }
   await updateDoc(ref, { stock: Math.max(0, stock - consume) });
 }
@@ -613,7 +614,8 @@ function quantitiesByStockKey(
  */
 export async function saveOrderItems(
   order: OrderRecord,
-  nextItems: OrderLineItem[]
+  nextItems: OrderLineItem[],
+  t: (key: string) => string = (key) => key
 ): Promise<OrderItemsMutationResult> {
   const meta = new Map<string, StockSelection>();
   const before = quantitiesByStockKey(order.items, meta);
@@ -632,13 +634,13 @@ export async function saveOrderItems(
     if (delta.consume <= 0) continue;
     const snap = await getDoc(doc(db, PRODUCTS_COLLECTION, delta.productId));
     if (!snap.exists()) {
-      throw new OrderError('PRODUCT_MISSING', 'A product in this order is no longer available.');
+      throw new OrderError('PRODUCT_MISSING', t('admin.orders.edit.productMissing'));
     }
     const selection = resolveVariantSelection(snap.data() ?? {}, delta.colorId);
     const available = stockForSelection(selection.sizeStock, selection.stock, delta.size);
     if (available < delta.consume) {
       const name = String(snap.data()?.name ?? 'product');
-      throw new OrderError('OUT_OF_STOCK', `Only ${available} left in stock for "${name}".`);
+      throw new OrderError('OUT_OF_STOCK', t('admin.orders.edit.onlyNLeftInStock').replace('{n}', String(available)).replace('{name}', name));
     }
   }
 
@@ -646,7 +648,7 @@ export async function saveOrderItems(
 
   for (const delta of deltas) {
     try {
-      await applyOrderStockChange(delta.productId, delta.colorId, delta.size, delta.consume);
+      await applyOrderStockChange(delta.productId, delta.colorId, delta.size, delta.consume, t);
     } catch (error) {
       console.warn(`Order ${order.id} saved; stock adjust failed for ${delta.productId}:`, error);
     }

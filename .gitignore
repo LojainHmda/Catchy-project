@@ -15,5 +15,8 @@ memory/
 service-account*.json
 *firebase-adminsdk*.json
 
+# QZ Tray signing private key — never commit (public cert lives in public/qz/, that's fine)
+qz-keys/
+
 # Local migration backups
 backups/

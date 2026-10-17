@@ -14,6 +14,7 @@ import {
   parseNewArrivalsBackground,
   type NewArrivalsBackgroundSettings,
 } from '../lib/newArrivalsBackground';
+import { useLanguage } from '../context/LanguageContext';
 
 const SHOWCASE_MAX_PRODUCTS = 4;
 const SEARCH_RESULTS_CAP = 12;
@@ -21,6 +22,7 @@ const SEARCH_RESULTS_CAP = 12;
 const MAX_BACKGROUND_PAYLOAD_BYTES = 900 * 1024;
 
 const AdminHero = () => {
+  const { t } = useLanguage();
   const [slides, setSlides] = useState<any[]>([]);
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +48,7 @@ const AdminHero = () => {
       await setDoc(ref, { ...patch, updatedAt: serverTimestamp() }, { merge: true });
     } catch (error) {
       console.error('Error updating New Arrivals background:', error);
-      alert('Could not save the background setting. Check your connection and try again.');
+      alert(t('admin.hero.bgSaveFailed'));
     }
   };
 
@@ -55,7 +57,7 @@ const AdminHero = () => {
     e.target.value = '';
     if (!file || !file.type.startsWith('image/')) return;
     if (file.size > 15 * 1024 * 1024) {
-      alert('Image must be under 15MB.');
+      alert(t('admin.hero.imageTooLarge15mb'));
       return;
     }
     setUploadingBg(true);
@@ -63,13 +65,13 @@ const AdminHero = () => {
       const dataUrl = await fileToAdminImageDataUrl(file, { maxWidth: 1920, quality: 0.8 });
       const payloadBytes = new Blob([dataUrl]).size;
       if (payloadBytes > MAX_BACKGROUND_PAYLOAD_BYTES) {
-        alert('That image is too large even after compression. Try a smaller or simpler photo.');
+        alert(t('admin.hero.imageTooLargeAfterCompression'));
         return;
       }
       await updateNewArrivalsBg({ imageUrl: dataUrl, enabled: true });
     } catch (err) {
       console.error(err);
-      alert('Could not process that image.');
+      alert(t('admin.hero.imageProcessFailed'));
     } finally {
       setUploadingBg(false);
     }
@@ -163,8 +165,8 @@ const AdminHero = () => {
     <div className="space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center">
         <div>
-          <h1 className="text-2xl font-black text-gray-900 tracking-tight sm:text-3xl">Hero Management</h1>
-          <p className="mt-1 text-sm text-gray-500">Homepage hero updates in real time.</p>
+          <h1 className="text-2xl font-black text-gray-900 tracking-tight sm:text-3xl">{t('admin.nav.heroReels')}</h1>
+          <p className="mt-1 text-sm text-gray-500">{t('admin.hero.subtitle')}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Link
@@ -174,21 +176,21 @@ const AdminHero = () => {
             className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-wider text-gray-700 hover:border-catchy hover:text-catchy transition-colors"
           >
             <ExternalLink size={14} />
-            Preview home
+            {t('admin.hero.previewHome')}
           </Link>
           <button
             onClick={() => addSlide('standard')}
             className="flex items-center gap-1.5 rounded-xl bg-gray-900 px-4 py-2 text-xs font-black uppercase tracking-widest text-white shadow transition-all hover:bg-black"
           >
             <Plus size={16} />
-            Add Standard
+            {t('admin.hero.addStandard')}
           </button>
           <button
             onClick={() => addSlide('new_arrivals')}
             className="flex items-center gap-1.5 rounded-xl bg-catchy px-4 py-2 text-xs font-black uppercase tracking-widest text-white shadow shadow-catchy/20 transition-all hover:bg-catchy-dark"
           >
             <Plus size={16} />
-            Add showcase
+            {t('admin.hero.addShowcase')}
           </button>
         </div>
       </header>
@@ -197,18 +199,17 @@ const AdminHero = () => {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-black uppercase tracking-widest text-gray-900">
-              New Arrivals Section Background
+              {t('admin.hero.bgHeading')}
             </h2>
             <p className="mt-1 text-xs text-gray-500">
-              Optional photo behind the "New Arrivals" product cards on the homepage. Leave off to keep the
-              section exactly as it is today.
+              {t('admin.hero.bgHint')}
             </p>
           </div>
           <AdminToggle
             checked={newArrivalsBg.enabled}
             disabled={!newArrivalsBg.imageUrl}
             onChange={(checked) => updateNewArrivalsBg({ enabled: checked })}
-            aria-label="Enable New Arrivals section background image"
+            aria-label={t('admin.hero.bgToggleAria')}
           />
         </div>
 
@@ -225,7 +226,7 @@ const AdminHero = () => {
           <div className="flex flex-wrap items-center gap-2">
             <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-wider text-gray-600 transition-colors hover:border-catchy hover:text-catchy">
               {uploadingBg ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-              {newArrivalsBg.imageUrl ? 'Replace' : 'Upload'}
+              {newArrivalsBg.imageUrl ? t('admin.products.form.replace') : t('admin.products.form.upload')}
               <input type="file" accept="image/*" className="hidden" onChange={handleBgUpload} />
             </label>
             {newArrivalsBg.imageUrl && (
@@ -235,7 +236,7 @@ const AdminHero = () => {
                 className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] font-black uppercase tracking-wider text-red-500 transition-colors hover:bg-red-50 hover:text-red-600"
               >
                 <Trash2 size={14} />
-                Remove
+                {t('admin.common.remove')}
               </button>
             )}
           </div>
@@ -275,11 +276,11 @@ const AdminHero = () => {
                       slide.type === 'new_arrivals' ? 'bg-catchy/10 text-catchy' : 'bg-gray-100 text-gray-500'
                     )}
                   >
-                    {slide.type === 'new_arrivals' ? 'Showcase' : 'Standard'}
+                    {slide.type === 'new_arrivals' ? t('admin.hero.badgeShowcase') : t('admin.hero.badgeStandard')}
                   </span>
                   {!isLive && (
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-800">
-                      Hidden
+                      {t('admin.coordinates.statusHidden')}
                     </span>
                   )}
                 </div>
@@ -287,7 +288,7 @@ const AdminHero = () => {
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-gray-400">
-                      Title
+                      {t('admin.hero.titleLabel')}
                     </label>
                     <input
                       type="text"
@@ -296,7 +297,7 @@ const AdminHero = () => {
                       className="w-full rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-catchy/20"
                     />
                     <label className="mb-1 mt-2 block text-[9px] font-black uppercase tracking-widest text-gray-400/80">
-                      Title (Arabic)
+                      {t('admin.hero.titleArLabel')}
                     </label>
                     <input
                       type="text"
@@ -310,7 +311,7 @@ const AdminHero = () => {
                   </div>
                   <div>
                     <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-gray-400">
-                      Subtitle
+                      {t('admin.hero.subtitleLabel')}
                     </label>
                     <input
                       type="text"
@@ -319,7 +320,7 @@ const AdminHero = () => {
                       className="w-full rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-catchy/20"
                     />
                     <label className="mb-1 mt-2 block text-[9px] font-black uppercase tracking-widest text-gray-400/80">
-                      Subtitle (Arabic)
+                      {t('admin.hero.subtitleArLabel')}
                     </label>
                     <input
                       type="text"
@@ -335,7 +336,7 @@ const AdminHero = () => {
 
                 <div>
                   <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-gray-400">
-                    {slide.type === 'new_arrivals' ? 'Background URL' : 'Image URL'}
+                    {slide.type === 'new_arrivals' ? t('admin.hero.backgroundUrlLabel') : t('admin.hero.imageUrlLabel')}
                   </label>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
                     <input
@@ -343,7 +344,7 @@ const AdminHero = () => {
                       value={slide.url ?? ''}
                       onChange={(e) => updateSlide(slide.id, { url: e.target.value })}
                       className="min-w-0 flex-1 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 font-mono text-xs outline-none focus:ring-2 focus:ring-catchy/20"
-                      placeholder="https://… or upload"
+                      placeholder={t('admin.hero.urlPlaceholder')}
                     />
                     <label className="flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-wider text-gray-600 transition-colors hover:border-catchy hover:text-catchy">
                       {uploadingSlideId === slide.id ? (
@@ -351,7 +352,7 @@ const AdminHero = () => {
                       ) : (
                         <Upload className="h-4 w-4" />
                       )}
-                      Upload
+                      {t('admin.products.form.upload')}
                       <input
                         type="file"
                         accept="image/*"
@@ -361,7 +362,7 @@ const AdminHero = () => {
                           e.target.value = '';
                           if (!file || !file.type.startsWith('image/')) return;
                           if (file.size > 15 * 1024 * 1024) {
-                            alert('Image must be under 15MB.');
+                            alert(t('admin.hero.imageTooLarge15mb'));
                             return;
                           }
                           setUploadingSlideId(slide.id);
@@ -373,7 +374,7 @@ const AdminHero = () => {
                             await updateSlide(slide.id, { url: dataUrl });
                           } catch (err) {
                             console.error(err);
-                            alert('Could not process that image.');
+                            alert(t('admin.hero.imageProcessFailed'));
                           } finally {
                             setUploadingSlideId(null);
                           }
@@ -400,7 +401,7 @@ const AdminHero = () => {
                   <div className="space-y-2 rounded-xl border border-catchy/20 bg-catchy/5 p-3">
                     <div className="flex flex-wrap items-end justify-between gap-2">
                       <label className="text-[10px] font-black uppercase tracking-widest text-catchy">
-                        Products (max {SHOWCASE_MAX_PRODUCTS})
+                        {t('admin.hero.productsMax').replace('{n}', String(SHOWCASE_MAX_PRODUCTS))}
                       </label>
                       <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-wider">
                         <button
@@ -412,7 +413,7 @@ const AdminHero = () => {
                           disabled={allProducts.length === 0}
                           className="text-catchy hover:text-catchy-dark disabled:opacity-40"
                         >
-                          Newest {SHOWCASE_MAX_PRODUCTS}
+                          {t('admin.hero.newestN').replace('{n}', String(SHOWCASE_MAX_PRODUCTS))}
                         </button>
                         <span className="text-gray-300">·</span>
                         <button
@@ -423,14 +424,14 @@ const AdminHero = () => {
                           }}
                           className="text-gray-500 hover:text-gray-800"
                         >
-                          Clear
+                          {t('admin.products.picker.clear')}
                         </button>
                       </div>
                     </div>
 
                     {selectedIds.length > SHOWCASE_MAX_PRODUCTS && (
                       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
-                        <span>Only the first {SHOWCASE_MAX_PRODUCTS} appear on the homepage.</span>
+                        <span>{t('admin.hero.onlyFirstN').replace('{n}', String(SHOWCASE_MAX_PRODUCTS))}</span>
                         <button
                           type="button"
                           className="font-black uppercase tracking-wider text-catchy hover:text-catchy-dark"
@@ -438,18 +439,18 @@ const AdminHero = () => {
                             updateSlide(slide.id, { productIds: selectedIds.slice(0, SHOWCASE_MAX_PRODUCTS) })
                           }
                         >
-                          Keep first {SHOWCASE_MAX_PRODUCTS}
+                          {t('admin.hero.keepFirstN').replace('{n}', String(SHOWCASE_MAX_PRODUCTS))}
                         </button>
                       </div>
                     )}
 
                     <div>
                       <p className="mb-1 text-[9px] font-black uppercase tracking-widest text-gray-500">
-                        Selected {selectedIds.length}/{SHOWCASE_MAX_PRODUCTS}
+                        {t('admin.hero.selectedOfMax').replace('{n}', String(selectedIds.length)).replace('{max}', String(SHOWCASE_MAX_PRODUCTS))}
                       </p>
                       {selectedIds.length === 0 ? (
                         <p className="rounded-lg border border-dashed border-gray-200 bg-white/80 px-3 py-2 text-center text-[11px] text-gray-500">
-                          Search and tap a result to add.
+                          {t('admin.hero.searchAndTapHint')}
                         </p>
                       ) : (
                         <div className="flex flex-wrap gap-1.5">
@@ -468,7 +469,7 @@ const AdminHero = () => {
                                 <span className="max-w-[120px] truncate font-bold text-gray-800">{label}</span>
                                 <button
                                   type="button"
-                                  aria-label={`Remove ${label}`}
+                                  aria-label={t('admin.hero.removeProductAria').replace('{name}', label)}
                                   onClick={() =>
                                     updateSlide(slide.id, {
                                       productIds: selectedIds.filter((x) => x !== id),
@@ -486,12 +487,12 @@ const AdminHero = () => {
                     </div>
 
                     {allProducts.length === 0 ? (
-                      <p className="text-xs text-gray-500">No products in catalog.</p>
+                      <p className="text-xs text-gray-500">{t('admin.hero.noProductsInCatalog')}</p>
                     ) : (
                       <div className="space-y-1.5">
                         <div className="relative">
                           <Search
-                            className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400"
+                            className="pointer-events-none absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400"
                             aria-hidden
                           />
                           <input
@@ -500,12 +501,12 @@ const AdminHero = () => {
                             onChange={(e) =>
                               setPickerQuery((prev) => ({ ...prev, [slide.id]: e.target.value }))
                             }
-                            placeholder="Search by name…"
-                            className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-2 text-xs font-medium text-gray-900 outline-none placeholder:text-gray-400 focus:border-catchy focus:ring-1 focus:ring-catchy/30"
+                            placeholder={t('admin.hero.searchByNamePlaceholder')}
+                            className="w-full rounded-lg border border-gray-200 bg-white py-2 ps-8 pe-2 text-xs font-medium text-gray-900 outline-none placeholder:text-gray-400 focus:border-catchy focus:ring-1 focus:ring-catchy/30"
                           />
                         </div>
                         {needle.length === 0 ? null : searchHits.length === 0 ? (
-                          <p className="text-[11px] text-gray-500">No matches.</p>
+                          <p className="text-[11px] text-gray-500">{t('admin.hero.noMatches')}</p>
                         ) : (
                           <ul className="max-h-36 space-y-0.5 overflow-y-auto rounded-lg border border-gray-100 bg-white p-1.5">
                             {searchHits.map((p) => {
@@ -575,14 +576,14 @@ const AdminHero = () => {
                       )}
                     >
                       {isLive ? <EyeOff size={14} /> : <Eye size={14} />}
-                      {isLive ? 'Off' : 'On'}
+                      {isLive ? t('admin.hero.toggleOff') : t('admin.hero.toggleOn')}
                     </button>
                     <button
                       onClick={() => deleteSlide(slide.id)}
                       className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] font-black uppercase tracking-wider text-red-500 transition-colors hover:bg-red-50 hover:text-red-600"
                     >
                       <Trash2 size={14} />
-                      Delete
+                      {t('admin.common.delete')}
                     </button>
                   </div>
                 </div>

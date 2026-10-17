@@ -76,7 +76,7 @@ foreach ($r in $required) {
 
 Write-Host "Enabling APIs (idempotent)..."
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com `
-  firestore.googleapis.com firebaserules.googleapis.com `
+  firestore.googleapis.com firebaserules.googleapis.com secretmanager.googleapis.com `
   --project $ProjectId | Out-Null
 
 Set-Location $RepoRoot
@@ -95,6 +95,8 @@ if ($m['VITE_FIREBASE_PROJECT_ID']) {
 $runtimeEnv = '^@^' + ($runtimePairs -join '@')
 
 Write-Host "Building on Cloud Build and deploying $Service to $Region (project $ProjectId)..."
+# QZ_PRIVATE_KEY is injected from Secret Manager (secret "qz-signing-private-key"), never
+# baked into the image or passed as a plain env var — see server/lib/qzSigning.js.
 gcloud run deploy $Service `
   --project $ProjectId `
   --region $Region `
@@ -103,6 +105,7 @@ gcloud run deploy $Service `
   --cpu 2 `
   --memory 4Gi `
   --set-env-vars $runtimeEnv `
+  --set-secrets "QZ_PRIVATE_KEY=qz-signing-private-key:latest" `
   --quiet
 
 Write-Host "Cloud Run deploy finished."

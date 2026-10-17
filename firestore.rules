@@ -44,9 +44,19 @@ service cloud.firestore {
       return isOwner() || isProfileAdmin();
     }
 
+    /** POS cashier, granted manually via users/{uid}.role in the Firestore console. */
+    function isProfileCashier() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'cashier';
+    }
+
     match /users/{userId} {
       allow read: if signedIn() && (request.auth.uid == userId || isOwner());
-      allow create, update: if signedIn() && request.auth.uid == userId;
+      allow create: if signedIn() && request.auth.uid == userId;
+      // A user may update their own profile but never grant/change their own role — only an owner can do that.
+      allow update: if signedIn() && request.auth.uid == userId
+        && (!('role' in request.resource.data.diff(resource.data).affectedKeys()) || isOwner());
       allow delete: if isOwner();
     }
 
@@ -107,6 +117,12 @@ service cloud.firestore {
 
     match /whatsapp_messages/{id} {
       allow read, write: if isOwner();
+    }
+
+    // POS register sessions. All writes go through server endpoints using the
+    // Admin SDK (bypasses rules) so totals stay atomic with each sale.
+    match /register_sessions/{id} {
+      allow read: if signedIn() && (resource.data.cashierUid == request.auth.uid || isCatalogAdmin());
     }
   }
 }

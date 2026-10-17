@@ -6,14 +6,17 @@ import {
 import { fetchProductsByIds } from '../fetchProductsByIds';
 import { fetchAllCoordinateLooks } from '../coordinatesService';
 import { publishedLinkedProductIds } from '../coordinatesValidation';
-import { loadResource, readCache, readStaleCache, writeCache } from '../asyncResource';
-import { collection, db, getDocs, getDocsFromCache, limit, query } from '../../firebase';
+import { invalidateCache, loadResource, readCache, readStaleCache, writeCache } from '../asyncResource';
+import { collection, db, getDocs, getDocsFromCache, limit, orderBy, query } from '../../firebase';
 import type { CatalogCoordinatesBundle, CatalogIndex } from './catalogTypes';
 import type { CoordinateLook } from '../../types/coordinates';
 
 const INDEX_KEY = 'catalog:index';
 const COORDINATES_KEY = 'catalog:coordinates';
-const INDEX_LOCAL_KEY = 'catchy.catalog.index.v6';
+// v7: the index query now orders by createdAt server-side (see catalogIndexQuery) —
+// bumped so any already-cached v6 snapshot (products in the old, non-time-ordered
+// sequence) is never read back and shown after this change ships.
+const INDEX_LOCAL_KEY = 'catchy.catalog.index.v7';
 const INDEX_FRESH_TTL_MS = 3 * 60 * 1000;
 const INDEX_STALE_MAX_MS = 24 * 60 * 60 * 1000;
 const COORDINATES_TTL_MS = 2 * 60 * 1000;
@@ -92,9 +95,35 @@ function persistIndex(index: CatalogIndex): CatalogIndex {
   return index;
 }
 
-/** No orderBy — sort client-side; one simple read is faster to plan and cache. */
-function catalogIndexQuery() {
-  return query(collection(db, 'products'), limit(INDEX_LIMIT));
+/**
+ * Call right after any product mutation that changes catalog membership (permanent
+ * delete, visibility toggle, etc). Without this, the in-memory index/coordinates
+ * cache stays "fresh" for up to INDEX_FRESH_TTL_MS/COORDINATES_TTL_MS and the
+ * localStorage snapshot for up to INDEX_STALE_MAX_MS, so a deleted product can keep
+ * appearing in the catalog grid, search results, and coordinate sets — even across a
+ * manual retry — until the next load call is forced to treat the cache as gone.
+ */
+export function invalidateCatalogCaches(): void {
+  invalidateCache(INDEX_KEY);
+  invalidateCache(COORDINATES_KEY);
+  try {
+    localStorage.removeItem(INDEX_LOCAL_KEY);
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+/**
+ * Ordered by createdAt server-side (not just client-side) so the LIMIT itself always
+ * captures the newest INDEX_LIMIT products. A bare limit() with no orderBy would be
+ * ordered by Firestore's default (effectively arbitrary document-id order) — once the
+ * catalog grows past INDEX_LIMIT, a brand-new product could then fall outside the
+ * window and never appear in the catalog grid or search at all. This is a single-field
+ * orderBy with no other constraints, so it needs no composite Firestore index.
+ */
+/** Exported for regression testing only — see catalogService.test.ts. */
+export function catalogIndexQuery() {
+  return query(collection(db, 'products'), orderBy('createdAt', 'desc'), limit(INDEX_LIMIT));
 }
 
 async function fetchCatalogIndexFromFirestore(): Promise<CatalogIndex> {

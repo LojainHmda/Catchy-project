@@ -63,12 +63,12 @@ interface User {
   uid: string;
   email: string | null;
   displayName: string | null;
-  role?: 'admin' | 'customer';
+  role?: 'admin' | 'customer' | 'cashier';
 }
 
 interface AuthContextType {
   user: User | null;
-  role: 'admin' | 'customer' | null;
+  role: 'admin' | 'customer' | 'cashier' | null;
   /** True until the first `onAuthStateChanged` callback has finished (including Firestore profile work when signed in). */
   loading: boolean;
   /** True only while syncing an already-signed-in Firebase user to app state (not “logging in” from this page). */
@@ -83,7 +83,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [role, setRole] = useState<'admin' | 'customer' | null>(null);
+  const [role, setRole] = useState<'admin' | 'customer' | 'cashier' | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionResolving, setSessionResolving] = useState(false);
 
@@ -125,7 +125,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const fetchedRole = (userDoc.data() as { role?: string }).role;
             if (treatAsAdmin && fetchedRole !== 'admin') {
               await setDoc(profileRef, { role: 'admin' }, { merge: true });
-            } else if (!treatAsAdmin && (fetchedRole === 'admin' || fetchedRole === 'customer')) {
+            } else if (
+              !treatAsAdmin &&
+              (fetchedRole === 'admin' || fetchedRole === 'customer' || fetchedRole === 'cashier')
+            ) {
               setRole(fetchedRole);
             }
           } else {

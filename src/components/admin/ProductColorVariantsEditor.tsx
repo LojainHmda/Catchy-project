@@ -1,10 +1,12 @@
 import React, { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronUp, ImageIcon, Loader2, Plus, Trash2, Upload, X } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn, sanitizeIntegerInput } from '../../lib/utils';
 import { uploadProductImageFile } from '../../lib/productImageUpload';
+import { cloudinaryTransform } from '../../lib/cloudinaryTransform';
 import { newColorVariantRow, type ColorVariantFormRow } from '../../lib/productVariants';
 import { newSizeRow, type SizeRow } from '../../lib/productInventory';
+import { useLanguage } from '../../context/LanguageContext';
 
 const MAX_IMAGES = 6;
 const MAX_FILE = 15 * 1024 * 1024;
@@ -27,6 +29,7 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
   onChange,
   presetSizes,
 }) => {
+  const { t } = useLanguage();
   const [expandedId, setExpandedId] = useState<string | null>(variants[0]?.id ?? null);
   const [uploadingVariantId, setUploadingVariantId] = useState<string | null>(null);
   const [customSizeByVariant, setCustomSizeByVariant] = useState<Record<string, string>>({});
@@ -44,7 +47,7 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
 
   const removeVariant = (id: string) => {
     if (variants.length <= 1) {
-      toast.error('Keep at least one color');
+      toast.error(t('admin.products.variants.keepOneColor'));
       return;
     }
     onChange(variants.filter((v) => v.id !== id));
@@ -57,7 +60,7 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
     const variant = variants.find((v) => v.id === variantId);
     if (!variant) return;
     if (variant.sizeRows.some((r) => r.size.trim().toLowerCase() === label.toLowerCase())) {
-      toast.error('Size already added');
+      toast.error(t('admin.products.form.sizeAlreadyAdded'));
       return;
     }
     updateVariant(variantId, { sizeRows: [...variant.sizeRows, newSizeRow(label, '0')] });
@@ -84,7 +87,7 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
     if (!picked.length) return;
     const oversize = picked.find((f) => f.size > MAX_FILE);
     if (oversize) {
-      toast.error('File too large', { description: 'Max 15 MB per image.' });
+      toast.error(t('admin.products.form.fileTooLarge'), { description: t('admin.products.form.maxFileSize') });
       return;
     }
 
@@ -94,7 +97,7 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
       if (!variant) return;
       const room = MAX_IMAGES - variant.images.length;
       if (room <= 0) {
-        toast.error('Maximum photos reached', { description: `Up to ${MAX_IMAGES} photos per color.` });
+        toast.error(t('admin.products.variants.maxPhotosReached'), { description: t('admin.products.variants.maxPhotosReachedDesc').replace('{n}', String(MAX_IMAGES)) });
         return;
       }
       const urls: string[] = [];
@@ -103,7 +106,7 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
           urls.push(await uploadProductImageFile(file));
         } catch (err) {
           console.error(err);
-          toast.error('Upload failed', { description: file.name });
+          toast.error(t('admin.products.form.uploadFailed'), { description: file.name });
         }
       }
       if (urls.length) {
@@ -120,15 +123,15 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
     <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-4">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-gray-800">Colors & inventory</p>
+          <p className="text-sm font-semibold text-gray-800">{t('admin.products.variants.title')}</p>
           <p className="text-xs text-gray-500">
-            Each color has its own photos and size quantities.
+            {t('admin.products.variants.subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs tabular-nums text-gray-500">
-            {variants.length} color{variants.length === 1 ? '' : 's'} ·{' '}
-            <strong className="text-gray-900">{totalUnits}</strong> units
+            {t('admin.products.variants.colorCount').replace('{n}', String(variants.length)).replace('{plural}', variants.length === 1 ? '' : 's')} ·{' '}
+            <strong className="text-gray-900">{totalUnits}</strong> {t('admin.products.form.units')}
           </span>
           <button
             type="button"
@@ -136,7 +139,7 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
             className="inline-flex h-8 items-center gap-1 rounded-md border border-catchy/30 bg-white px-3 text-xs font-semibold text-catchy shadow-sm hover:bg-catchy/5"
           >
             <Plus size={14} />
-            Add color
+            {t('admin.products.variants.addColor')}
           </button>
         </div>
       </div>
@@ -161,9 +164,14 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
               >
                 {thumb ? (
                   <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md border border-gray-200 bg-gray-100">
-                    <img src={thumb} alt="" className="h-full w-full object-cover" />
+                    <img
+                      src={cloudinaryTransform(thumb, { width: 48, height: 48 })}
+                      alt=""
+                      loading="lazy"
+                      className="h-full w-full object-cover"
+                    />
                     <span
-                      className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-tl border border-white shadow-sm"
+                      className="absolute bottom-0 end-0 h-3.5 w-3.5 rounded-tl border border-white shadow-sm"
                       style={{ backgroundColor: variant.hex || '#d1d5db' }}
                       aria-hidden
                     />
@@ -177,10 +185,10 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
                 )}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-gray-900">
-                    {variant.name.trim() || `Color ${index + 1}`}
+                    {variant.name.trim() || t('admin.products.variants.colorFallbackName').replace('{n}', String(index + 1))}
                   </p>
                   <p className="text-[11px] text-gray-500">
-                    {variant.images.length} photo{variant.images.length === 1 ? '' : 's'} · {stock} in stock
+                    {t('admin.products.variants.photoCount').replace('{n}', String(variant.images.length)).replace('{plural}', variant.images.length === 1 ? '' : 's')} · {t('admin.products.variants.inStockCount').replace('{n}', String(stock))}
                   </p>
                 </div>
                 {open ? (
@@ -195,7 +203,7 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="sm:col-span-2 lg:col-span-2">
                       <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-gray-400">
-                        Color name (EN)
+                        {t('admin.products.variants.nameEn')}
                       </label>
                       <input
                         type="text"
@@ -207,7 +215,7 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
                     </div>
                     <div className="sm:col-span-2 lg:col-span-2">
                       <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-gray-400">
-                        Color name (AR)
+                        {t('admin.products.variants.nameAr')}
                       </label>
                       <input
                         type="text"
@@ -220,7 +228,7 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
                     </div>
                     <div className="sm:col-span-2 lg:col-span-2">
                       <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-gray-400">
-                        Swatch
+                        {t('admin.products.variants.swatch')}
                       </label>
                       <div className="flex items-center gap-2">
                         <input
@@ -228,7 +236,7 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
                           value={variant.hex || '#9ca3af'}
                           onChange={(e) => updateVariant(variant.id, { hex: e.target.value })}
                           className="h-9 w-12 cursor-pointer rounded-md border border-gray-200 bg-white p-0.5"
-                          aria-label="Color swatch"
+                          aria-label={t('admin.products.variants.swatch')}
                         />
                         <input
                           type="text"
@@ -244,7 +252,7 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
                   <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                     <div>
                       <div className="mb-2 flex items-center justify-between">
-                        <label className="text-xs font-medium text-gray-700">Photos for this color</label>
+                        <label className="text-xs font-medium text-gray-700">{t('admin.products.variants.photosForColor')}</label>
                         <button
                           type="button"
                           disabled={uploadingVariantId === variant.id || variant.images.length >= MAX_IMAGES}
@@ -256,7 +264,7 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
                           ) : (
                             <Upload size={12} />
                           )}
-                          Upload
+                          {t('admin.products.form.upload')}
                         </button>
                         <input
                           ref={(el) => {
@@ -279,7 +287,12 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
                               key={url}
                               className="group relative aspect-[4/5] overflow-hidden rounded-md bg-gray-100 ring-1 ring-black/5"
                             >
-                              <img src={url} alt="" className="h-full w-full object-cover" />
+                              <img
+                                src={cloudinaryTransform(url, { width: 140, height: 175 })}
+                                alt=""
+                                loading="lazy"
+                                className="h-full w-full object-cover"
+                              />
                               <button
                                 type="button"
                                 onClick={() =>
@@ -287,8 +300,8 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
                                     images: variant.images.filter((_, i) => i !== imgIdx),
                                   })
                                 }
-                                className="absolute right-1 top-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-white transition-opacity sm:opacity-0 sm:pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto"
-                                aria-label="Remove photo"
+                                className="absolute end-1 top-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-white transition-opacity sm:opacity-0 sm:pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto"
+                                aria-label={t('admin.products.form.removePhoto')}
                               >
                                 <X size={12} />
                               </button>
@@ -304,8 +317,8 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
 
                     <div>
                       <div className="mb-2 flex items-center justify-between">
-                        <label className="text-xs font-medium text-gray-700">Sizes & quantities</label>
-                        <span className="text-[11px] tabular-nums text-gray-500">{stock} units</span>
+                        <label className="text-xs font-medium text-gray-700">{t('admin.products.variants.sizesAndQty')}</label>
+                        <span className="text-[11px] tabular-nums text-gray-500">{stock} {t('admin.products.form.units')}</span>
                       </div>
                       <div className="mb-2 flex flex-wrap gap-1">
                         {presetSizes.map((size) => (
@@ -322,8 +335,8 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
                       {variant.sizeRows.length ? (
                         <div className="space-y-1.5">
                           <div className="grid grid-cols-[1fr_5rem_2rem] gap-2 text-[10px] font-medium uppercase tracking-wide text-gray-400">
-                            <span>Size</span>
-                            <span>Qty</span>
+                            <span>{t('admin.common.size')}</span>
+                            <span>{t('admin.common.qty')}</span>
                             <span />
                           </div>
                           {variant.sizeRows.map((row) => (
@@ -335,10 +348,12 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
                                 className="h-8 rounded-md border border-gray-200 px-2 text-sm"
                               />
                               <input
-                                type="number"
-                                min={0}
+                                type="text"
+                                inputMode="numeric"
+                                lang="en"
+                                dir="ltr"
                                 value={row.quantity}
-                                onChange={(e) => updateSizeRow(variant.id, row.id, { quantity: e.target.value })}
+                                onChange={(e) => updateSizeRow(variant.id, row.id, { quantity: sanitizeIntegerInput(e.target.value) })}
                                 className="h-8 rounded-md border border-gray-200 px-2 text-sm tabular-nums"
                               />
                               <button
@@ -366,14 +381,14 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
                             }
                           }}
                           className="h-8 min-w-0 flex-1 rounded-md border border-gray-200 px-2 text-sm"
-                          placeholder="Custom size"
+                          placeholder={t('admin.products.variants.customSizePlaceholder')}
                         />
                         <button
                           type="button"
                           onClick={() => addSizeRow(variant.id, customSizeByVariant[variant.id] ?? '')}
                           className="h-8 shrink-0 rounded-md border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700"
                         >
-                          Add
+                          {t('admin.common.add')}
                         </button>
                       </div>
                     </div>
@@ -386,7 +401,7 @@ const ProductColorVariantsEditor: React.FC<ProductColorVariantsEditorProps> = ({
                       className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-700"
                     >
                       <Trash2 size={12} />
-                      Remove color
+                      {t('admin.products.variants.removeColor')}
                     </button>
                   ) : null}
                 </div>

@@ -1,9 +1,10 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Edit2 } from 'lucide-react';
+import { Barcode, Edit2, QrCode, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { type CatalogColorSwatch, type CatalogListProduct } from '../lib/catalogProductList';
 import { isRemoteImageUrl, sanitizeImageSrc } from '../lib/productImages';
+import { cloudinaryTransform } from '../lib/cloudinaryTransform';
 import { ProductSaleBadge } from './ProductPriceDisplay';
 
 export interface CatalogProductCardProps {
@@ -15,6 +16,12 @@ export interface CatalogProductCardProps {
   priority?: boolean;
   /** When provided, an admin-only edit button is overlaid on the card. */
   onEdit?: () => void;
+  /** When provided, an admin-only QR code button is overlaid on the card. */
+  onShowQr?: () => void;
+  /** When provided, an admin-only barcode button is overlaid on the card. */
+  onShowBarcode?: () => void;
+  /** When provided, an admin-only permanent-delete button is overlaid on the card. */
+  onDelete?: () => void;
 }
 
 const CatalogProductCard: React.FC<CatalogProductCardProps> = ({
@@ -24,6 +31,9 @@ const CatalogProductCard: React.FC<CatalogProductCardProps> = ({
   saleLabel,
   priority = false,
   onEdit,
+  onShowQr,
+  onShowBarcode,
+  onDelete,
 }) => {
   const src = sanitizeImageSrc(product.images?.[0] ?? '');
   const onSale = typeof compareAtPrice === 'number' && compareAtPrice > product.price;
@@ -39,23 +49,69 @@ const CatalogProductCard: React.FC<CatalogProductCardProps> = ({
               className="left-1.5 top-1.5"
             />
           )}
-          {onEdit && (
-            <button
-              type="button"
-              aria-label="Edit product"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onEdit();
-              }}
-              className="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-catchy-dark shadow-sm ring-1 ring-black/[0.06] transition hover:bg-catchy hover:text-white"
-            >
-              <Edit2 className="h-3 w-3" aria-hidden />
-            </button>
+          {(onEdit || onShowQr || onShowBarcode || onDelete) && (
+            <div className="absolute right-1.5 top-1.5 z-10 flex flex-col gap-1.5">
+              {onEdit && (
+                <button
+                  type="button"
+                  aria-label="Edit product"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onEdit();
+                  }}
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-catchy-dark shadow-sm ring-1 ring-black/[0.06] transition hover:bg-catchy hover:text-white"
+                >
+                  <Edit2 className="h-3 w-3" aria-hidden />
+                </button>
+              )}
+              {onShowQr && (
+                <button
+                  type="button"
+                  aria-label="Show product QR code"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onShowQr();
+                  }}
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-catchy-dark shadow-sm ring-1 ring-black/[0.06] transition hover:bg-catchy hover:text-white"
+                >
+                  <QrCode className="h-3 w-3" aria-hidden />
+                </button>
+              )}
+              {onShowBarcode && (
+                <button
+                  type="button"
+                  aria-label="Show product barcode"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onShowBarcode();
+                  }}
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-catchy-dark shadow-sm ring-1 ring-black/[0.06] transition hover:bg-catchy hover:text-white"
+                >
+                  <Barcode className="h-3 w-3" aria-hidden />
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  aria-label="Delete product permanently"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onDelete();
+                  }}
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-catchy-dark shadow-sm ring-1 ring-black/[0.06] transition hover:bg-red-600 hover:text-white"
+                >
+                  <Trash2 className="h-3 w-3" aria-hidden />
+                </button>
+              )}
+            </div>
           )}
           {src ? (
             <img
-              src={src}
+              src={cloudinaryTransform(src, { width: 480, height: 640 })}
               alt={product.name}
               loading={priority ? 'eager' : 'lazy'}
               decoding="async"

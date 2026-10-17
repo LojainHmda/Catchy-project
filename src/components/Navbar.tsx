@@ -5,6 +5,7 @@ import { useCart } from '../context/CartContext';
 import { useLanguage } from '../context/LanguageContext';
 import { cn } from '../lib/utils';
 import TickerBanner from './TickerBanner';
+import SearchOverlay from './SearchOverlay';
 import {
   ANNOUNCEMENT_DEFAULTS,
   subscribeAnnouncement,
@@ -76,9 +77,7 @@ const Navbar = () => {
                 {cartCount}
               </span>
             </button>
-            <Link to="/catalog" aria-label="Search" className="shrink-0 hover:opacity-70 transition-opacity">
-              <span className="material-symbols-outlined text-on-surface" style={{ fontSize: '22px' }}>search</span>
-            </Link>
+            <SearchOverlay variant="desktop" />
           </div>
 
           {/* Center: logo — pinned so side nav never overlaps */}
@@ -144,9 +143,7 @@ const Navbar = () => {
           CATCHY
         </Link>
         <div className="flex items-center gap-4">
-          <Link to="/catalog" className="hover:opacity-70">
-            <span className="material-symbols-outlined text-on-surface">search</span>
-          </Link>
+          <SearchOverlay variant="mobile" iconSize="24px" />
           <button onClick={openCart} className="relative hover:opacity-70">
             <span className="material-symbols-outlined text-on-surface">shopping_bag</span>
             {cartCount > 0 && (

@@ -181,6 +181,113 @@ app.post('/api/admin/upload-image', async (req, res) => {
   res.status(result.status).json(result.body);
 });
 
+// ── QZ Tray print-request signing (admin only; private key stays server-side) ──
+app.post('/api/admin/qz-sign', async (req, res) => {
+  const { verifyAdminRequest } = await import('./lib/cloudinaryAdmin.js');
+  const auth = await verifyAdminRequest(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, message: auth.message });
+
+  try {
+    const { signQzRequest } = await import('./lib/qzSigning.js');
+    const signature = signQzRequest(req.body?.request);
+    res.status(200).json({ ok: true, signature });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err?.message || 'Signing failed.' });
+  }
+});
+
+// ── POS: register session open/close + sale (admin or cashier only) ──
+app.post('/api/pos/session/open', async (req, res) => {
+  const { verifyPosStaffRequest } = await import('./lib/posAdmin.js');
+  const auth = await verifyPosStaffRequest(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, message: auth.message });
+
+  const { openPosSession } = await import('./lib/posSession.js');
+  const result = await openPosSession(auth.db, {
+    cashierUid: auth.uid,
+    cashierEmail: auth.email,
+    cashierName: req.body?.cashierName || auth.name,
+    openingCashFloat: req.body?.openingCashFloat,
+  });
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
+app.post('/api/pos/session/close', async (req, res) => {
+  const { verifyPosStaffRequest } = await import('./lib/posAdmin.js');
+  const auth = await verifyPosStaffRequest(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, message: auth.message });
+
+  const { closePosSession } = await import('./lib/posSession.js');
+  const result = await closePosSession(auth.db, {
+    sessionId: req.body?.sessionId,
+    cashierUid: auth.uid,
+    role: auth.role,
+    countedCashAtClose: req.body?.countedCashAtClose,
+    notes: req.body?.notes,
+  });
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
+app.post('/api/pos/sale', async (req, res) => {
+  const { verifyPosStaffRequest } = await import('./lib/posAdmin.js');
+  const auth = await verifyPosStaffRequest(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, message: auth.message });
+
+  const { processPosSale } = await import('./lib/posSale.js');
+  const result = await processPosSale(auth.db, {
+    cashierUid: auth.uid,
+    cashierName: auth.name || auth.email,
+    registerSessionId: req.body?.registerSessionId,
+    items: req.body?.items,
+    discount: req.body?.discount,
+    payment: req.body?.payment,
+    customer: req.body?.customer,
+  });
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
+// Admin-only: correct an already-completed POS sale (items/prices/discount,
+// stock delta, audit trail). verifyPosStaffRequest allows admin or cashier;
+// correctPosSale itself re-checks role === 'admin' as defense-in-depth.
+app.post('/api/pos/sale/correct', async (req, res) => {
+  const { verifyPosStaffRequest } = await import('./lib/posAdmin.js');
+  const auth = await verifyPosStaffRequest(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, message: auth.message });
+
+  const { correctPosSale } = await import('./lib/posSaleCorrection.js');
+  const result = await correctPosSale(auth.db, {
+    actorUid: auth.uid,
+    actorName: auth.name || auth.email,
+    actorRole: auth.role,
+    orderId: req.body?.orderId,
+    items: req.body?.items,
+    discount: req.body?.discount,
+    reason: req.body?.reason,
+    idempotencyKey: req.body?.idempotencyKey,
+  });
+  res.status(result.ok ? 200 : result.code === 'FORBIDDEN' ? 403 : 400).json(result);
+});
+
+// Admin-only: cancel an already-completed POS sale (restores stock, marks the
+// order cancelled, records who/when/why). verifyPosStaffRequest allows admin
+// or cashier; cancelPosSale itself re-checks role === 'admin' as defense-in-depth.
+app.post('/api/pos/sale/cancel', async (req, res) => {
+  const { verifyPosStaffRequest } = await import('./lib/posAdmin.js');
+  const auth = await verifyPosStaffRequest(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, message: auth.message });
+
+  const { cancelPosSale } = await import('./lib/posSaleCorrection.js');
+  const result = await cancelPosSale(auth.db, {
+    actorUid: auth.uid,
+    actorName: auth.name || auth.email,
+    actorRole: auth.role,
+    orderId: req.body?.orderId,
+    reason: req.body?.reason,
+    idempotencyKey: req.body?.idempotencyKey,
+  });
+  res.status(result.ok ? 200 : result.code === 'FORBIDDEN' ? 403 : 400).json(result);
+});
+
 // ── Static SPA + client-side routing fallback ──
 app.use(express.static(DIST_DIR));
 app.get('*', (_req, res) => res.sendFile(path.join(DIST_DIR, 'index.html')));

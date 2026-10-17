@@ -1,17 +1,25 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { db, collection, addDoc, updateDoc, doc, serverTimestamp, deleteField } from '../../firebase';
-import { X, Upload, Loader2, Tag, Percent } from 'lucide-react';
+import { X, Upload, Loader2, Tag, Percent, RefreshCw, Trash2, Video } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLanguage } from '../../context/LanguageContext';
-import { cn } from '../../lib/utils';
+import { cn, sanitizeIntegerInput, sanitizeDecimalInput } from '../../lib/utils';
 import { useStoreCategories } from '../../hooks/useStoreCategories';
 import {
   ensureRemoteProductImage,
   ensureRemoteProductImages,
   uploadProductImageFile,
 } from '../../lib/productImageUpload';
+import {
+  deleteProductVideoIfOwned,
+  MAX_VIDEO_MB,
+  uploadProductVideoFile,
+  validateProductVideoFile,
+} from '../../lib/productVideoUpload';
 import { coerceProductImages } from '../../lib/productImages';
+import { cloudinaryTransform } from '../../lib/cloudinaryTransform';
+import { resolveProductCreatedAt } from '../../lib/admin/resolveProductCreatedAt';
 import ProductColorVariantsEditor from './ProductColorVariantsEditor';
 import AdminToggle from './AdminToggle';
 import {
@@ -87,6 +95,7 @@ type ProductFormData = {
   collections: string[];
   isNewArrival: boolean;
   visible: boolean;
+  barcode: string;
   images: string[];
   videos: string[];
   sizeRows: SizeRow[];
@@ -104,6 +113,7 @@ const emptyForm = (): ProductFormData => ({
   collections: [],
   isNewArrival: false,
   visible: true,
+  barcode: '',
   images: [],
   videos: [],
   sizeRows: [],
@@ -149,6 +159,7 @@ function formFromProduct(product: any): ProductFormData {
       : [],
     isNewArrival: hasNewArrivalTag(product),
     visible: product.visible !== false,
+    barcode: typeof product.barcode === 'string' ? product.barcode : '',
     images: coerceProductImages(product),
     videos: Array.isArray(product.videos) ? product.videos : [],
     sizeRows: rows.length ? rows : [newSizeRow('One Size', String(product.stock ?? 0))],
@@ -182,6 +193,9 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
   const [customSizeInput, setCustomSizeInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [videoUploadProgress, setVideoUploadProgress] = useState(0);
+  const [videoDragOver, setVideoDragOver] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -198,14 +212,14 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
       (f): f is File => f instanceof File && f.type.startsWith('image/')
     );
     if (picked.length === 0) {
-      toast.error('Invalid file type', { description: 'Choose image files only (JPEG, PNG, WebP, GIF).' });
+      toast.error(t('admin.products.form.invalidFileType'), { description: t('admin.products.form.invalidFileTypeDesc') });
       input.value = '';
       return;
     }
 
     const oversize = picked.find((f) => f.size > MAX_FILE_BEFORE_COMPRESS);
     if (oversize) {
-      toast.error('File too large', { description: `"${oversize.name}" exceeds the 15 MB per file limit.` });
+      toast.error(t('admin.products.form.fileTooLarge'), { description: t('admin.products.form.fileTooLargeDesc').replace('{name}', oversize.name) });
       input.value = '';
       return;
     }
@@ -219,11 +233,11 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
           newUrls.push(await uploadProductImageFile(file));
         } catch (err) {
           console.error('Image upload failed:', file.name, err);
-          toast.error('Could not upload image', {
+          toast.error(t('admin.products.form.uploadImageFailed'), {
             description:
               err instanceof Error && err.message.includes('Storage')
                 ? err.message
-                : `Try another file instead of "${file.name}".`,
+                : t('admin.products.form.tryAnotherFile').replace('{name}', file.name),
           });
         }
       }
@@ -246,7 +260,7 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
     e.target.value = '';
     if (!file || !file.type.startsWith('image/')) return;
     if (file.size > MAX_FILE_BEFORE_COMPRESS) {
-      toast.error('File too large', { description: 'Max 15 MB per image.' });
+      toast.error(t('admin.products.form.fileTooLarge'), { description: t('admin.products.form.maxFileSize') });
       return;
     }
     setUploadingImages(true);
@@ -255,19 +269,65 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
       setFormData((prev) => ({ ...prev, lifestyleImage: url }));
     } catch (err) {
       console.error('Lifestyle image upload failed:', err);
-      toast.error('Could not upload image', {
-        description: err instanceof Error ? err.message : 'Upload failed.',
+      toast.error(t('admin.products.form.uploadImageFailed'), {
+        description: err instanceof Error ? err.message : t('admin.products.form.uploadFailed'),
       });
     } finally {
       setUploadingImages(false);
     }
   };
 
+  const handleVideoFile = (file: File) => {
+    const validationError = validateProductVideoFile(file, t);
+    if (validationError) {
+      toast.error(t('admin.products.form.invalidVideoToastTitle'), { description: validationError });
+      return;
+    }
+
+    setUploadingVideo(true);
+    setVideoUploadProgress(0);
+    const previousUrl = formData.videos[0] ?? null;
+
+    uploadProductVideoFile(file, setVideoUploadProgress).then(
+      async (url) => {
+        setFormData((prev) => ({ ...prev, videos: [url] }));
+        if (previousUrl) await deleteProductVideoIfOwned(previousUrl);
+        toast.success(t('admin.products.form.videoUploaded'));
+        setUploadingVideo(false);
+        setVideoUploadProgress(0);
+      },
+      (err: Error) => {
+        toast.error(t('admin.products.form.videoUploadFailed'), { description: err.message });
+        setUploadingVideo(false);
+        setVideoUploadProgress(0);
+      }
+    );
+  };
+
+  const handleVideoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) handleVideoFile(file);
+  };
+
+  const handleVideoDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setVideoDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleVideoFile(file);
+  };
+
+  const handleRemoveVideo = async () => {
+    const url = formData.videos[0];
+    setFormData((prev) => ({ ...prev, videos: [] }));
+    if (url) await deleteProductVideoIfOwned(url);
+  };
+
   const addSizeRow = (size: string) => {
     const label = size.trim();
     if (!label) return;
     if (formData.sizeRows.some((r) => r.size.trim().toLowerCase() === label.toLowerCase())) {
-      toast.error('Size already added', { description: `"${label}" is already in the list.` });
+      toast.error(t('admin.products.form.sizeAlreadyAdded'), { description: t('admin.products.form.sizeAlreadyAddedDesc').replace('{label}', label) });
       return;
     }
     setFormData((prev) => ({ ...prev, sizeRows: [...prev.sizeRows, newSizeRow(label, '0')] }));
@@ -304,7 +364,7 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
 
     const price = parseFloat(formData.price);
     if (!Number.isFinite(price) || price < 0) {
-      toast.error('Invalid price', { description: 'Enter a valid number (0 or greater).' });
+      toast.error(t('admin.products.form.invalidPrice'), { description: t('admin.products.form.invalidPriceDesc') });
       return;
     }
 
@@ -312,9 +372,9 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
     let discountFields: Record<string, unknown> = {};
 
     if (formData.discount.enabled) {
-      const resolved = resolveDiscountFromForm(formData.discount, price);
+      const resolved = resolveDiscountFromForm(formData.discount, price, t);
       if (!resolved.ok) {
-        toast.error('Invalid discount', { description: resolved.message });
+        toast.error(t('admin.products.form.invalidDiscount'), { description: resolved.message });
         return;
       }
       finalPrice = resolved.salePrice;
@@ -327,15 +387,15 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
       try {
         const otherTagged = await countNewArrivalProducts(db, product?.id);
         if (otherTagged >= MAX_NEW_ARRIVAL_PRODUCTS) {
-          toast.error('Latest Arrivals is full', {
-            description: `Only ${MAX_NEW_ARRIVAL_PRODUCTS} products can have the "new arrived" tag. Remove it from another product first.`,
+          toast.error(t('admin.products.form.newArrivalsFull'), {
+            description: t('admin.products.form.newArrivalsFullDesc').replace('{n}', String(MAX_NEW_ARRIVAL_PRODUCTS)),
           });
           return;
         }
       } catch (err) {
         console.error('Could not verify new arrival slots:', err);
-        toast.error('Could not verify Latest Arrivals slots', {
-          description: 'Check your connection and try again.',
+        toast.error(t('admin.products.form.newArrivalsCheckFailed'), {
+          description: t('admin.products.form.checkConnection'),
         });
         return;
       }
@@ -346,8 +406,8 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
     const collections = [...new Set(formData.collections)].filter((c) => c && c !== category);
 
     if (!category.trim()) {
-      toast.error('Category required', {
-        description: 'Choose a catalog category (e.g. Tops, Dresses). New Arrivals is a tag only.',
+      toast.error(t('admin.products.form.categoryRequired'), {
+        description: t('admin.products.form.categoryRequiredDesc'),
       });
       return;
     }
@@ -359,9 +419,9 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
     let colorVariantsPayload: Record<string, unknown> = {};
 
     if (formData.useMultiColor) {
-      const built = variantRowsToFirestore(formData.colorVariants);
+      const built = variantRowsToFirestore(formData.colorVariants, t);
       if (built.error) {
-        toast.error('Invalid colors', { description: built.error });
+        toast.error(t('admin.products.form.invalidColors'), { description: built.error });
         return;
       }
       const remoteVariants = await Promise.all(
@@ -379,15 +439,15 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
         defaultColorId: built.defaultColorId,
       };
     } else {
-      const built = rowsToSizeStock(formData.sizeRows);
+      const built = rowsToSizeStock(formData.sizeRows, t);
       if (built.error) {
-        toast.error('Invalid inventory', { description: built.error });
+        toast.error(t('admin.products.form.invalidInventory'), { description: built.error });
         return;
       }
       sizeStock = built.sizeStock;
       stock = totalFromSizeStock(sizeStock);
       if (stock <= 0) {
-        toast.error('No stock', { description: 'Add at least one size with quantity greater than 0.' });
+        toast.error(t('admin.products.form.noStock'), { description: t('admin.products.form.noStockDesc') });
         return;
       }
       images = formData.images.filter((u) => typeof u === 'string' && u.trim().length > 12);
@@ -424,16 +484,17 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
         price: finalPrice,
         stock,
         visible: formData.visible,
+        barcode: formData.barcode.trim(),
         ...discountFields,
         ...colorVariantsPayload,
         updatedAt: serverTimestamp(),
-        createdAt: product ? product.createdAt : serverTimestamp(),
+        createdAt: resolveProductCreatedAt(product, serverTimestamp),
       };
 
       const payloadBytes = new Blob([JSON.stringify(productData)]).size;
       if (payloadBytes > 1_000_000 * 0.9) {
-        toast.error('Product too large for Firestore', {
-          description: `About ${Math.round(payloadBytes / 1024)} KB (limit ~1 MB per document). Remove extra fields and try again.`,
+        toast.error(t('admin.products.form.tooLargeForFirestore'), {
+          description: t('admin.products.form.tooLargeForFirestoreDesc').replace('{kb}', String(Math.round(payloadBytes / 1024))),
         });
         return;
       }
@@ -450,10 +511,10 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
         saved = { id: ref.id, ...createData };
       }
 
-      toast.success(wasEditing ? 'Updated in Firestore' : 'Saved to Firestore', {
+      toast.success(wasEditing ? t('admin.products.form.toastUpdated') : t('admin.products.form.toastCreated'), {
         description: wasEditing
-          ? 'The product document was updated in Cloud Firestore.'
-          : 'A new document was added to the products collection in Cloud Firestore.',
+          ? t('admin.products.form.toastUpdatedDesc')
+          : t('admin.products.form.toastCreatedDesc'),
       });
 
       onClose();
@@ -469,12 +530,11 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
         const rulesUrl = pid
           ? `https://console.firebase.google.com/project/${pid}/firestore/rules`
           : 'https://console.firebase.google.com/';
-        toast.error('Firestore: permission denied', {
-          description:
-            'Your rules in the cloud still block this write. Open Rules below, paste `firestore.rules` from the repo, Publish. Then sign out and sign in again.',
+        toast.error(t('admin.products.form.permissionDenied'), {
+          description: t('admin.products.form.permissionDeniedDesc'),
           duration: 25_000,
           action: {
-            label: 'Open Rules',
+            label: t('admin.products.form.openRules'),
             onClick: () => window.open(rulesUrl, '_blank', 'noopener,noreferrer'),
           },
         });
@@ -483,18 +543,18 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
         msg.includes('RESOURCE_EXHAUSTED') ||
         code === 'resource-exhausted'
       ) {
-        toast.error('Quota exceeded', { description: 'Remove some images or try again later.' });
+        toast.error(t('admin.products.form.quotaExceeded'), { description: t('admin.products.form.quotaExceededDesc') });
       } else if (
         typeof DOMException !== 'undefined' &&
         error instanceof DOMException &&
         error.name === 'QuotaExceededError'
       ) {
-        toast.error('Browser storage full', {
-          description: 'Remove images or clear site data for this site, then try again.',
+        toast.error(t('admin.products.form.storageFull'), {
+          description: t('admin.products.form.storageFullDesc'),
         });
       } else {
-        toast.error('Could not save to Firestore', {
-          description: msg || code || 'Unknown error — see the browser console.',
+        toast.error(t('admin.products.form.saveFailed'), {
+          description: msg || code || t('admin.products.form.unknownError'),
         });
       }
     } finally {
@@ -513,7 +573,7 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
             exit={{ opacity: 0 }}
             onClick={onClose}
             className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
-            aria-label="Close product form"
+            aria-label={t('admin.products.form.closeAria')}
           />
           <motion.div
             initial={{ opacity: 0, y: 16 }}
@@ -524,9 +584,9 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
             <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
               <div>
                 <h2 className="text-base font-semibold text-gray-900">
-                  {product ? 'Edit product' : 'New product'}
+                  {product ? t('admin.products.form.editTitle') : t('admin.products.form.newTitle')}
                 </h2>
-                <p className="text-xs text-gray-500">Catalog listing and product detail fields.</p>
+                <p className="text-xs text-gray-500">{t('admin.products.form.subtitle')}</p>
               </div>
               <button
                 type="button"
@@ -541,38 +601,38 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-3">
                   <div>
-                    <label className={LABEL}>Product name</label>
+                    <label className={LABEL}>{t('admin.products.form.productName')}</label>
                     <input
                       required
                       type="text"
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       className={INPUT}
-                      placeholder="Silk evening dress"
+                      placeholder={t('admin.products.form.productNamePlaceholder')}
                     />
                   </div>
                   <div>
-                    <label className={LABEL}>Category</label>
+                    <label className={LABEL}>{t('admin.products.page.colCategory')}</label>
                     <select
                       required
                       value={formData.category}
                       onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                       className={INPUT}
                     >
-                      <option value="">Select category</option>
+                      <option value="">{t('admin.products.form.selectCategory')}</option>
                       {storeCategories.map((cat) => (
                         <option key={cat.id} value={cat.id}>
                           {cat.name}
                           {cat.nameAr ? ` (${cat.nameAr})` : ''}
-                          {cat.hidden ? ' — hidden' : ''}
+                          {cat.hidden ? ` — ${t('admin.products.form.hiddenSuffix')}` : ''}
                         </option>
                       ))}
                     </select>
                   </div>
                   <div className="rounded-md border border-gray-200 px-3 py-2">
                     <p className={LABEL}>
-                      Also show in these collections
-                      <span className="ml-1 normal-case text-gray-400">(optional — kept in addition to Category above)</span>
+                      {t('admin.products.form.alsoShowIn')}
+                      <span className="ms-1 normal-case text-gray-400">{t('admin.products.form.alsoShowInHint')}</span>
                     </p>
                     <div className="flex flex-wrap gap-2">
                       {storeCategories
@@ -610,8 +670,8 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                   </div>
                   <div className="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2">
                     <label className="text-xs text-gray-600">
-                      New Arrivals on home page
-                      <span className="ml-1 tabular-nums text-gray-400">
+                      {t('admin.products.form.newArrivalsToggle')}
+                      <span className="ms-1 tabular-nums text-gray-400">
                         ({Math.min(newArrivalSlotsUsed, MAX_NEW_ARRIVAL_PRODUCTS)}/{MAX_NEW_ARRIVAL_PRODUCTS})
                       </span>
                     </label>
@@ -619,36 +679,50 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                       checked={formData.isNewArrival}
                       disabled={!formData.isNewArrival && newArrivalCount >= MAX_NEW_ARRIVAL_PRODUCTS && !alreadyTagged}
                       onChange={(checked) => setFormData({ ...formData, isNewArrival: checked })}
-                      ariaLabel="Show in Latest Arrivals on home page"
+                      aria-label={t('admin.products.form.newArrivalsToggleAria')}
                     />
                   </div>
                   {newArrivalAtLimit ? (
                     <p className="text-[11px] text-amber-700">
-                      All {MAX_NEW_ARRIVAL_PRODUCTS} slots are taken. Remove the tag from another product first.
+                      {t('admin.products.form.allSlotsTaken').replace('{n}', String(MAX_NEW_ARRIVAL_PRODUCTS))}
                     </p>
                   ) : null}
                   <div className="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2">
                     <label className="text-xs text-gray-600">
-                      Visible on Shop page
-                      <span className="ml-1 text-gray-400">(hide without affecting stock)</span>
+                      {t('admin.products.form.visibleToggle')}
+                      <span className="ms-1 text-gray-400">{t('admin.products.form.visibleToggleHint')}</span>
                     </label>
                     <AdminToggle
                       checked={formData.visible}
                       onChange={(checked) => setFormData({ ...formData, visible: checked })}
-                      aria-label="Show this product on the Shop page"
+                      aria-label={t('admin.products.form.visibleToggleAria')}
                     />
                   </div>
                   <div>
                     <label className={LABEL}>
-                      {formData.discount.enabled ? 'Original price (ILS)' : 'Price (ILS)'}
+                      {t('admin.products.form.barcodeLabel')} <span className="font-normal text-gray-400">{t('admin.products.form.barcodeHint')}</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.barcode}
+                      onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+                      className={INPUT}
+                      placeholder={t('admin.products.form.barcodePlaceholder')}
+                    />
+                  </div>
+                  <div>
+                    <label className={LABEL}>
+                      {formData.discount.enabled ? t('admin.products.form.originalPrice') : t('admin.products.form.price')}
                     </label>
                     <input
                       required
-                      type="number"
-                      step="0.01"
+                      type="text"
+                      inputMode="decimal"
+                      lang="en"
+                      dir="ltr"
                       value={formData.price}
                       onChange={(e) => {
-                        const next = e.target.value;
+                        const next = sanitizeDecimalInput(e.target.value);
                         setFormData((prev) => {
                           const patch: ProductFormData = { ...prev, price: next };
                           if (prev.discount.enabled && prev.discount.mode === 'percent') {
@@ -665,10 +739,10 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <label className="flex items-center gap-2 text-xs font-medium text-gray-700">
                         <Tag size={14} className="text-catchy" />
-                        On sale
+                        {t('admin.products.form.onSale')}
                       </label>
                       <AdminToggle
-                        aria-label="On sale"
+                        aria-label={t('admin.products.form.onSale')}
                         checked={formData.discount.enabled}
                         onChange={(enabled) =>
                           setFormData((prev) => {
@@ -713,7 +787,7 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                             )}
                           >
                             <Percent size={12} />
-                            Percentage
+                            {t('admin.products.form.percentage')}
                           </button>
                           <button
                             type="button"
@@ -730,21 +804,22 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                                 : 'text-gray-500 hover:bg-white/80'
                             )}
                           >
-                            Manual prices
+                            {t('admin.products.form.manualPrices')}
                           </button>
                         </div>
                         {formData.discount.mode === 'percent' ? (
                           <div>
-                            <label className={LABEL}>Discount %</label>
+                            <label className={LABEL}>{t('admin.products.form.discountPercent')}</label>
                             <input
-                              type="number"
-                              min={1}
-                              max={99}
+                              type="text"
+                              inputMode="numeric"
+                              lang="en"
+                              dir="ltr"
                               value={formData.discount.percent}
                               onChange={(e) =>
                                 setFormData((prev) => ({
                                   ...prev,
-                                  discount: { ...prev.discount, percent: e.target.value },
+                                  discount: { ...prev.discount, percent: sanitizeIntegerInput(e.target.value) },
                                 }))
                               }
                               className={INPUT}
@@ -753,30 +828,34 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                         ) : (
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label className={LABEL}>Original (ILS)</label>
+                              <label className={LABEL}>{t('admin.products.form.originalIls')}</label>
                               <input
-                                type="number"
-                                step="0.01"
+                                type="text"
+                                inputMode="decimal"
+                                lang="en"
+                                dir="ltr"
                                 value={formData.discount.compareAtPrice}
                                 onChange={(e) =>
                                   setFormData((prev) => ({
                                     ...prev,
-                                    discount: { ...prev.discount, compareAtPrice: e.target.value },
+                                    discount: { ...prev.discount, compareAtPrice: sanitizeDecimalInput(e.target.value) },
                                   }))
                                 }
                                 className={INPUT}
                               />
                             </div>
                             <div>
-                              <label className={LABEL}>Sale price (ILS)</label>
+                              <label className={LABEL}>{t('admin.products.form.salePriceIls')}</label>
                               <input
-                                type="number"
-                                step="0.01"
+                                type="text"
+                                inputMode="decimal"
+                                lang="en"
+                                dir="ltr"
                                 value={formData.discount.salePrice}
                                 onChange={(e) =>
                                   setFormData((prev) => ({
                                     ...prev,
-                                    discount: { ...prev.discount, salePrice: e.target.value },
+                                    discount: { ...prev.discount, salePrice: sanitizeDecimalInput(e.target.value) },
                                   }))
                                 }
                                 className={INPUT}
@@ -785,12 +864,12 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                           </div>
                         )}
                         {(() => {
-                          const resolved = resolveDiscountFromForm(formData.discount, parseFloat(formData.price) || 0);
+                          const resolved = resolveDiscountFromForm(formData.discount, parseFloat(formData.price) || 0, t);
                           if (!resolved.ok) return null;
                           const pct = getDiscountPercent(resolved.compareAt, resolved.salePrice);
                           return (
                             <p className="rounded-md bg-white px-2 py-1.5 text-[11px] text-gray-600 ring-1 ring-gray-200">
-                              Customer pays{' '}
+                              {t('admin.products.form.customerPays')}{' '}
                               <strong className="text-red-600">ILS {resolved.salePrice.toFixed(2)}</strong>
                               {' · '}
                               <span className="line-through">ILS {resolved.compareAt.toFixed(2)}</span>
@@ -801,7 +880,7 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                         })()}
                       </div>
                     ) : (
-                      <p className="text-[11px] text-gray-500">Enable to show a sale price on catalog and product pages.</p>
+                      <p className="text-[11px] text-gray-500">{t('admin.products.form.enableSaleHint')}</p>
                     )}
                   </div>
                 </div>
@@ -810,7 +889,7 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                   {!formData.useMultiColor ? (
                     <div>
                       <label className={LABEL}>
-                        Photos ({formData.images.length}/{MAX_PRODUCT_IMAGES})
+                        {t('admin.products.form.photos').replace('{n}', String(formData.images.length)).replace('{max}', String(MAX_PRODUCT_IMAGES))}
                       </label>
                       <div className="flex flex-wrap gap-2">
                         {formData.images.map((img, i) => (
@@ -818,7 +897,13 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                             key={`img-${i}`}
                             className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-gray-200 bg-gray-50"
                           >
-                            <img src={img} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                            <img
+                              src={cloudinaryTransform(img, { width: 64, height: 64 })}
+                              alt=""
+                              loading="lazy"
+                              className="h-full w-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
                             <button
                               type="button"
                               onClick={() =>
@@ -827,12 +912,12 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                                   images: prev.images.filter((_, idx) => idx !== i),
                                 }))
                               }
-                              className="absolute right-0.5 top-0.5 z-10 flex h-5 w-5 items-center justify-center rounded bg-black/65 text-white transition-opacity sm:opacity-0 sm:pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto"
-                              aria-label="Remove photo"
+                              className="absolute end-0.5 top-0.5 z-10 flex h-5 w-5 items-center justify-center rounded bg-black/65 text-white transition-opacity sm:opacity-0 sm:pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto"
+                              aria-label={t('admin.products.form.removePhoto')}
                             >
                               <X size={10} />
                             </button>
-                            <span className="absolute bottom-0.5 left-0.5 rounded bg-black/55 px-1 text-[9px] font-medium text-white">
+                            <span className="absolute bottom-0.5 start-0.5 rounded bg-black/55 px-1 text-[9px] font-medium text-white">
                               {i + 1}
                             </span>
                           </div>
@@ -849,7 +934,7 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                             ) : (
                               <>
                                 <Upload size={14} />
-                                <span className="mt-0.5 text-[9px] font-medium">Add</span>
+                                <span className="mt-0.5 text-[9px] font-medium">{t('admin.common.add')}</span>
                               </>
                             )}
                             <input type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" />
@@ -860,60 +945,100 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                   ) : null}
 
                   <div>
-                    <label className={LABEL}>Video URLs</label>
-                    <div className="space-y-1.5">
-                      {formData.videos.map((vid, i) => (
-                        <div key={`vid-${i}`} className="flex items-center gap-1.5">
-                          <input
-                            type="url"
-                            value={vid}
-                            onChange={(e) => {
-                              const newVideos = [...formData.videos];
-                              newVideos[i] = e.target.value;
-                              setFormData({ ...formData, videos: newVideos });
-                            }}
-                            placeholder="https://…"
-                            className={cn(INPUT, 'flex-1')}
-                          />
+                    <label className={LABEL}>{t('admin.products.form.videoLabel')}</label>
+                    <input
+                      type="file"
+                      accept="video/*"
+                      onChange={handleVideoFileChange}
+                      disabled={uploadingVideo}
+                      className="hidden"
+                      id="product-video-file-input"
+                    />
+                    {formData.videos[0] ? (
+                      <div className="space-y-2">
+                        <div className="relative aspect-video max-h-48 overflow-hidden rounded-lg bg-black">
+                          <video src={formData.videos[0]} controls muted className="h-full w-full object-contain" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label
+                            htmlFor="product-video-file-input"
+                            className={cn(
+                              'flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-gray-200 px-3 text-xs font-medium text-gray-600 hover:border-gray-300',
+                              uploadingVideo && 'pointer-events-none opacity-60'
+                            )}
+                          >
+                            <RefreshCw size={13} />
+                            {t('admin.products.form.replace')}
+                          </label>
                           <button
                             type="button"
-                            onClick={() =>
-                              setFormData({ ...formData, videos: formData.videos.filter((_, idx) => idx !== i) })
-                            }
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600"
+                            onClick={handleRemoveVideo}
+                            disabled={uploadingVideo}
+                            className="flex h-8 items-center gap-1.5 rounded-md border border-red-100 bg-red-50 px-3 text-xs font-medium text-red-600 hover:bg-red-100 disabled:opacity-60"
                           >
-                            <X size={14} />
+                            <Trash2 size={13} />
+                            {t('admin.common.remove')}
                           </button>
+                          {uploadingVideo && (
+                            <span className="text-xs text-gray-400">{t('admin.products.form.uploadingPercent').replace('{n}', String(videoUploadProgress))}</span>
+                          )}
                         </div>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => setFormData({ ...formData, videos: [...formData.videos, ''] })}
-                        className="h-8 w-full rounded-md border border-dashed border-gray-200 text-xs font-medium text-gray-600 hover:border-gray-300"
+                      </div>
+                    ) : (
+                      <label
+                        htmlFor="product-video-file-input"
+                        onDragOver={(e) => { e.preventDefault(); setVideoDragOver(true); }}
+                        onDragLeave={() => setVideoDragOver(false)}
+                        onDrop={handleVideoDrop}
+                        className={cn(
+                          'flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed p-5 text-center transition-colors',
+                          videoDragOver ? 'border-catchy bg-emerald-50' : 'border-gray-200 bg-gray-50 hover:border-gray-300',
+                          uploadingVideo && 'pointer-events-none'
+                        )}
                       >
-                        + Add video URL
-                      </button>
-                    </div>
+                        {uploadingVideo ? (
+                          <>
+                            <Loader2 size={22} className="animate-spin text-catchy" />
+                            <p className="text-xs font-medium text-gray-600">{t('admin.products.form.uploadingPercent').replace('{n}', String(videoUploadProgress))}</p>
+                            <div className="h-1.5 w-full max-w-[12rem] overflow-hidden rounded-full bg-gray-200">
+                              <div
+                                className="h-full rounded-full bg-catchy transition-all duration-300"
+                                style={{ width: `${videoUploadProgress}%` }}
+                              />
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <Video size={22} className="text-gray-300" />
+                            <p className="text-xs font-medium text-gray-600">
+                              {t('admin.products.form.dragDropVideo')} <span className="text-catchy underline">{t('admin.products.form.browse')}</span>
+                            </p>
+                            <p className="text-[11px] text-gray-400">{t('admin.products.form.videoFormats').replace('{n}', String(MAX_VIDEO_MB))}</p>
+                          </>
+                        )}
+                      </label>
+                    )}
                   </div>
 
                   <div className="rounded-md border border-gray-200 bg-gray-50/80 p-3">
                     <label className={LABEL}>
-                      Lifestyle photo <span className="font-normal text-gray-400">(detail page only)</span>
+                      {t('admin.products.form.lifestylePhoto')} <span className="font-normal text-gray-400">{t('admin.products.form.lifestylePhotoHint')}</span>
                     </label>
                     <div className="flex items-center gap-2">
                       {formData.lifestyleImage ? (
                         <div className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-gray-200">
                           <img
-                            src={formData.lifestyleImage}
+                            src={cloudinaryTransform(formData.lifestyleImage, { width: 64, height: 64 })}
                             alt=""
+                            loading="lazy"
                             className="h-full w-full object-cover"
                             referrerPolicy="no-referrer"
                           />
                           <button
                             type="button"
                             onClick={() => setFormData((prev) => ({ ...prev, lifestyleImage: '' }))}
-                            className="absolute right-0.5 top-0.5 z-10 flex h-5 w-5 items-center justify-center rounded bg-black/65 text-white transition-opacity sm:opacity-0 sm:pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto"
-                            aria-label="Remove lifestyle photo"
+                            className="absolute end-0.5 top-0.5 z-10 flex h-5 w-5 items-center justify-center rounded bg-black/65 text-white transition-opacity sm:opacity-0 sm:pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto"
+                            aria-label={t('admin.products.form.removeLifestylePhoto')}
                           >
                             <X size={10} />
                           </button>
@@ -930,7 +1055,7 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                         ) : (
                           <>
                             <Upload size={14} />
-                            <span className="text-[9px] font-medium">{formData.lifestyleImage ? 'Replace' : 'Upload'}</span>
+                            <span className="text-[9px] font-medium">{formData.lifestyleImage ? t('admin.products.form.replace') : t('admin.products.form.upload')}</span>
                           </>
                         )}
                         <input type="file" accept="image/*" onChange={handleLifestyleImageUpload} className="hidden" />
@@ -939,13 +1064,13 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                   </div>
 
                   <div>
-                    <label className={LABEL}>Description</label>
+                    <label className={LABEL}>{t('admin.products.form.description')}</label>
                     <textarea
                       rows={4}
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                       className={cn(INPUT, 'h-auto min-h-[5.5rem] resize-y py-2')}
-                      placeholder="Fabric, fit, care instructions…"
+                      placeholder={t('admin.products.form.descriptionPlaceholder')}
                     />
                   </div>
                 </div>
@@ -954,13 +1079,13 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                   <div className="rounded-md border border-gray-200 bg-white p-3">
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="text-xs font-semibold text-gray-800">Multiple colors</p>
+                        <p className="text-xs font-semibold text-gray-800">{t('admin.products.form.multipleColors')}</p>
                         <p className="text-[11px] text-gray-500">
-                          Separate photos and stock per color (recommended for fashion).
+                          {t('admin.products.form.multipleColorsHint')}
                         </p>
                       </div>
                       <AdminToggle
-                        aria-label="Multiple colors"
+                        aria-label={t('admin.products.form.multipleColors')}
                         checked={formData.useMultiColor}
                         onChange={(next) =>
                           setFormData((prev) => {
@@ -996,9 +1121,9 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                   ) : (
                     <div className="rounded-md border border-gray-200 bg-gray-50/60 p-3">
                       <div className="mb-2 flex items-center justify-between gap-2">
-                        <label className="text-xs font-medium text-gray-700">Size inventory</label>
+                        <label className="text-xs font-medium text-gray-700">{t('admin.products.form.sizeInventory')}</label>
                         <span className="text-xs tabular-nums text-gray-500">
-                          Total: <strong className="text-gray-900">{formTotalStock}</strong> units
+                          {t('admin.common.total')}: <strong className="text-gray-900">{formTotalStock}</strong> {t('admin.products.form.units')}
                         </span>
                       </div>
                       <div className="mb-2 flex flex-wrap gap-1">
@@ -1016,8 +1141,8 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                       {formData.sizeRows.length > 0 ? (
                         <div className="space-y-1.5">
                           <div className="grid grid-cols-[1fr_5rem_2rem] gap-2 px-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-400">
-                            <span>Size</span>
-                            <span>Qty</span>
+                            <span>{t('admin.common.size')}</span>
+                            <span>{t('admin.common.qty')}</span>
                             <span />
                           </div>
                           {formData.sizeRows.map((row) => (
@@ -1027,14 +1152,15 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                                 value={row.size}
                                 onChange={(e) => updateSizeRow(row.id, { size: e.target.value })}
                                 className={cn(INPUT, 'h-8')}
-                                placeholder="e.g. M"
+                                placeholder={t('admin.products.form.sizeExamplePlaceholder')}
                               />
                               <input
-                                type="number"
-                                min={0}
-                                step={1}
+                                type="text"
+                                inputMode="numeric"
+                                lang="en"
+                                dir="ltr"
                                 value={row.quantity}
-                                onChange={(e) => updateSizeRow(row.id, { quantity: e.target.value })}
+                                onChange={(e) => updateSizeRow(row.id, { quantity: sanitizeIntegerInput(e.target.value) })}
                                 className={cn(INPUT, 'h-8 tabular-nums')}
                                 placeholder="0"
                               />
@@ -1042,7 +1168,7 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                                 type="button"
                                 onClick={() => removeSizeRow(row.id)}
                                 className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-400 hover:bg-red-50 hover:text-red-600"
-                                aria-label="Remove size"
+                                aria-label={t('admin.products.form.removeSize')}
                               >
                                 <X size={14} />
                               </button>
@@ -1050,7 +1176,7 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                           ))}
                         </div>
                       ) : (
-                        <p className="text-xs text-gray-500">Add sizes and set quantity for each (e.g. 3×M, 2×S).</p>
+                        <p className="text-xs text-gray-500">{t('admin.products.form.addSizesHint')}</p>
                       )}
                       <div className="mt-2 flex gap-1.5">
                         <input
@@ -1064,14 +1190,14 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                             }
                           }}
                           className={cn(INPUT, 'h-8 flex-1')}
-                          placeholder="Custom size (e.g. 38, Free)"
+                          placeholder={t('admin.products.form.customSizePlaceholder')}
                         />
                         <button
                           type="button"
                           onClick={() => addSizeRow(customSizeInput)}
                           className="h-8 shrink-0 rounded-md border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 hover:bg-gray-50"
                         >
-                          Add
+                          {t('admin.common.add')}
                         </button>
                       </div>
                     </div>
@@ -1085,14 +1211,14 @@ const AdminProductFormModal: React.FC<AdminProductFormModalProps> = ({
                   onClick={onClose}
                   className="h-9 flex-1 rounded-md border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
                 >
-                  Cancel
+                  {t('admin.common.cancel')}
                 </button>
                 <button
                   type="submit"
-                  disabled={saving || uploadingImages}
+                  disabled={saving || uploadingImages || uploadingVideo}
                   className="h-9 flex-[2] rounded-md bg-catchy text-sm font-semibold text-white hover:bg-catchy-dark disabled:opacity-50"
                 >
-                  {saving ? 'Saving…' : product ? 'Save changes' : 'Create product'}
+                  {saving ? t('admin.products.form.saving') : product ? t('admin.orders.edit.saveChanges') : t('admin.products.form.createProduct')}
                 </button>
               </div>
             </form>

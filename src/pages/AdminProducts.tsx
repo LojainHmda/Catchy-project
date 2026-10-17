@@ -1,7 +1,7 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { db, collection, getDocs, deleteDoc, doc, updateDoc, query, orderBy, limit, startAfter } from '../firebase';
-import { Plus, Search, Edit2, Trash2, Package, Loader2, RefreshCw, ImageIcon, ChevronDown, Eye, EyeOff } from 'lucide-react';
+import { db, collection, getDocs, doc, updateDoc, query, orderBy, limit, startAfter } from '../firebase';
+import { Plus, Search, Edit2, Trash2, Package, Loader2, RefreshCw, ImageIcon, ChevronDown, Eye, EyeOff, QrCode, Barcode } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { CATEGORY_KEYS, CATEGORY_ICONS } from '../constants';
 import { cn } from '../lib/utils';
@@ -14,8 +14,12 @@ import {
 import type { CoordinateLook } from '../types/coordinates';
 import { seedDressPants } from '../lib/seed';
 import { coerceProductImages } from '../lib/productImages';
+import { cloudinaryTransform } from '../lib/cloudinaryTransform';
+import { deleteProductPermanently } from '../lib/admin/deleteProduct';
 import ProductSizeStockChips from '../components/admin/ProductSizeStockChips';
 import AdminProductFormModal from '../components/admin/AdminProductFormModal';
+import AdminProductQrModal from '../components/admin/AdminProductQrModal';
+import AdminProductBarcodeModal from '../components/admin/AdminProductBarcodeModal';
 import AdminCategoriesPanel from '../components/admin/AdminCategoriesPanel';
 import { resolveProductInventory } from '../lib/productInventory';
 import { getDiscountPercent, isProductOnSale } from '../lib/productDiscount';
@@ -42,6 +46,8 @@ const AdminProducts = () => {
   const [hasMore, setHasMore] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
+  const [qrProduct, setQrProduct] = useState<any>(null);
+  const [barcodeProduct, setBarcodeProduct] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [listTab, setListTab] = useState<ListTab>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -68,8 +74,8 @@ const AdminProducts = () => {
         migrateLegacyNewArrivalProducts(db, list)
           .then(async (migrated) => {
             if (migrated > 0) {
-              toast.success('New Arrivals synced', {
-                description: `${migrated} product(s) tagged for the home page.`,
+              toast.success(t('admin.products.page.toastNewArrivalsSynced'), {
+                description: t('admin.products.page.toastNewArrivalsDesc').replace('{n}', String(migrated)),
               });
               // Reload first page to reflect updated tags
               const snap2 = await getDocs(
@@ -129,15 +135,15 @@ const AdminProducts = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm('Are you sure you want to delete this product?')) {
+    if (window.confirm(t('admin.products.page.confirmDelete'))) {
       try {
-        await deleteDoc(doc(db, 'products', id));
+        await deleteProductPermanently(id);
         setProducts((prev) => prev.filter((p) => p.id !== id));
-        toast.success('Product removed from Firestore');
+        toast.success(t('admin.products.page.toastDeleted'));
       } catch (error) {
         console.error('Error deleting product:', error);
-        toast.error('Could not delete product', {
-          description: error instanceof Error ? error.message : 'Check console and Firestore rules.',
+        toast.error(t('admin.products.page.toastDeleteFailed'), {
+          description: error instanceof Error ? error.message : t('admin.products.page.toastDeleteFailedDesc'),
         });
       }
     }
@@ -153,12 +159,12 @@ const AdminProducts = () => {
     setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, visible: nextVisible } : p)));
     try {
       await updateDoc(doc(db, 'products', product.id), { visible: nextVisible });
-      toast.success(nextVisible ? 'Product shown on Shop page' : 'Product hidden from Shop page');
+      toast.success(nextVisible ? t('admin.products.page.toastShown') : t('admin.products.page.toastHidden'));
     } catch (error) {
       console.error('Error toggling product visibility:', error);
       setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, visible: !nextVisible } : p)));
-      toast.error('Could not update visibility', {
-        description: error instanceof Error ? error.message : 'Check console and Firestore rules.',
+      toast.error(t('admin.products.page.toastVisibilityFailed'), {
+        description: error instanceof Error ? error.message : t('admin.products.page.toastDeleteFailedDesc'),
       });
     }
   };
@@ -226,8 +232,11 @@ const AdminProducts = () => {
   };
 
   const tableThumb = (product: any) =>
-    coerceProductImages(product)[0] ||
-    'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=200';
+    cloudinaryTransform(
+      coerceProductImages(product)[0] ||
+        'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=200',
+      { width: 44, height: 44 }
+    );
 
   const categoryFilters = ['all', ...Object.keys(CATEGORY_ICONS).filter((k) => k !== 'All')];
 
@@ -236,8 +245,8 @@ const AdminProducts = () => {
       <header className="border-b border-gray-200 pb-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">Products</h1>
-            <p className="mt-0.5 text-sm text-gray-500">Manage catalog items, pricing, and inventory.</p>
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">{t('admin.nav.products')}</h1>
+            <p className="mt-0.5 text-sm text-gray-500">{t('admin.products.page.subtitle')}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -247,7 +256,7 @@ const AdminProducts = () => {
               className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
             >
               <RefreshCw size={14} className={cn(listLoading && 'animate-spin')} />
-              Refresh
+              {t('admin.common.refresh')}
             </button>
             <button
               type="button"
@@ -255,25 +264,25 @@ const AdminProducts = () => {
               className="inline-flex h-9 items-center gap-1.5 rounded-md bg-catchy px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-catchy-dark"
             >
               <Plus size={14} />
-              Add product
+              {t('admin.products.page.addProduct')}
             </button>
           </div>
         </div>
         <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm">
           <div className="flex gap-1.5">
-            <dt className="text-gray-500">Total</dt>
+            <dt className="text-gray-500">{t('admin.common.total')}</dt>
             <dd className="font-medium tabular-nums text-gray-900">{stats.total}</dd>
           </div>
           <div className="flex gap-1.5">
-            <dt className="text-gray-500">In stock</dt>
+            <dt className="text-gray-500">{t('admin.products.page.statInStock')}</dt>
             <dd className="font-medium tabular-nums text-catchy-dark">{stats.inStock}</dd>
           </div>
           <div className="flex gap-1.5">
-            <dt className="text-gray-500">Low</dt>
+            <dt className="text-gray-500">{t('admin.products.page.statLow')}</dt>
             <dd className="font-medium tabular-nums text-amber-700">{stats.lowStock}</dd>
           </div>
           <div className="flex gap-1.5">
-            <dt className="text-gray-500">Out</dt>
+            <dt className="text-gray-500">{t('admin.products.page.statOut')}</dt>
             <dd className="font-medium tabular-nums text-red-600">{stats.outOfStock}</dd>
           </div>
         </dl>
@@ -290,8 +299,8 @@ const AdminProducts = () => {
               : 'border-transparent text-gray-500 hover:text-gray-700'
           )}
         >
-          All products
-          <span className="ml-1.5 tabular-nums text-xs font-normal opacity-70">{products.length}</span>
+          {t('admin.products.page.tabAll')}
+          <span className="ms-1.5 tabular-nums text-xs font-normal opacity-70">{products.length}</span>
         </button>
         <button
           type="button"
@@ -303,8 +312,8 @@ const AdminProducts = () => {
               : 'border-transparent text-gray-500 hover:text-gray-700'
           )}
         >
-          New Arrivals
-          <span className="ml-1.5 tabular-nums text-xs font-normal opacity-70">
+          {t('cat.newArrivals')}
+          <span className="ms-1.5 tabular-nums text-xs font-normal opacity-70">
             {newArrivalCount}/{MAX_NEW_ARRIVAL_PRODUCTS}
           </span>
         </button>
@@ -318,7 +327,7 @@ const AdminProducts = () => {
               : 'border-transparent text-gray-500 hover:text-gray-700'
           )}
         >
-          Categories
+          {t('admin.products.page.tabCategories')}
         </button>
       </div>
 
@@ -331,34 +340,34 @@ const AdminProducts = () => {
       <div className="mt-4 flex flex-col gap-3 border-b border-gray-200 pb-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="relative w-full sm:max-w-xs">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               type="search"
-              placeholder="Search name, category, ID…"
+              placeholder={t('admin.products.page.searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="h-9 w-full rounded-md border border-gray-200 bg-white pl-9 pr-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-400 focus:ring-0"
+              className="h-9 w-full rounded-md border border-gray-200 bg-white ps-9 pe-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-400 focus:ring-0"
             />
           </div>
           <div className="relative w-full sm:w-auto">
-            <Package className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Package className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <select
               value={stockFilter}
               onChange={(e) => setStockFilter(e.target.value as StockFilter)}
-              aria-label="Filter by stock level"
+              aria-label={t('admin.products.page.filterStockAria')}
               className={cn(
-                'h-9 w-full appearance-none rounded-md border bg-white pl-9 pr-8 text-sm outline-none transition focus:border-gray-400 sm:w-auto',
+                'h-9 w-full appearance-none rounded-md border bg-white ps-9 pe-8 text-sm outline-none transition focus:border-gray-400 sm:w-auto',
                 stockFilter === 'all' ? 'border-gray-200 text-gray-700' : 'border-gray-900 font-medium text-gray-900'
               )}
             >
-              <option value="all">All stock ({stats.total})</option>
-              <option value="in">In stock ({stats.inStock})</option>
-              <option value="low">Low stock ({stats.lowStock})</option>
-              <option value="out">Out of stock ({stats.outOfStock})</option>
+              <option value="all">{t('admin.products.page.stockAll').replace('{n}', String(stats.total))}</option>
+              <option value="in">{t('admin.products.page.stockIn').replace('{n}', String(stats.inStock))}</option>
+              <option value="low">{t('admin.products.page.stockLow').replace('{n}', String(stats.lowStock))}</option>
+              <option value="out">{t('admin.products.page.stockOut').replace('{n}', String(stats.outOfStock))}</option>
             </select>
             <ChevronDown
               size={15}
-              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+              className="pointer-events-none absolute end-2.5 top-1/2 -translate-y-1/2 text-gray-400"
               aria-hidden
             />
           </div>
@@ -375,8 +384,8 @@ const AdminProducts = () => {
                   categoryFilter === cat ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
                 )}
               >
-                {cat === 'all' ? 'All' : cat}
-                <span className="ml-1 tabular-nums opacity-70">{categoryCounts[cat] ?? 0}</span>
+                {cat === 'all' ? t('cat.all') : t(CATEGORY_KEYS[cat] || cat)}
+                <span className="ms-1 tabular-nums opacity-70">{categoryCounts[cat] ?? 0}</span>
               </button>
             ))}
           </div>
@@ -387,18 +396,18 @@ const AdminProducts = () => {
         {listLoading ? (
           <div className="flex items-center justify-center gap-2 py-10 text-sm text-gray-500">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Loading products…
+            {t('admin.products.page.loading')}
           </div>
         ) : filteredProducts.length === 0 ? (
           <div className="px-4 py-10 text-center">
             <Package className="mx-auto mb-2 h-8 w-8 text-gray-300" />
-            <p className="text-sm font-medium text-gray-900">No products found</p>
+            <p className="text-sm font-medium text-gray-900">{t('admin.products.page.emptyTitle')}</p>
             <p className="mt-1 text-xs text-gray-500">
               {products.length === 0
-                ? 'Add your first item to the catalog.'
+                ? t('admin.products.page.emptyFirstItem')
                 : listTab === 'new_arrivals'
-                  ? 'No products tagged for the home page yet. Edit a product and turn on New Arrivals.'
-                  : 'Try a different search or filter.'}
+                  ? t('admin.products.page.emptyNewArrivals')
+                  : t('admin.products.page.emptyFilter')}
             </p>
             {products.length === 0 ? (
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
@@ -408,7 +417,7 @@ const AdminProducts = () => {
                   className="inline-flex h-8 items-center gap-1.5 rounded-md bg-catchy px-3 text-xs font-semibold text-white hover:bg-catchy-dark"
                 >
                   <Plus size={14} />
-                  Add product
+                  {t('admin.products.page.addProduct')}
                 </button>
                 <button
                   type="button"
@@ -418,7 +427,7 @@ const AdminProducts = () => {
                   }}
                   className="text-xs font-medium text-gray-500 underline-offset-2 hover:text-gray-700 hover:underline"
                 >
-                  Load demo products
+                  {t('admin.products.page.loadDemo')}
                 </button>
               </div>
             ) : null}
@@ -426,14 +435,14 @@ const AdminProducts = () => {
         ) : (
           <>
             <div className="hidden overflow-x-auto md:block">
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-start text-sm">
                 <thead>
                   <tr className="border-b border-gray-200 text-xs font-medium text-gray-500">
-                    <th className="px-4 py-2.5 font-medium">Product</th>
-                    <th className="px-4 py-2.5 font-medium">Category</th>
-                    <th className="min-w-[11rem] px-4 py-2.5 font-medium">Inventory</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Price</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Actions</th>
+                    <th className="px-4 py-2.5 font-medium">{t('admin.orders.table.product')}</th>
+                    <th className="px-4 py-2.5 font-medium">{t('admin.products.page.colCategory')}</th>
+                    <th className="min-w-[11rem] px-4 py-2.5 font-medium">{t('admin.products.page.colInventory')}</th>
+                    <th className="px-4 py-2.5 text-end font-medium">{t('admin.products.page.colPrice')}</th>
+                    <th className="px-4 py-2.5 text-end font-medium">{t('admin.products.page.colActions')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -464,12 +473,12 @@ const AdminProducts = () => {
                                 <span className="font-mono">{product.id.slice(0, 8)}</span>
                                 {hasNewArrivalTag(product) ? (
                                   <span className="rounded bg-catchy/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-catchy-dark">
-                                    New arrived
+                                    {t('cat.newArrivals')}
                                   </span>
                                 ) : null}
                                 {product.visible === false ? (
                                   <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
-                                    Hidden
+                                    {t('coordinates.hiddenBadge')}
                                   </span>
                                 ) : null}
                                 {images.length > 1 ? (
@@ -486,15 +495,15 @@ const AdminProducts = () => {
                           <span className="inline-flex items-center gap-1.5 rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
                             {displayCategory
                               ? t(CATEGORY_KEYS[displayCategory] || displayCategory)
-                              : 'Set category'}
+                              : t('admin.products.page.setCategory')}
                           </span>
                         </td>
                         <td className="px-4 py-2.5">
                           <ProductSizeStockChips sizeStock={sizeStock} totalStock={stock} />
                         </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 text-right">
+                        <td className="whitespace-nowrap px-4 py-2.5 text-end">
                           {isProductOnSale(product) ? (
-                            <div className="text-right">
+                            <div className="text-end">
                               <p className="font-medium tabular-nums text-red-600">
                                 ILS {Number(product.price).toLocaleString('en-GB', { minimumFractionDigits: 2 })}
                               </p>
@@ -515,10 +524,28 @@ const AdminProducts = () => {
                           <div className="flex items-center justify-end gap-1">
                             <button
                               type="button"
+                              onClick={() => setQrProduct(product)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition hover:bg-gray-100 hover:text-gray-900"
+                              aria-label={t('admin.products.page.qrCode')}
+                              title={t('admin.products.page.qrCode')}
+                            >
+                              <QrCode size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setBarcodeProduct(product)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition hover:bg-gray-100 hover:text-gray-900"
+                              aria-label={t('admin.products.page.barcode')}
+                              title={t('admin.products.page.barcode')}
+                            >
+                              <Barcode size={15} />
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => handleToggleVisibility(product)}
                               className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition hover:bg-gray-100 hover:text-gray-900"
-                              aria-label={product.visible === false ? 'Show on Shop page' : 'Hide from Shop page'}
-                              title={product.visible === false ? 'Show on Shop page' : 'Hide from Shop page'}
+                              aria-label={product.visible === false ? t('admin.products.page.showOnShop') : t('admin.products.page.hideFromShop')}
+                              title={product.visible === false ? t('admin.products.page.showOnShop') : t('admin.products.page.hideFromShop')}
                             >
                               {product.visible === false ? <EyeOff size={15} /> : <Eye size={15} />}
                             </button>
@@ -526,7 +553,7 @@ const AdminProducts = () => {
                               type="button"
                               onClick={() => openEditModal(product)}
                               className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition hover:bg-gray-100 hover:text-gray-900"
-                              aria-label="Edit"
+                              aria-label={t('admin.common.edit')}
                             >
                               <Edit2 size={15} />
                             </button>
@@ -534,7 +561,7 @@ const AdminProducts = () => {
                               type="button"
                               onClick={() => handleDelete(product.id)}
                               className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition hover:bg-red-50 hover:text-red-600"
-                              aria-label="Delete"
+                              aria-label={t('admin.common.delete')}
                             >
                               <Trash2 size={15} />
                             </button>
@@ -560,30 +587,46 @@ const AdminProducts = () => {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-gray-900">{product.name}</p>
                         <p className="flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
-                          <span>{displayCategory ? t(CATEGORY_KEYS[displayCategory] || displayCategory) : 'Set category'}</span>
+                          <span>{displayCategory ? t(CATEGORY_KEYS[displayCategory] || displayCategory) : t('admin.products.page.setCategory')}</span>
                           {hasNewArrivalTag(product) ? (
                             <span className="rounded bg-catchy/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-catchy-dark">
-                              New arrived
+                              {t('cat.newArrivals')}
                             </span>
                           ) : null}
                           {product.visible === false ? (
                             <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
-                              Hidden
+                              {t('coordinates.hiddenBadge')}
                             </span>
                           ) : null}
                         </p>
                       </div>
                       <p className="shrink-0 text-sm font-medium tabular-nums text-gray-900">ILS {product.price}</p>
                     </div>
-                    <div className="mt-2 pl-14">
+                    <div className="mt-2 ps-14">
                       <ProductSizeStockChips sizeStock={sizeStock} totalStock={stock} compact maxVisible={4} />
                     </div>
                     <div className="flex shrink-0 gap-0.5">
                       <button
                         type="button"
+                        onClick={() => setQrProduct(product)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100"
+                        aria-label={t('admin.products.page.qrCode')}
+                      >
+                        <QrCode size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBarcodeProduct(product)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100"
+                        aria-label={t('admin.products.page.barcode')}
+                      >
+                        <Barcode size={15} />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleToggleVisibility(product)}
                         className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100"
-                        aria-label={product.visible === false ? 'Show on Shop page' : 'Hide from Shop page'}
+                        aria-label={product.visible === false ? t('admin.products.page.showOnShop') : t('admin.products.page.hideFromShop')}
                       >
                         {product.visible === false ? <EyeOff size={15} /> : <Eye size={15} />}
                       </button>
@@ -591,6 +634,7 @@ const AdminProducts = () => {
                         type="button"
                         onClick={() => openEditModal(product)}
                         className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100"
+                        aria-label={t('admin.common.edit')}
                       >
                         <Edit2 size={15} />
                       </button>
@@ -598,6 +642,7 @@ const AdminProducts = () => {
                         type="button"
                         onClick={() => handleDelete(product.id)}
                         className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-red-50 hover:text-red-600"
+                        aria-label={t('admin.common.delete')}
                       >
                         <Trash2 size={15} />
                       </button>
@@ -623,24 +668,27 @@ const AdminProducts = () => {
             ) : (
               <ChevronDown size={14} />
             )}
-            Load more products
+            {t('admin.products.page.loadMore')}
           </button>
         ) : null}
         {hasMore && (searchTerm || listTab === 'new_arrivals' || categoryFilter !== 'all' || stockFilter !== 'all') ? (
           <p className="text-[11px] text-amber-700">
-            Search results are from the {products.length} products loaded so far.{' '}
+            {t('admin.products.page.partialSearchNotice').replace('{n}', String(products.length))}{' '}
             <button
               type="button"
               onClick={loadMore}
               className="underline underline-offset-2 hover:text-amber-900"
             >
-              Load more
-            </button>{' '}
-            to search the full catalog.
+              {t('admin.products.page.loadMoreShort')}
+            </button>
+            {t('admin.products.page.partialSearchSuffix')}
           </p>
         ) : null}
         <p className="text-xs text-gray-400">
-          Showing {filteredProducts.length} of {products.length}{hasMore ? '+' : ''} products
+          {t('admin.products.page.showingCount')
+            .replace('{shown}', String(filteredProducts.length))
+            .replace('{total}', String(products.length))
+            .replace('{plus}', hasMore ? '+' : '')}
         </p>
       </div>
       </>
@@ -656,12 +704,18 @@ const AdminProducts = () => {
             await fetchProducts();
           } catch (refreshErr) {
             console.error('List refresh failed after save:', refreshErr);
-            toast.warning('Saved to Firestore', {
-              description:
-                'Your product was written to Cloud Firestore, but the list could not refresh. Reload the page to see it.',
+            toast.warning(t('admin.products.page.toastSavedRefreshFailed'), {
+              description: t('admin.products.page.toastSavedRefreshFailedDesc'),
             });
           }
         }}
+      />
+
+      <AdminProductQrModal open={!!qrProduct} onClose={() => setQrProduct(null)} product={qrProduct} />
+      <AdminProductBarcodeModal
+        open={!!barcodeProduct}
+        onClose={() => setBarcodeProduct(null)}
+        product={barcodeProduct}
       />
     </div>
   );

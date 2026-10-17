@@ -1,5 +1,6 @@
 import React from 'react';
 import { hasSizedInventory, sortedSizeStockEntries, type SizeStock } from '../../lib/productInventory';
+import { useLanguage } from '../../context/LanguageContext';
 import { cn } from '../../lib/utils';
 
 type ProductSizeStockChipsProps = {
@@ -17,6 +18,7 @@ const ProductSizeStockChips: React.FC<ProductSizeStockChipsProps> = ({
   compact = false,
   className,
 }) => {
+  const { t } = useLanguage();
   const sized = hasSizedInventory(sizeStock);
 
   if (!sized) {
@@ -31,9 +33,9 @@ const ProductSizeStockChips: React.FC<ProductSizeStockChipsProps> = ({
           )}
         >
           <span className={cn('h-1.5 w-1.5 rounded-full', totalStock > 0 ? 'bg-catchy' : 'bg-red-400')} />
-          {totalStock} total
+          {t('admin.products.chips.totalCount').replace('{n}', String(totalStock))}
         </span>
-        <span className="text-[10px] text-gray-400">No per-size breakdown</span>
+        <span className="text-[10px] text-gray-400">{t('admin.products.chips.noBreakdown')}</span>
       </div>
     );
   }
@@ -47,7 +49,7 @@ const ProductSizeStockChips: React.FC<ProductSizeStockChipsProps> = ({
   return (
     <div className={cn('min-w-0', className)} title={hidden > 0 ? tooltip : undefined}>
       <div className="mb-1 flex items-center gap-2">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Total</span>
+        <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">{t('admin.common.total')}</span>
         <span
           className={cn(
             'inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums',
@@ -58,10 +60,10 @@ const ProductSizeStockChips: React.FC<ProductSizeStockChipsProps> = ({
         </span>
         {inStock.length > 0 ? (
           <span className="text-[10px] text-gray-400">
-            {inStock.length} size{inStock.length === 1 ? '' : 's'} in stock
+            {t('admin.products.chips.sizesInStock').replace('{n}', String(inStock.length)).replace('{plural}', inStock.length === 1 ? '' : 's')}
           </span>
         ) : (
-          <span className="text-[10px] font-medium text-red-500">All sizes empty</span>
+          <span className="text-[10px] font-medium text-red-500">{t('admin.products.chips.allEmpty')}</span>
         )}
       </div>
       <div className="flex flex-wrap gap-1">
@@ -76,7 +78,7 @@ const ProductSizeStockChips: React.FC<ProductSizeStockChipsProps> = ({
           return (
             <span
               key={size}
-              title={`${size}: ${qty} in stock`}
+              title={t('admin.products.chips.sizeInStockTitle').replace('{size}', size).replace('{n}', String(qty))}
               className={cn(
                 'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 tabular-nums',
                 compact ? 'text-[10px]' : 'text-[11px]',

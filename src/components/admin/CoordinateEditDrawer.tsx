@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { X, Loader2, Trash2, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { cn } from '../../lib/utils';
+import { cn, sanitizeIntegerInput } from '../../lib/utils';
 import { coerceProductImages, PRODUCT_IMAGE_PLACEHOLDER } from '../../lib/productImages';
 import { getCoordinateImages } from '../../lib/coordinateImages';
 import CoordinateImageCollage from '../CoordinateImageCollage';
@@ -12,6 +12,7 @@ import { formatSizeStockSummary, resolveProductInventory } from '../../lib/produ
 import AdminProductFormModal from './AdminProductFormModal';
 import AdminProductPickerModal from './AdminProductPickerModal';
 import type { CoordinateLook } from '../../types/coordinates';
+import { useLanguage } from '../../context/LanguageContext';
 
 const INPUT =
   'h-9 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-gray-400 focus:ring-0';
@@ -49,6 +50,7 @@ const CoordinateEditDrawer: React.FC<CoordinateEditDrawerProps> = ({
   onDelete,
   onRefreshProducts,
 }) => {
+  const { t, isRTL } = useLanguage();
   const [title, setTitle] = useState('');
   const [titleAr, setTitleAr] = useState('');
   const [price, setPrice] = useState('');
@@ -103,9 +105,11 @@ const CoordinateEditDrawer: React.FC<CoordinateEditDrawerProps> = ({
     [productsById]
   );
 
+  const maxItemsMessage = () => t('admin.coordinates.maxItems').replace('{n}', String(MAX_PRODUCTS));
+
   const openProductForm = () => {
     if (productIds.length >= MAX_PRODUCTS) {
-      toast.error(`Maximum ${MAX_PRODUCTS} items per set`);
+      toast.error(maxItemsMessage());
       return;
     }
     setProductPickerOpen(false);
@@ -114,7 +118,7 @@ const CoordinateEditDrawer: React.FC<CoordinateEditDrawerProps> = ({
 
   const openProductPicker = () => {
     if (productIds.length >= MAX_PRODUCTS) {
-      toast.error(`Maximum ${MAX_PRODUCTS} items per set`);
+      toast.error(maxItemsMessage());
       return;
     }
     setProductFormOpen(false);
@@ -126,12 +130,17 @@ const CoordinateEditDrawer: React.FC<CoordinateEditDrawerProps> = ({
     if (unique.length === 0) return;
     const slots = MAX_PRODUCTS - productIds.length;
     if (slots <= 0) {
-      toast.error(`Maximum ${MAX_PRODUCTS} items per set`);
+      toast.error(maxItemsMessage());
       return;
     }
     const toAdd = unique.slice(0, slots);
     if (toAdd.length < unique.length) {
-      toast.message(`Only ${toAdd.length} item${toAdd.length === 1 ? '' : 's'} added (max ${MAX_PRODUCTS})`);
+      toast.message(
+        t('admin.coordinates.onlyAddedCount')
+          .replace('{n}', String(toAdd.length))
+          .replace('{plural}', toAdd.length === 1 ? '' : 's')
+          .replace('{max}', String(MAX_PRODUCTS))
+      );
     }
     setDirty(true);
     setProductIds((prev) => {
@@ -166,7 +175,7 @@ const CoordinateEditDrawer: React.FC<CoordinateEditDrawerProps> = ({
       const has = prev.includes(productId);
       if (has) return prev.filter((id) => id !== productId);
       if (prev.length >= MAX_PRODUCTS) {
-        toast.error(`Maximum ${MAX_PRODUCTS} items per set`);
+        toast.error(maxItemsMessage());
         return prev;
       }
       const next = [...prev, productId];
@@ -192,10 +201,11 @@ const CoordinateEditDrawer: React.FC<CoordinateEditDrawerProps> = ({
     const draft = buildDraft();
     const check = validateCoordinateLook(
       { ...look, ...draft, title: draft.title, titleAr: draft.titleAr || undefined },
-      linkedProducts
+      linkedProducts,
+      t
     );
     if (!check.ok) {
-      toast.error(publish ? 'Cannot publish' : 'Cannot save', { description: check.message });
+      toast.error(publish ? t('admin.coordinates.cannotPublish') : t('admin.coordinates.cannotSave'), { description: check.message });
       return;
     }
     try {
@@ -219,15 +229,15 @@ const CoordinateEditDrawer: React.FC<CoordinateEditDrawerProps> = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px]"
-            aria-label="Close editor"
+            aria-label={t('admin.coordinates.closeEditor')}
             onClick={onClose}
           />
           <motion.aside
-            initial={{ x: '100%' }}
+            initial={{ x: isRTL ? '-100%' : '100%' }}
             animate={{ x: 0 }}
-            exit={{ x: '100%' }}
+            exit={{ x: isRTL ? '-100%' : '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 320 }}
-            className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-gray-200 bg-white shadow-xl"
+            className="fixed inset-y-0 end-0 z-50 flex w-full max-w-md flex-col border-s border-gray-200 bg-white shadow-xl"
           >
             <header className="flex shrink-0 items-center justify-between gap-2 border-b border-gray-100 px-4 py-3">
               <div className="min-w-0">
@@ -235,15 +245,15 @@ const CoordinateEditDrawer: React.FC<CoordinateEditDrawerProps> = ({
                 <p className="text-[11px] text-gray-400">
                   {isNew
                     ? dirty
-                      ? 'New set — unsaved changes'
-                      : 'New set — click Save to create'
+                      ? t('admin.coordinates.drawer.newUnsaved')
+                      : t('admin.coordinates.drawer.newReady')
                     : dirty
-                      ? 'Unsaved changes'
+                      ? t('admin.coordinates.drawer.unsaved')
                       : catalogStatus === 'live'
-                        ? 'Live on catalog'
+                        ? t('admin.coordinates.drawer.liveOnCatalog')
                         : catalogStatus === 'hidden'
-                          ? 'Published — not visible on catalog yet'
-                          : 'Draft — not published'}
+                          ? t('admin.coordinates.drawer.publishedHidden')
+                          : t('admin.coordinates.drawer.draftNotPublished')}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
@@ -254,7 +264,7 @@ const CoordinateEditDrawer: React.FC<CoordinateEditDrawerProps> = ({
                   className="inline-flex h-8 items-center gap-1 rounded-md border border-catchy/30 bg-white px-2.5 text-[11px] font-semibold text-catchy hover:bg-catchy/5 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Plus size={14} />
-                  Add item
+                  {t('admin.coordinates.addItem')}
                 </button>
                 <button type="button" onClick={onClose} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100">
                   <X size={18} />
@@ -264,42 +274,42 @@ const CoordinateEditDrawer: React.FC<CoordinateEditDrawerProps> = ({
 
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 space-y-4">
               <div>
-                <label className={LABEL}>Catalog collage (from item photos)</label>
+                <label className={LABEL}>{t('admin.coordinates.collageLabel')}</label>
                 {collageImages.length > 0 ? (
                   <CoordinateImageCollage images={collageImages} variant="card" className="max-w-[11rem]" />
                 ) : (
                   <p className="rounded-md border border-dashed border-gray-200 px-3 py-6 text-center text-xs text-gray-400">
-                    Add items with photos — the grid builds automatically.
+                    {t('admin.coordinates.collageHint')}
                   </p>
                 )}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className={LABEL}>Title (EN)</label>
+                  <label className={LABEL}>{t('admin.coordinates.titleEn')}</label>
                   <input value={title} onChange={(e) => { setTitle(e.target.value); setDirty(true); }} className={INPUT} />
                 </div>
                 <div>
-                  <label className={LABEL}>Title (AR)</label>
+                  <label className={LABEL}>{t('admin.coordinates.titleAr')}</label>
                   <input value={titleAr} dir="rtl" onChange={(e) => { setTitleAr(e.target.value); setDirty(true); }} className={INPUT} />
                 </div>
               </div>
 
               <div>
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <label className={LABEL}>Items in this set (max {MAX_PRODUCTS})</label>
+                  <label className={LABEL}>{t('admin.coordinates.itemsInSet').replace('{n}', String(MAX_PRODUCTS))}</label>
                   {productIds.length < MAX_PRODUCTS ? (
                     <button
                       type="button"
                       onClick={openProductPicker}
                       className="text-[11px] font-semibold text-catchy hover:underline"
                     >
-                      + Select item
+                      {t('admin.coordinates.selectItem')}
                     </button>
                   ) : null}
                 </div>
                 <p className="mb-2 text-[11px] text-gray-400">
-                  Stock and sizes come from each product. Shoppers pick a size per item when ordering.
+                  {t('admin.coordinates.stockHint')}
                 </p>
                 {linkedProducts.length > 0 ? (
                   <>
@@ -327,7 +337,7 @@ const CoordinateEditDrawer: React.FC<CoordinateEditDrawerProps> = ({
                       onClick={openProductPicker}
                       className="mt-2 text-[11px] font-semibold text-catchy hover:underline"
                     >
-                      + Select item
+                      {t('admin.coordinates.selectItem')}
                     </button>
                   ) : null}
                   </>
@@ -338,29 +348,30 @@ const CoordinateEditDrawer: React.FC<CoordinateEditDrawerProps> = ({
                     className="flex w-full flex-col items-center justify-center rounded-md border border-dashed border-gray-200 px-3 py-6 text-center transition hover:border-catchy hover:bg-catchy/5"
                   >
                     <Plus size={18} className="mb-1 text-catchy" />
-                    <span className="text-xs font-medium text-gray-700">Select items for this set</span>
-                    <span className="mt-0.5 text-[10px] text-gray-400">Choose from existing products · up to {MAX_PRODUCTS}</span>
+                    <span className="text-xs font-medium text-gray-700">{t('admin.coordinates.selectItemsCta')}</span>
+                    <span className="mt-0.5 text-[10px] text-gray-400">{t('admin.coordinates.selectItemsHint').replace('{n}', String(MAX_PRODUCTS))}</span>
                   </button>
                 )}
               </div>
 
               <div className="rounded-md border border-gray-200 bg-gray-50/60 px-3 py-3">
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <label className="text-xs font-medium text-gray-700">Set price (ILS)</label>
-                  {itemsTotal > 0 ? <span className="text-[10px] text-gray-500">Items total: ILS {itemsTotal}</span> : null}
+                  <label className="text-xs font-medium text-gray-700">{t('admin.coordinates.setPriceLabel')}</label>
+                  {itemsTotal > 0 ? <span className="text-[10px] text-gray-500">{t('admin.coordinates.itemsTotal').replace('{n}', String(itemsTotal))}</span> : null}
                 </div>
                 <input
-                  type="number"
-                  min={0}
-                  step={1}
+                  type="text"
+                  inputMode="numeric"
+                  lang="en"
+                  dir="ltr"
                   value={price}
                   onChange={(e) => {
-                    setPrice(e.target.value);
+                    setPrice(sanitizeIntegerInput(e.target.value));
                     setPriceAutoSync(false);
                     setDirty(true);
                   }}
                   className={INPUT}
-                  placeholder={itemsTotal > 0 ? String(itemsTotal) : 'Add items first'}
+                  placeholder={itemsTotal > 0 ? String(itemsTotal) : t('admin.coordinates.addItemsFirstPlaceholder')}
                 />
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button
@@ -373,19 +384,19 @@ const CoordinateEditDrawer: React.FC<CoordinateEditDrawerProps> = ({
                     }}
                     className="text-[11px] font-medium text-catchy hover:underline disabled:text-gray-400"
                   >
-                    Sync from items
+                    {t('admin.coordinates.syncFromItems')}
                   </button>
                   {priceAutoSync ? (
-                    <span className="text-[10px] text-emerald-700">Follows items total</span>
+                    <span className="text-[10px] text-emerald-700">{t('admin.coordinates.followsItemsTotal')}</span>
                   ) : (
-                    <span className="text-[10px] text-amber-700">Custom bundle price</span>
+                    <span className="text-[10px] text-amber-700">{t('admin.coordinates.customBundlePrice')}</span>
                   )}
                 </div>
               </div>
 
               {resolved ? (
                 <div className="rounded-md border border-emerald-200 bg-emerald-50/60 px-3 py-2.5 text-xs">
-                  <p className="font-semibold text-emerald-900">Preview</p>
+                  <p className="font-semibold text-emerald-900">{t('coordinates.livePreview')}</p>
                   <p className="mt-1 tabular-nums text-emerald-800">
                     ILS {resolved.price}
                     {resolved.compareAtPrice && resolved.compareAtPrice > resolved.price ? (
@@ -393,7 +404,7 @@ const CoordinateEditDrawer: React.FC<CoordinateEditDrawerProps> = ({
                     ) : null}
                   </p>
                   <p className="mt-0.5 text-emerald-700">
-                    Sizes: {coordinateSizesSummary({ ...look, productIds }, linkedProducts)}
+                    {t('admin.coordinates.sizesPrefix').replace('{summary}', coordinateSizesSummary({ ...look, productIds }, linkedProducts))}
                   </p>
                 </div>
               ) : null}
@@ -406,7 +417,7 @@ const CoordinateEditDrawer: React.FC<CoordinateEditDrawerProps> = ({
                 onClick={() => handleSave(false)}
                 className="inline-flex h-9 flex-1 items-center justify-center rounded-md border border-gray-200 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               >
-                {saving ? <Loader2 size={14} className="animate-spin" /> : 'Save draft'}
+                {saving ? <Loader2 size={14} className="animate-spin" /> : t('admin.coordinates.saveDraft')}
               </button>
               <button
                 type="button"
@@ -414,14 +425,14 @@ const CoordinateEditDrawer: React.FC<CoordinateEditDrawerProps> = ({
                 onClick={() => handleSave(true)}
                 className="inline-flex h-9 flex-[1.2] items-center justify-center rounded-md bg-catchy text-xs font-semibold text-white hover:bg-catchy-dark disabled:opacity-50"
               >
-                {saving ? <Loader2 size={14} className="animate-spin" /> : 'Save & publish'}
+                {saving ? <Loader2 size={14} className="animate-spin" /> : t('admin.coordinates.savePublish')}
               </button>
               {!isNew ? (
                 <button
                   type="button"
                   onClick={() => onDelete(look.id)}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-200 text-red-600 hover:bg-red-50"
-                  aria-label="Delete"
+                  aria-label={t('admin.common.delete')}
                 >
                   <Trash2 size={14} />
                 </button>
