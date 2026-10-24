@@ -13,18 +13,26 @@ const WHATSAPP_BROKER_URL = 'https://api.whatsappbiz.com/v1/public/message/';
  */
 let devFirestore: any = null;
 
+// Dev server only: fall back to the client's VITE_ setting so the dev API routes and
+// the browser hit the same database. In production the server reads FIRESTORE_DATABASE_ID
+// from its own Cloud Run runtime config, never from the client's VITE_ value.
+function devFirestoreDatabaseId(env: Record<string, string>) {
+  return env.FIRESTORE_DATABASE_ID || env.VITE_FIRESTORE_DATABASE_ID || '';
+}
+
 async function getDevFirestore(env: Record<string, string>) {
   if (devFirestore) return devFirestore;
   try {
-    const {initializeApp, applicationDefault, getApps} = await import('firebase-admin/app');
-    const {getFirestore} = await import('firebase-admin/firestore');
-    if (getApps().length === 0) {
+    const {initializeApp, applicationDefault, getApps, getApp} = await import('firebase-admin/app');
+    const {getAdminFirestore} = await import('./server/lib/firestoreDatabase.js');
+    // Default app specifically — posAdmin/cloudinaryAdmin register their own named apps.
+    if (!getApps().some((a) => a.name === '[DEFAULT]')) {
       initializeApp({
         credential: applicationDefault(),
         projectId: env.VITE_FIREBASE_PROJECT_ID || 'catchy-496207',
       });
     }
-    devFirestore = getFirestore();
+    devFirestore = await getAdminFirestore(getApp(), {FIRESTORE_DATABASE_ID: devFirestoreDatabaseId(env)});
     return devFirestore;
   } catch (err: any) {
     console.error('[dev-checkout] Firestore unavailable:', err?.message || err);
@@ -199,6 +207,7 @@ function posDevApi(env: Record<string, string>) {
       // Same process.env bridging gap as cloudinaryUploadDevApi — posAdmin.js reads
       // the Firebase project id from process.env, which loadEnv() doesn't populate.
       if (env.VITE_FIREBASE_PROJECT_ID) process.env.VITE_FIREBASE_PROJECT_ID = env.VITE_FIREBASE_PROJECT_ID;
+      if (devFirestoreDatabaseId(env)) process.env.FIRESTORE_DATABASE_ID = devFirestoreDatabaseId(env);
 
       const jsonHandler =
         (handler: (body: any, req: any) => Promise<{status: number; body: unknown}>) =>

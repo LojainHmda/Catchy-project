@@ -125,13 +125,11 @@ const Footer = () => {
             className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-on-secondary-fixed-variant sm:justify-start"
             style={{ fontFamily: 'var(--font-body)' }}
           >
-            <a href="tel:+966501234567" className="hover:text-primary transition-colors" dir="ltr">
-              +966 50 123 4567
+            <a href="tel:00972598677789" className="hover:text-primary transition-colors" dir="ltr">
+              00972598677789
             </a>
             <span className="hidden text-primary/20 sm:inline" aria-hidden>·</span>
-            <a href="mailto:hello@catchy.com" className="hover:text-primary transition-colors">
-              hello@catchy.com
-            </a>
+            <span className="hover:text-primary transition-colors" dir="ltr">catchy-ps.com</span>
           </div>
           <p
             className="text-[10px] uppercase tracking-wider text-on-secondary-fixed-variant"

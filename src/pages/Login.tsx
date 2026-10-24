@@ -62,7 +62,8 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
-  const { user, role, login, loginWithCredentials, signUpWithCredentials, loading, sessionResolving } = useAuth();
+  const { user, role, login, loginWithCredentials, signUpWithCredentials, loading, sessionResolving, roleResolving } =
+    useAuth();
   const { t, isRTL } = useLanguage();
   const [mode, setMode] = useState<AuthMode>('signin');
   const [displayName, setDisplayName] = useState('');
@@ -74,16 +75,17 @@ const Login = () => {
 
   const isSignUp = mode === 'signup';
 
+  // Wait for the profile role too, or a cashier is sent to '/' on the provisional 'customer' role.
   useEffect(() => {
-    if (!loading && !sessionResolving && user && role !== null) {
+    if (!loading && !sessionResolving && !roleResolving && user && role !== null) {
       const fallback = role === 'admin' ? '/admin' : role === 'cashier' ? '/pos' : '/';
       const destination =
         returnTo && returnTo.startsWith('/') && !returnTo.startsWith('/admin') ? returnTo : fallback;
       navigate(destination, { replace: true });
     }
-  }, [loading, sessionResolving, navigate, returnTo, role, user]);
+  }, [loading, sessionResolving, roleResolving, navigate, returnTo, role, user]);
 
-  if (!loading && !sessionResolving && user && role !== null) {
+  if (!loading && !sessionResolving && !roleResolving && user && role !== null) {
     return null;
   }
 

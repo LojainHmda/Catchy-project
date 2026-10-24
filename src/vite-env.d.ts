@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_STORAGE_BUCKET?: string;
   readonly VITE_FIREBASE_MESSAGING_SENDER_ID?: string;
   readonly VITE_FIREBASE_APP_ID?: string;
+  /** Named Firestore database (e.g. `catchy` on kartacagenai). Unset → `(default)`. */
+  readonly VITE_FIRESTORE_DATABASE_ID?: string;
   readonly VITE_ADMIN_EMAIL?: string;
   readonly VITE_ADMIN_PASSWORD?: string;
   /** Extra comma-separated owner emails (always-admin); defaults always include lojain2077 + marei.eyad. */

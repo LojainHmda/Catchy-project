@@ -13,7 +13,9 @@ const app = initializeApp({
   appId: process.env.VITE_FIREBASE_APP_ID,
 });
 
-const db = getFirestore(app);
+// Same database the client build uses; unset → `(default)` (catchy-496207).
+const databaseId = (process.env.VITE_FIRESTORE_DATABASE_ID || '').trim();
+const db = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
 
 function resolveProductInventory(data) {
   const sizeStock = {};

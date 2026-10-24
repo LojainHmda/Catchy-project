@@ -35,6 +35,7 @@ import {
   count,
   sum,
 } from 'firebase/firestore';
+import { DEFAULT_FIRESTORE_DATABASE_ID, resolveFirestoreDatabaseId } from './lib/firestoreDatabaseId';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY as string | undefined,
@@ -64,7 +65,11 @@ function getOrInitApp(): FirebaseApp {
 
 const app = getOrInitApp();
 
-const db: ReturnType<typeof getFirestore> = getFirestore(app);
+const firestoreDatabaseId = resolveFirestoreDatabaseId(import.meta.env.VITE_FIRESTORE_DATABASE_ID);
+const db: ReturnType<typeof getFirestore> =
+  firestoreDatabaseId === DEFAULT_FIRESTORE_DATABASE_ID
+    ? getFirestore(app)
+    : getFirestore(app, firestoreDatabaseId);
 
 export const auth = getAuth(app);
 export { app, db };

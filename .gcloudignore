@@ -25,3 +25,20 @@ mcps/
 .env.test.local
 .env.production
 .env.production.local
+# Any other .env.* variant/scratch file (plain `.env` above is still uploaded).
+.env.*
+
+# Secrets and local-only material -- never upload. The runtime image only copies
+# server/ and dist/; Cloud Run receives credentials via its own env/secret bindings.
+service-account*.json
+*firebase-adminsdk*.json
+qz-keys/
+*.pem
+*.key
+backups/
+*.bak
+*.orig
+.firebase/
+.vscode/
+.claude/
+memory/

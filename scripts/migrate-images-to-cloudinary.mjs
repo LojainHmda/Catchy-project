@@ -31,7 +31,9 @@ const ONLY_PRODUCT_ID = PRODUCT_ARG ? PRODUCT_ARG.split('=')[1] : null;
 
 const serviceAccount = JSON.parse(readFileSync(new URL('../service-account.json', import.meta.url)));
 initializeApp({ credential: cert(serviceAccount) });
-const db = getFirestore();
+// FIRESTORE_DATABASE_ID selects a named database; unset → `(default)` (catchy-496207).
+const databaseId = (process.env.FIRESTORE_DATABASE_ID || '').trim();
+const db = databaseId ? getFirestore(databaseId) : getFirestore();
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,

@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import './lib/heroSlidesCache';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import Navbar from './components/Navbar';
@@ -12,6 +12,7 @@ import Catalog from './pages/Catalog';
 import ProductDetail from './pages/ProductDetail';
 import CoordinateDetail from './pages/CoordinateDetail';
 import AdminLayout from './components/AdminLayout';
+import RoleGate from './components/RoleGate';
 import Login from './pages/Login';
 import Cart from './pages/Cart';
 import Orders from './pages/Orders';
@@ -50,26 +51,22 @@ const AdminSpinner = () => (
   </div>
 );
 
-const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, role, loading } = useAuth();
-  if (loading) return <AdminSpinner />;
-  if (!user || role !== 'admin') return <Navigate to="/login" replace />;
-  return (
+const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <RoleGate allow={['admin']} pending={<AdminSpinner />}>
     <AdminLayout>
       <Suspense fallback={<AdminSpinner />}>
         {children}
       </Suspense>
     </AdminLayout>
-  );
-};
+  </RoleGate>
+);
 
 /** POS is a dedicated full-screen, touch-first surface — deliberately not wrapped in AdminLayout. */
-const PosRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, role, loading } = useAuth();
-  if (loading) return <AdminSpinner />;
-  if (!user || (role !== 'admin' && role !== 'cashier')) return <Navigate to="/login" replace />;
-  return <Suspense fallback={<AdminSpinner />}>{children}</Suspense>;
-};
+const PosRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <RoleGate allow={['admin', 'cashier']} pending={<AdminSpinner />}>
+    <Suspense fallback={<AdminSpinner />}>{children}</Suspense>
+  </RoleGate>
+);
 
 const AppContent = () => {
   const { t } = useLanguage();

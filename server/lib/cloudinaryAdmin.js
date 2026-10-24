@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { v2 as cloudinary } from 'cloudinary';
+import { isSyntheticAdminEmail } from './adminIdentity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVICE_ACCOUNT_PATH = path.resolve(__dirname, '../../service-account.json');
@@ -58,7 +59,7 @@ export async function verifyAdminRequest(req) {
     const email = (decoded.email || '').toLowerCase();
     const isOwner = DEFAULT_OWNER_EMAILS.has(email);
     const isDemoAdmin = email === DEMO_ADMIN_EMAIL;
-    const isSyntheticAdmin = /-catchy-496207@example\.com$/i.test(email);
+    const isSyntheticAdmin = isSyntheticAdminEmail(email, decoded.aud);
     if (!isOwner && !isDemoAdmin && !isSyntheticAdmin) {
       return { ok: false, status: 403, message: 'This account is not an admin.' };
     }

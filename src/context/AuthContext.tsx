@@ -59,20 +59,28 @@ function missingUserOrBadCredential(code: string): boolean {
   );
 }
 
+export type AppRole = 'admin' | 'customer' | 'cashier';
+
 interface User {
   uid: string;
   email: string | null;
   displayName: string | null;
-  role?: 'admin' | 'customer' | 'cashier';
+  role?: AppRole;
 }
 
 interface AuthContextType {
   user: User | null;
-  role: 'admin' | 'customer' | 'cashier' | null;
+  role: AppRole | null;
   /** True until the first `onAuthStateChanged` callback has finished (including Firestore profile work when signed in). */
   loading: boolean;
   /** True only while syncing an already-signed-in Firebase user to app state (not “logging in” from this page). */
   sessionResolving: boolean;
+  /**
+   * True while a signed-in user's role is still provisional ('customer') pending the
+   * Firestore profile read — cashiers and profile-admins only get their real role then.
+   * Role-gated routes must wait on this, or a refresh/deep link bounces them to /login.
+   */
+  roleResolving: boolean;
   login: () => Promise<void>;
   loginWithCredentials: (email: string, pass: string) => Promise<void>;
   signUpWithCredentials: (email: string, pass: string, displayName?: string) => Promise<void>;
@@ -83,9 +91,10 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [role, setRole] = useState<'admin' | 'customer' | 'cashier' | null>(null);
+  const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionResolving, setSessionResolving] = useState(false);
+  const [roleResolving, setRoleResolving] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -93,6 +102,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSessionResolving(false);
         setUser(null);
         setRole(null);
+        setRoleResolving(false);
         setLoading(false);
         return;
       }
@@ -112,6 +122,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // cart, which waits on `loading`) on Firestore. Admins-by-email are admin now.
       setUser(u);
       setRole(treatAsAdmin ? 'admin' : 'customer');
+      // Admins-by-email are final now; everyone else may be upgraded by their profile.
+      setRoleResolving(!treatAsAdmin);
       setSessionResolving(false);
       setLoading(false);
 
@@ -140,6 +152,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } catch {
           // Provisional role from Auth already applied; ignore Firestore hiccups.
+        } finally {
+          // Ignore a stale lookup if a different user signed in meanwhile.
+          if (auth.currentUser?.uid === currentUser.uid) setRoleResolving(false);
         }
       })();
     });
@@ -199,7 +214,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider
-      value={{ user, role, loading, sessionResolving, login, loginWithCredentials, signUpWithCredentials, logout }}
+      value={{ user, role, loading, sessionResolving, roleResolving, login, loginWithCredentials, signUpWithCredentials, logout }}
     >
       {children}
     </AuthContext.Provider>

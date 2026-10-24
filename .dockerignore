@@ -7,3 +7,18 @@ coverage
 
 # Allow `.env` in build context so Cloud Build can run `vite build` with Firebase keys.
 # Final nginx image stage only copies `dist/`, not `.env`.
+
+# Defense in depth (mirrors .gcloudignore): keep secrets out of the build stage.
+.env.*
+service-account*.json
+*firebase-adminsdk*.json
+qz-keys/
+*.pem
+*.key
+backups/
+*.bak
+*.orig
+.firebase/
+.vscode/
+.claude/
+memory/

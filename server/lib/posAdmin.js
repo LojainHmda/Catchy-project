@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isSyntheticAdminEmail } from './adminIdentity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVICE_ACCOUNT_PATH = path.resolve(__dirname, '../../service-account.json');
@@ -40,15 +41,16 @@ async function getPosAuth() {
 }
 
 async function getPosFirestore() {
-  const { getFirestore } = await import('firebase-admin/firestore');
-  return getFirestore(await getPosApp());
+  const { getAdminFirestore } = await import('./firestoreDatabase.js');
+  return getAdminFirestore(await getPosApp());
 }
 
-function emailRole(email) {
+/** `projectId` is the verified token's `aud` — the Firebase project this server serves. */
+function emailRole(email, projectId) {
   const lower = (email || '').toLowerCase();
   if (DEFAULT_OWNER_EMAILS.has(lower)) return 'admin';
   if (lower === DEMO_ADMIN_EMAIL) return 'admin';
-  if (/-catchy-496207@example\.com$/i.test(lower)) return 'admin';
+  if (isSyntheticAdminEmail(lower, projectId)) return 'admin';
   return null;
 }
 
@@ -68,7 +70,7 @@ export async function verifyPosStaffRequest(req) {
     const email = (decoded.email || '').toLowerCase();
     const db = await getPosFirestore();
 
-    let role = emailRole(email);
+    let role = emailRole(email, decoded.aud);
     if (!role) {
       const profileSnap = await db.collection('users').doc(decoded.uid).get();
       const profileRole = profileSnap.exists ? profileSnap.data()?.role : null;

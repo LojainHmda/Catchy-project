@@ -18,9 +18,11 @@ let firestore = null;
 async function getFirestore() {
   if (firestore) return firestore;
   try {
-    const { initializeApp, applicationDefault, getApps } = await import('firebase-admin/app');
-    const { getFirestore: _getFirestore } = await import('firebase-admin/firestore');
-    if (getApps().length === 0) {
+    const { initializeApp, applicationDefault, getApps, getApp } = await import('firebase-admin/app');
+    const { getAdminFirestore } = await import('./lib/firestoreDatabase.js');
+    // Check for the default app specifically: posAdmin/cloudinaryAdmin register their
+    // own *named* apps, which must not stop the default one from being created.
+    if (!getApps().some((a) => a.name === '[DEFAULT]')) {
       initializeApp({
         credential: applicationDefault(),
         // Prefer the explicit Firestore project so inbound messages land in the same
@@ -31,7 +33,8 @@ async function getFirestore() {
           process.env.VITE_FIREBASE_PROJECT_ID,
       });
     }
-    firestore = _getFirestore();
+    // FIRESTORE_DATABASE_ID selects a named database (kartacagenai: `catchy`); unset → `(default)`.
+    firestore = await getAdminFirestore(getApp());
     return firestore;
   } catch (err) {
     console.error('[whatsapp] Firestore unavailable:', err?.message || err);
