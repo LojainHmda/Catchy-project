@@ -9,10 +9,17 @@ import { uploadFileResumable, deleteStorageObject } from './firebaseStorage';
  * unworkable for video files. Firebase Storage uploads go directly from the
  * browser to Storage, bypassing our server and that limit entirely, and the
  * `storage.rules` already has a `products/{filename}` admin-write rule.
+ *
+ * Size: MAX_VIDEO_BYTES (binary MB, like every other upload limit in this repo).
+ * `uploadBytesResumable` sends the File in chunks straight from disk, so the
+ * whole video is never read into memory and no request-body limit applies.
+ * NOTE: storage.rules does not check size or type for `products/`, so this
+ * client check is currently the only enforcement of the limit.
  */
 
 const STORAGE_FOLDER = 'products';
-const MAX_VIDEO_BYTES = 50 * 1024 * 1024; // 50MB — short product clips, not the site-wide hero asset
+/** 100 MB (binary): 104,857,600 bytes — product clips, not the site-wide hero asset (300 MB). */
+export const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 export const MAX_VIDEO_MB = MAX_VIDEO_BYTES / (1024 * 1024);
 
 export function isVideoFile(file: File): boolean {
@@ -30,6 +37,9 @@ export async function uploadProductVideoFile(
   file: File,
   onProgress: (percent: number) => void
 ): Promise<string> {
+  // Re-checked here so no caller can upload a file the form would have refused.
+  const invalid = validateProductVideoFile(file);
+  if (invalid) throw new Error(invalid);
   const ext = file.name.split('.').pop() || 'mp4';
   const path = `${STORAGE_FOLDER}/video-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
   return uploadFileResumable(path, file, onProgress);

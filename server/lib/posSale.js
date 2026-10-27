@@ -1,6 +1,9 @@
 // POS sale processing via Firestore Admin SDK (atomic inventory + order + session-totals write).
 // Inventory helpers are copied from checkoutOrder.js (that file's own precedent: no src/ imports
 // server-side) rather than shared, so the two checkout paths can evolve independently.
+// The one shared piece is the colour-variant serialiser (posSaleCorrection.js), so every
+// stock writer stores colour objects the same safe way.
+import { colorVariantsForWrite } from './posSaleCorrection.js';
 
 function sanitizeStoredImageUrl(url) {
   const s = String(url ?? '').trim();
@@ -364,7 +367,11 @@ export async function processPosSale(db, { cashierUid, cashierName, registerSess
         const ref = db.collection('products').doc(productId);
         const payload = { stock: working.stock };
         if (working.sized) payload.sizeStock = working.sizeStock;
-        if (working.hasVariants && working.colorVariants?.length) payload.colorVariants = working.colorVariants;
+        if (working.hasVariants && working.colorVariants?.length) {
+          // Stored colour objects with only `sizeStock` replaced (never `undefined`
+          // fields, which the Admin SDK rejects) — same writer as POS corrections.
+          payload.colorVariants = colorVariantsForWrite(productSnaps.get(productId).data()?.colorVariants, working.colorVariants);
+        }
         tx.update(ref, payload);
       }
 

@@ -6,6 +6,10 @@ export type OrderErrorCode =
   | 'OUT_OF_STOCK'
   | 'PRODUCT_MISSING'
   | 'DELIVERY_INVALID'
+  /** The order changed since this screen loaded it (e.g. cancelled elsewhere) — the write was refused. */
+  | 'ORDER_CHANGED'
+  /** The order is no longer in an editable state (cancelled, completed, delivered…). */
+  | 'ORDER_NOT_EDITABLE'
   | 'UNKNOWN';
 
 export class OrderError extends Error {

@@ -35,6 +35,8 @@ const AdminCategoryTiles = lazy(() => import('./pages/AdminCategoryTiles'));
 const AdminCustomers    = lazy(() => import('./pages/AdminCustomers'));
 const AdminOrders       = lazy(() => import('./pages/AdminOrders'));
 const AdminWhatsApp     = lazy(() => import('./pages/AdminWhatsApp'));
+const AdminReports      = lazy(() => import('./pages/AdminReports'));
+const AdminReturns      = lazy(() => import('./pages/AdminReturns'));
 const PosTerminal       = lazy(() => import('./pages/PosTerminal'));
 const PosRegisterClose  = lazy(() => import('./pages/PosRegisterClose'));
 
@@ -85,6 +87,8 @@ const AppContent = () => {
         <Route path="/admin/orders" element={<AdminRoute><AdminOrders /></AdminRoute>} />
         <Route path="/admin/customers" element={<AdminRoute><AdminCustomers /></AdminRoute>} />
         <Route path="/admin/whatsapp" element={<AdminRoute><AdminWhatsApp /></AdminRoute>} />
+        <Route path="/admin/reports" element={<AdminRoute><AdminReports /></AdminRoute>} />
+        <Route path="/admin/returns" element={<AdminRoute><AdminReturns /></AdminRoute>} />
         <Route path="/admin/settings" element={<AdminRoute><div className="p-10 text-center">{t('admin.settings.comingSoon')}</div></AdminRoute>} />
 
         {/* Point of Sale — admin or cashier, own full-screen layout */}

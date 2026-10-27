@@ -14,6 +14,6 @@ export default defineConfig({
     // jsdom (not 'node') so localStorage is reliably present for the catalog-cache
     // regression tests, regardless of the Node version running CI.
     environment: 'jsdom',
-    include: ['src/**/*.test.ts', 'server/**/*.test.js'],
+    include: ['src/**/*.test.ts', 'server/**/*.test.js', 'scripts/**/*.test.mjs'],
   },
 });

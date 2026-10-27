@@ -11,14 +11,18 @@ vi.mock('./firebaseStorage', () => ({
 }));
 
 import {
+  MAX_VIDEO_BYTES,
+  MAX_VIDEO_MB,
   deleteProductVideoIfOwned,
   isVideoFile,
   storagePathFromDownloadUrl,
+  uploadProductVideoFile,
   validateProductVideoFile,
 } from './productVideoUpload';
 import { translations } from '../context/LanguageContext';
 
 const tEn = (key: string) => translations.en[key] ?? key;
+const tAr = (key: string) => translations.ar[key] ?? key;
 
 function fakeVideoFile(sizeBytes: number, type = 'video/mp4'): File {
   const file = new File([new Uint8Array(1)], 'clip.mp4', { type });
@@ -38,14 +42,61 @@ describe('isVideoFile / validateProductVideoFile', () => {
     expect(validateProductVideoFile(file, tEn)).toMatch(/video file/i);
   });
 
-  it('rejects a file over the size limit', () => {
-    const tooLarge = fakeVideoFile(51 * 1024 * 1024);
-    expect(validateProductVideoFile(tooLarge, tEn)).toMatch(/50 MB/);
+  it('the limit is 100 MB in binary units: 104,857,600 bytes', () => {
+    expect(MAX_VIDEO_BYTES).toBe(104_857_600);
+    expect(MAX_VIDEO_MB).toBe(100);
   });
 
-  it('accepts a file right at the size limit', () => {
-    const atLimit = fakeVideoFile(50 * 1024 * 1024);
-    expect(validateProductVideoFile(atLimit, tEn)).toBeNull();
+  it('accepts a file of exactly 100 MB (the boundary is inclusive)', () => {
+    expect(validateProductVideoFile(fakeVideoFile(104_857_600), tEn)).toBeNull();
+  });
+
+  it('rejects 100 MB + 1 byte, with the 100 MB limit in English and Arabic', () => {
+    const tooLarge = fakeVideoFile(104_857_601);
+    expect(validateProductVideoFile(tooLarge, tEn)).toBe('Video must be under 100 MB.');
+    expect(validateProductVideoFile(tooLarge, tAr)).toContain('100');
+    expect(validateProductVideoFile(fakeVideoFile(300 * 1024 * 1024), tEn)).toMatch(/100 MB/);
+  });
+
+  it('files between the old 50 MB and the new 100 MB limit are now accepted', () => {
+    expect(validateProductVideoFile(fakeVideoFile(50 * 1024 * 1024 + 1), tEn)).toBeNull();
+    expect(validateProductVideoFile(fakeVideoFile(99 * 1024 * 1024), tEn)).toBeNull();
+  });
+
+  it('the type check still applies at any size (a large image is never accepted as a video)', () => {
+    expect(validateProductVideoFile(fakeVideoFile(1024, 'image/jpeg'), tEn)).toMatch(/video file/i);
+    expect(validateProductVideoFile(fakeVideoFile(104_857_600, 'application/octet-stream'), tEn)).toMatch(/video file/i);
+  });
+
+  it('the form hint shows the new limit in both languages', () => {
+    expect(tEn('admin.products.form.videoFormats').replace('{n}', String(MAX_VIDEO_MB))).toBe('MP4, MOV, WebM — max 100 MB');
+    expect(tAr('admin.products.form.videoFormats').replace('{n}', String(MAX_VIDEO_MB))).toContain('100');
+  });
+});
+
+describe('uploadProductVideoFile — re-validates before anything is uploaded', () => {
+  beforeEach(() => {
+    uploadFileResumableMock.mockReset();
+    uploadFileResumableMock.mockResolvedValue('https://example.test/video.mp4');
+  });
+
+  it('refuses a file over 100 MB without starting an upload', async () => {
+    await expect(uploadProductVideoFile(fakeVideoFile(104_857_601), () => {})).rejects.toThrow();
+    expect(uploadFileResumableMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-video file without starting an upload', async () => {
+    await expect(uploadProductVideoFile(fakeVideoFile(1024, 'image/png'), () => {})).rejects.toThrow();
+    expect(uploadFileResumableMock).not.toHaveBeenCalled();
+  });
+
+  it('uploads a 100 MB video to products/ via the resumable (chunked) uploader with the File itself', async () => {
+    const file = fakeVideoFile(104_857_600);
+    await expect(uploadProductVideoFile(file, () => {})).resolves.toBe('https://example.test/video.mp4');
+    expect(uploadFileResumableMock).toHaveBeenCalledTimes(1);
+    const [path, passed] = uploadFileResumableMock.mock.calls[0]!;
+    expect(path).toMatch(/^products\/video-\d+-[a-z0-9]+\.mp4$/);
+    expect(passed).toBe(file); // the File (streamed in chunks by the SDK), never a buffered copy
   });
 });
 

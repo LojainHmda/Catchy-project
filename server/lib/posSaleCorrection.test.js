@@ -940,3 +940,162 @@ describe('cancelPosSale — misc validation', () => {
     expect(result.code).toBe('MISSING_ORDER');
   });
 });
+
+// ── Shared stock writes for color-variant products (also used by web order cancellation) ──
+describe('computeStockWrites — color-variant products are written back safely', () => {
+  function containsUndefined(value) {
+    if (value === undefined) return true;
+    if (Array.isArray(value)) return value.some(containsUndefined);
+    if (value && typeof value === 'object' && !(value instanceof Date)) return Object.values(value).some(containsUndefined);
+    return false;
+  }
+
+  // Variants WITHOUT nameAr/hex — the parsed form has those keys as undefined, which
+  // the real Admin SDK rejects (verified offline). The stored objects must be written back instead.
+  const bareVariantProduct = () => ({
+    name: 'Dress',
+    price: 100,
+    colorVariants: [
+      { id: 'red', name: 'Red', images: ['a.jpg'], sizeStock: { M: 1 }, order: 1 },
+      { id: 'blue', name: 'Blue', images: [], sizeStock: { M: 5 } },
+    ],
+    sizeStock: { M: 6 },
+    stock: 6,
+  });
+  const redLine = (quantity) => ({ productId: 'prod-v', name: 'Dress (Red / M)', price: 100, quantity, lineTotal: 100 * quantity, size: 'M', colorId: 'red', colorName: 'Red' });
+
+  it('cancelPosSale restores into the color and writes no undefined, keeping every stored field', async () => {
+    const db = createFakeDb({
+      'orders/order-1': baseOrder({ items: [redLine(2)], subtotal: 200, total: 200, itemCount: 2, payment: { method: 'cash', cashAmount: 200, cardAmount: 0, changeGiven: 0 } }),
+      'products/prod-v': bareVariantProduct(),
+    });
+    const result = await cancelPosSale(db, { actorUid: 'admin-1', actorName: 'Admin', actorRole: 'admin', orderId: 'order-1', reason: 'void' });
+    expect(result.ok).toBe(true);
+    const product = db._get('products', 'prod-v');
+    expect(containsUndefined(product)).toBe(false);
+    expect(product.colorVariants[0]).toEqual({ id: 'red', name: 'Red', images: ['a.jpg'], sizeStock: { M: 3 }, order: 1 });
+    expect(product.colorVariants[1]).toEqual({ id: 'blue', name: 'Blue', images: [], sizeStock: { M: 5 } });
+    expect(product).toMatchObject({ sizeStock: { M: 8 }, stock: 8 });
+  });
+
+  it('correctPosSale (quantity down) behaves the same way', async () => {
+    const db = createFakeDb({
+      'orders/order-1': baseOrder({ items: [redLine(2)], subtotal: 200, total: 200, itemCount: 2, payment: { method: 'cash', cashAmount: 200, cardAmount: 0, changeGiven: 0 } }),
+      'products/prod-v': bareVariantProduct(),
+    });
+    const result = await correctPosSale(db, {
+      actorUid: 'admin-1', actorName: 'Admin', actorRole: 'admin', orderId: 'order-1',
+      items: [{ productId: 'prod-v', name: 'Dress (Red / M)', price: 100, quantity: 1, size: 'M', colorId: 'red', colorName: 'Red' }],
+      discount: null, reason: 'one returned',
+    });
+    expect(result.ok).toBe(true);
+    const product = db._get('products', 'prod-v');
+    expect(containsUndefined(product)).toBe(false);
+    expect(product.colorVariants[0].sizeStock).toEqual({ M: 2 });
+    expect(product.colorVariants[0].order).toBe(1);
+    expect(product.stock).toBe(7);
+  });
+
+  it('only the changed sizeStock differs; every other stored variant field is kept (the old code dropped unknown fields and short image URLs)', async () => {
+    const full = { ...bareVariantProduct(), colorVariants: bareVariantProduct().colorVariants.map((v) => ({ ...v, nameAr: 'ع', hex: '#000' })) };
+    const db = createFakeDb({
+      'orders/order-1': baseOrder({ items: [redLine(1)], subtotal: 100, total: 100, itemCount: 1, payment: { method: 'cash', cashAmount: 100, cardAmount: 0, changeGiven: 0 } }),
+      'products/prod-v': full,
+    });
+    await cancelPosSale(db, { actorUid: 'admin-1', actorName: 'Admin', actorRole: 'admin', orderId: 'order-1', reason: 'void' });
+    const product = db._get('products', 'prod-v');
+    expect(product.colorVariants[0]).toEqual({ ...full.colorVariants[0], sizeStock: { M: 2 } });
+    expect(product.colorVariants[1]).toEqual(full.colorVariants[1]);
+  });
+});
+
+describe('missing products / colours / sizes are never re-created on a give-back', () => {
+  const sizedSale = (quantity) =>
+    baseOrder({
+      items: [{ productId: 'prod-1', name: 'T-Shirt (M)', price: 100, quantity, lineTotal: 100 * quantity, size: 'M', colorId: null, colorName: null }],
+      subtotal: 100 * quantity, total: 100 * quantity, itemCount: quantity,
+      payment: { method: 'cash', cashAmount: 100 * quantity, cardAmount: 0, changeGiven: 0 },
+    });
+  const colourSale = (quantity = 1) =>
+    baseOrder({
+      items: [{ productId: 'prod-v', name: 'Dress (Blue / S)', price: 120, quantity, lineTotal: 120 * quantity, size: 'S', colorId: 'blue', colorName: 'Blue' }],
+      subtotal: 120 * quantity, total: 120 * quantity, itemCount: quantity,
+      payment: { method: 'card', cashAmount: 0, cardAmount: 120 * quantity, changeGiven: 0 },
+    });
+  // The blue colour was removed after the sale.
+  const colourProduct = () => ({ name: 'Dress', price: 120, colorVariants: [{ id: 'red', name: 'Red', nameAr: 'أحمر', hex: '#f00', images: [], sizeStock: { S: 3 } }], sizeStock: { S: 3 }, stock: 3 });
+  const admin = { actorUid: 'admin-1', actorName: 'Admin', actorRole: 'admin' };
+
+  it('cancelPosSale: a removed size is skipped (size_missing), NOT re-created, and the sale is still cancelled', async () => {
+    const product = baseProduct({ sizeStock: { S: 5, L: 5 }, stock: 10 }); // size M was removed
+    const db = createFakeDb({ 'orders/order-1': sizedSale(1), 'products/prod-1': product });
+    const result = await cancelPosSale(db, { ...admin, orderId: 'order-1', reason: 'void' });
+    expect(result).toMatchObject({ ok: true, alreadyCancelled: false });
+    expect(result.skippedLines).toEqual([{ productId: 'prod-1', name: 'T-Shirt (M)', colorId: null, size: 'M', quantity: 1, reason: 'size_missing' }]);
+    expect(db._get('products', 'prod-1')).toEqual(product); // untouched — no "M" key appears
+    const order = db._get('orders', 'order-1');
+    expect(order.status).toBe('cancelled');
+    expect(order.cancellation.skippedLines).toEqual(result.skippedLines);
+  });
+
+  it('cancelPosSale: a removed colour is skipped (variant_missing) — no failure, the other colour is untouched', async () => {
+    const db = createFakeDb({ 'orders/order-1': colourSale(), 'products/prod-v': colourProduct() });
+    const result = await cancelPosSale(db, { ...admin, orderId: 'order-1', reason: 'void' });
+    expect(result.ok).toBe(true);
+    expect(result.skippedLines.map((l) => l.reason)).toEqual(['variant_missing']);
+    expect(db._get('products', 'prod-v')).toEqual(colourProduct());
+  });
+
+  it('cancelPosSale: a deleted product is reported as product_missing (not silently ignored)', async () => {
+    const db = createFakeDb({ 'orders/order-1': sizedSale(2) });
+    const result = await cancelPosSale(db, { ...admin, orderId: 'order-1', reason: 'void' });
+    expect(result.ok).toBe(true);
+    expect(result.skippedLines).toEqual([expect.objectContaining({ productId: 'prod-1', quantity: 2, reason: 'product_missing' })]);
+    expect(db._get('products', 'prod-1')).toBeUndefined();
+  });
+
+  it('correctPosSale: quantity down on a removed size succeeds, re-creates nothing and records the skip', async () => {
+    const product = baseProduct({ sizeStock: { S: 5, L: 5 }, stock: 10 });
+    const db = createFakeDb({ 'orders/order-1': sizedSale(2), 'products/prod-1': product });
+    const result = await correctPosSale(db, {
+      ...admin, orderId: 'order-1', discount: null, reason: 'one back',
+      items: [{ productId: 'prod-1', name: 'T-Shirt (M)', price: 100, quantity: 1, size: 'M' }],
+    });
+    expect(result.ok).toBe(true);
+    expect(result.skippedLines).toEqual([expect.objectContaining({ size: 'M', quantity: 1, reason: 'size_missing' })]);
+    expect(db._get('products', 'prod-1')).toEqual(product);
+    expect(db._get('orders', 'order-1').corrections.at(-1).skippedLines).toEqual(result.skippedLines);
+  });
+
+  it('correctPosSale: taking more stock from a removed colour is refused — never taken from another colour', async () => {
+    const db = createFakeDb({ 'orders/order-1': colourSale(1), 'products/prod-v': colourProduct() });
+    const result = await correctPosSale(db, {
+      ...admin, orderId: 'order-1', discount: null,
+      items: [{ productId: 'prod-v', name: 'Dress (Blue / S)', price: 120, quantity: 2, size: 'S', colorId: 'blue', colorName: 'Blue' }],
+    });
+    expect(result).toMatchObject({ ok: false, code: 'OUT_OF_STOCK' });
+    expect(db._get('products', 'prod-v')).toEqual(colourProduct());
+    expect(db._get('orders', 'order-1').items[0].quantity).toBe(1);
+  });
+
+  it('correctPosSale: adding a line for a colour product without choosing a colour is refused (no aggregate-only write)', async () => {
+    const db = createFakeDb({ 'orders/order-1': sizedSale(1), 'products/prod-1': baseProduct(), 'products/prod-v': colourProduct() });
+    const result = await correctPosSale(db, {
+      ...admin, orderId: 'order-1', discount: null,
+      items: [
+        { productId: 'prod-1', name: 'T-Shirt (M)', price: 100, quantity: 1, size: 'M' },
+        { productId: 'prod-v', name: 'Dress', price: 120, quantity: 1, size: 'S' },
+      ],
+    });
+    expect(result).toMatchObject({ ok: false, code: 'OUT_OF_STOCK' });
+    expect(db._get('products', 'prod-v')).toEqual(colourProduct());
+  });
+
+  it('a normal cancellation keeps the existing record shape (no skippedLines field when nothing was skipped)', async () => {
+    const db = createFakeDb({ 'orders/order-1': sizedSale(1), 'products/prod-1': baseProduct() });
+    const result = await cancelPosSale(db, { ...admin, orderId: 'order-1', reason: 'void' });
+    expect(result.skippedLines).toEqual([]);
+    expect(db._get('orders', 'order-1').cancellation).not.toHaveProperty('skippedLines');
+    expect(db._get('products', 'prod-1').sizeStock.M).toBe(11);
+  });
+});

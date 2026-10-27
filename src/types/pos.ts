@@ -1,4 +1,4 @@
-import type { PosDiscountMode, PosPayment } from './order';
+import type { CancellationLine, PosDiscountMode, PosPayment } from './order';
 
 export type { PosDiscount, PosPayment, PosPaymentMethod, PosDiscountMode } from './order';
 
@@ -77,6 +77,8 @@ export type PosSaleCorrectionResult = {
   itemCount: number;
   balanceDue: number;
   alreadyApplied: boolean;
+  /** Units given back that could not be restocked (product/colour/size no longer exists) — never re-created. */
+  skippedLines: CancellationLine[];
 };
 
 export type PosSaleCancellationPayload = {
@@ -97,6 +99,8 @@ export type PosSaleCancellationResult = {
   cancelledByName: string | null;
   reason: string | null;
   registerSessionStatusAtCancellation: 'open' | 'closed' | null;
+  /** Lines that could not be restocked (product/colour/size no longer exists) — never re-created. */
+  skippedLines: CancellationLine[];
 };
 
 export type PosSalePayload = {

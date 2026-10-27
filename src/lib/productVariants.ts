@@ -61,6 +61,66 @@ export function parseColorVariants(raw: unknown): ProductColorVariant[] {
     .filter((v): v is ProductColorVariant => v !== null);
 }
 
+/**
+ * Colour variants to write back after a stock change: the product's STORED
+ * variant objects with only `sizeStock` replaced on the colours whose stock
+ * changed — every other stored field is kept as-is, and nothing is `undefined`
+ * (Firestore rejects such writes). Mirrors server/lib/posSaleCorrection.js
+ * colorVariantsForWrite. Never write parsed copies back: they carry
+ * `nameAr`/`hex: undefined` for a colour without them, and drop extra fields.
+ */
+export function colorVariantsForWrite(stored: unknown, working: ProductColorVariant[]): unknown[] {
+  const stockById = new Map(working.map((v) => [v.id, v.sizeStock]));
+  const clean = (row: Record<string, unknown>) =>
+    Object.fromEntries(Object.entries(row).filter(([, value]) => value !== undefined));
+  if (!Array.isArray(stored)) return working.map((v) => clean({ ...v }));
+  return stored.map((entry) => {
+    if (!entry || typeof entry !== 'object') return entry;
+    const row = entry as Record<string, unknown>;
+    const id = typeof row.id === 'string' ? row.id.trim() : '';
+    const sizeStock = stockById.get(id);
+    return clean(sizeStock ? { ...row, sizeStock } : row);
+  });
+}
+
+export type StockCellProblem = 'product_missing' | 'variant_missing' | 'size_missing';
+
+export type StockCell =
+  | { ok: true; available: number; colorId: string | null; size: string | null }
+  | { ok: false; reason: StockCellProblem };
+
+/**
+ * The exact stock cell (colour + size) an order line refers to on the product as
+ * it is NOW — never a fallback to the default colour or the first size. Same
+ * rules as the server's restoreSkipReason (server/lib/webOrderCancel.js): a
+ * removed colour/size (or a deleted product) is reported, never re-created.
+ */
+export function exactStockCell(
+  product: Record<string, unknown> | null | undefined,
+  colorId: string | null | undefined,
+  size: string | null | undefined
+): StockCell {
+  if (!product) return { ok: false, reason: 'product_missing' };
+  const has = (map: object, key: string) => Object.prototype.hasOwnProperty.call(map, key);
+  const color = typeof colorId === 'string' && colorId.trim() ? colorId.trim() : null;
+  const sz = typeof size === 'string' && size.trim() ? size.trim() : null;
+  const variants = parseColorVariants(product.colorVariants);
+  if (variants.length > 0) {
+    const variant = color ? variants.find((v) => v.id === color) : undefined;
+    if (!variant) return { ok: false, reason: 'variant_missing' };
+    if (!sz || !has(variant.sizeStock, sz)) return { ok: false, reason: 'size_missing' };
+    return { ok: true, available: variant.sizeStock[sz] ?? 0, colorId: color, size: sz };
+  }
+  if (color) return { ok: false, reason: 'variant_missing' };
+  const { sizeStock, stock } = resolveProductInventory(product);
+  if (Object.keys(sizeStock).length > 0) {
+    if (!sz || !has(sizeStock, sz)) return { ok: false, reason: 'size_missing' };
+    return { ok: true, available: sizeStock[sz] ?? 0, colorId: null, size: sz };
+  }
+  if (sz) return { ok: false, reason: 'size_missing' };
+  return { ok: true, available: stock, colorId: null, size: null };
+}
+
 export function hasColorVariants(product: { colorVariants?: unknown }): boolean {
   return parseColorVariants(product.colorVariants).length > 0;
 }

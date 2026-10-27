@@ -10,8 +10,10 @@ export {
   formatOrderDate,
   formatOrderDateTime,
   formatOrderMoney,
+  isCanonicalOrderStatus,
   isOrderActive,
   normalizeOrderStatus,
+  orderListBucket,
   orderStatusStep,
   orderStatusTone,
   parseOrderDocument,
@@ -34,9 +36,12 @@ export {
   fetchOrdersForUser,
   placeOrderFromCart,
   saveOrderItems,
+  updateOrderAdminNote,
   updateOrderCustomerDetails,
   updateOrderStatus,
 } from './orderService';
+export { AdminOrderApiError, cancelWebOrderRequest } from './adminOrderApi';
+export type { CancelWebOrderResult } from './adminOrderApi';
 export type {
   OrderCustomerDetailsUpdate,
   OrderItemsMutationResult,

@@ -63,7 +63,7 @@ function hasSizedInventory(sizeStock) {
   return Object.keys(sizeStock).length > 0;
 }
 
-function resolveProductInventory(data) {
+export function resolveProductInventory(data) {
   const colorVariants = parseColorVariants(data.colorVariants);
   if (colorVariants.length) {
     const sizeStock = {};
@@ -186,8 +186,66 @@ function toStoredLine(item) {
   return stored;
 }
 
+/**
+ * The color variants to write back after a stock change: the product's
+ * *stored* variant objects, with only `sizeStock` replaced on the variants
+ * whose stock changed. Writing the parsed copies instead would (a) put
+ * `undefined` into Firestore for a variant without `nameAr`/`hex` — which the
+ * Admin SDK rejects, failing the whole transaction — and (b) silently drop
+ * anything the parser filters (extra fields, short image strings, malformed
+ * entries). Stock math is unchanged; only the serialisation differs.
+ */
+export function colorVariantsForWrite(storedVariants, workingVariants) {
+  const stockById = new Map(workingVariants.map((v) => [v.id, v.sizeStock]));
+  if (!Array.isArray(storedVariants)) return workingVariants.map(withoutUndefined);
+  return storedVariants.map((entry) => {
+    if (!entry || typeof entry !== 'object') return entry;
+    const id = typeof entry.id === 'string' ? entry.id.trim() : '';
+    const sizeStock = stockById.get(id);
+    return withoutUndefined(sizeStock ? { ...entry, sizeStock } : entry);
+  });
+}
+
+function withoutUndefined(obj) {
+  return Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined));
+}
+
 function lineKey(item) {
   return [item.productId, item.colorId ?? '', item.size ?? ''].join('|~|');
+}
+
+/**
+ * Why stock cannot be given back to exactly this cell of the product as it is
+ * now (null = it can). Same rules as webOrderCancel.js's restoreSkipReason, so
+ * every give-back path agrees: a colour, size or product that no longer exists
+ * is never re-created — the line is skipped and reported instead.
+ */
+function giveBackSkipReason(working, colorId, size) {
+  const has = (map, key) => Object.prototype.hasOwnProperty.call(map, key);
+  if (working.hasVariants) {
+    if (!colorId) return 'variant_missing';
+    const variant = working.colorVariants.find((v) => v.id === colorId);
+    if (!variant) return 'variant_missing';
+    if (!size || !has(variant.sizeStock, size)) return 'size_missing';
+    return null;
+  }
+  if (colorId) return 'variant_missing';
+  if (working.sized) {
+    if (!size || !has(working.sizeStock, size)) return 'size_missing';
+    return null;
+  }
+  return size ? 'size_missing' : null;
+}
+
+function skippedLine(d, reason) {
+  return {
+    productId: String(d.productId ?? ''),
+    name: typeof d.name === 'string' ? d.name : null,
+    colorId: d.colorId ?? null,
+    size: d.size ?? null,
+    quantity: Math.abs(d.delta),
+    reason,
+  };
 }
 
 /**
@@ -197,12 +255,20 @@ function lineKey(item) {
  * written here — callers `tx.update` it themselves, after they've validated
  * whatever else they need to). Shared by correctPosSale (afterItems = the
  * corrected line items) and cancelPosSale (afterItems = [] — restoring
- * everything). A deleted product is skipped gracefully when every delta on it
- * is a give-back (delta <= 0); it only throws PRODUCT_MISSING when a delta
- * would need to *consume* stock that no longer exists — cancellation deltas
- * are always give-backs, so a cancellation can never fail this way.
+ * everything).
+ *
+ * Give-backs (delta < 0) never re-create anything: when the product was
+ * deleted, or its colour/size no longer exists, that delta is skipped and
+ * pushed to `options.skipped` ({ productId, name, colorId, size, quantity,
+ * reason: product_missing | variant_missing | size_missing }). Consuming
+ * deltas (delta > 0) still fail: PRODUCT_MISSING for a deleted product,
+ * COLOR_REQUIRED for a missing/absent colour, OUT_OF_STOCK for a size with
+ * too little (or no) stock — so stock is never taken from the wrong cell.
  */
-async function computeStockWrites(db, tx, beforeItems, afterItems) {
+export async function computeStockWrites(db, tx, beforeItems, afterItems, { skipped } = {}) {
+  const skip = (d, reason) => {
+    if (Array.isArray(skipped)) skipped.push(skippedLine(d, reason));
+  };
   const before = new Map();
   beforeItems.forEach((i) => before.set(lineKey(i), (before.get(lineKey(i)) ?? 0) + (Number(i.quantity) || 0)));
   const after = new Map();
@@ -229,12 +295,13 @@ async function computeStockWrites(db, tx, beforeItems, afterItems) {
       // A deleted product can still be fully priced/totalled from the
       // admin-supplied correction — but there's nothing to adjust stock on.
       // Only fail if we'd need to *consume* stock that no longer exists;
-      // silently skip the stock write if every delta here is a give-back.
+      // give-backs are skipped (and reported), never re-creating the product.
       if (idDeltas.some((d) => d.delta > 0)) {
         const err = new Error('PRODUCT_MISSING');
         err.productName = idDeltas[0]?.name;
         throw err;
       }
+      idDeltas.forEach((d) => skip(d, 'product_missing'));
       continue;
     }
 
@@ -248,7 +315,21 @@ async function computeStockWrites(db, tx, beforeItems, afterItems) {
       sized: hasSizedInventory(inv.sizeStock),
     };
 
+    let changed = false;
     for (const d of idDeltas) {
+      if (d.delta < 0) {
+        const reason = giveBackSkipReason(working, d.colorId ?? null, d.size ?? null);
+        if (reason) {
+          skip(d, reason);
+          continue;
+        }
+      } else if (working.hasVariants && !d.colorId) {
+        // Consuming from a colour product needs the exact colour — never the aggregate.
+        const err = new Error('COLOR_REQUIRED');
+        err.productName = d.name;
+        throw err;
+      }
+      changed = true;
       try {
         if (working.hasVariants && d.colorId) {
           const nextVariants = applySignedColorVariantChange(working.colorVariants, d.colorId, d.size, d.delta);
@@ -264,9 +345,13 @@ async function computeStockWrites(db, tx, beforeItems, afterItems) {
       }
     }
 
+    if (!changed) continue; // every delta on this product was skipped — nothing to write
+
     const payload = { stock: working.stock };
     if (working.sized) payload.sizeStock = working.sizeStock;
-    if (working.hasVariants && working.colorVariants?.length) payload.colorVariants = working.colorVariants;
+    if (working.hasVariants && working.colorVariants?.length) {
+      payload.colorVariants = colorVariantsForWrite(data.colorVariants, working.colorVariants);
+    }
     stockWrites.set(id, payload);
   }
 
@@ -328,7 +413,9 @@ export async function correctPosSale(
       }
 
       const beforeItems = Array.isArray(order.items) ? order.items : [];
-      const stockWrites = await computeStockWrites(db, tx, beforeItems, nextItems);
+      // Give-backs to a deleted product / removed colour / removed size are skipped, never re-created.
+      const skippedLines = [];
+      const stockWrites = await computeStockWrites(db, tx, beforeItems, nextItems, { skipped: skippedLines });
 
       // ---- recompute totals from the corrected items — server-authoritative, never a client-sent total ----
       const storedLines = nextItems.map(toStoredLine);
@@ -359,6 +446,7 @@ export async function correctPosSale(
         },
         after: { items: storedLines, subtotal, discount: resolvedDiscount, total },
         idempotencyKey: key,
+        ...(skippedLines.length ? { skippedLines } : {}),
       };
 
       const existingCorrections = Array.isArray(order.corrections) ? order.corrections : [];
@@ -381,7 +469,7 @@ export async function correctPosSale(
         tx.update(db.collection('products').doc(id), payload);
       }
 
-      return { alreadyApplied: false, total, itemCount, balanceDue, registerSessionStatus: sessionStatus };
+      return { alreadyApplied: false, total, itemCount, balanceDue, registerSessionStatus: sessionStatus, skippedLines };
     });
 
     return { ok: true, ...result };
@@ -498,7 +586,10 @@ export async function cancelPosSale(db, { actorUid, actorName, actorRole, orderI
       // Restore stock based on the sale's *current* items (reflecting any prior
       // correction) — the "after" state for a cancellation has no items at all.
       const currentItems = Array.isArray(order.items) ? order.items : [];
-      const stockWrites = await computeStockWrites(db, tx, currentItems, []);
+      // Lines whose product, colour or size no longer exists are skipped and recorded
+      // (never re-created) — the sale is still cancelled.
+      const skippedLines = [];
+      const stockWrites = await computeStockWrites(db, tx, currentItems, [], { skipped: skippedLines });
 
       const originalPayment = order.payment ?? { cashAmount: 0, cardAmount: 0 };
       const originalCollected =
@@ -515,6 +606,7 @@ export async function cancelPosSale(db, { actorUid, actorName, actorRole, orderI
         reason: trimmedReason,
         registerSessionStatusAtCancellation: sessionStatus,
         idempotencyKey: key,
+        ...(skippedLines.length ? { skippedLines } : {}),
       };
 
       tx.update(orderRef, {
@@ -537,6 +629,7 @@ export async function cancelPosSale(db, { actorUid, actorName, actorRole, orderI
         cancelledByName: actorName || null,
         reason: trimmedReason,
         registerSessionStatusAtCancellation: sessionStatus,
+        skippedLines,
       };
     });
 
@@ -554,6 +647,9 @@ export async function cancelPosSale(db, { actorUid, actorName, actorRole, orderI
       // stock; cancellation deltas are always give-backs (<=0), so this should
       // be unreachable in practice — kept for safety should that ever change.
       return { ok: false, code, message: 'A product in this sale is no longer available.' };
+    }
+    if (code === 'OUT_OF_STOCK' || code === 'SIZE_REQUIRED' || code === 'COLOR_REQUIRED') {
+      return { ok: false, code: 'OUT_OF_STOCK', message: 'The stock for this sale could not be restored. Review it manually.' };
     }
     console.error('[pos] sale cancellation failed:', error);
     return { ok: false, code: 'UNKNOWN', message: 'Could not cancel the sale. Please try again.' };

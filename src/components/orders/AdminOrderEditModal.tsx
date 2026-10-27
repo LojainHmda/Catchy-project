@@ -5,6 +5,7 @@ import { ChevronDown, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import OrderItemsDraftTable from './OrderItemsDraftTable';
 import {
+  checkoutErrorCode,
   formatOrderMoney,
   isOrderError,
   saveOrderItems,
@@ -13,6 +14,9 @@ import {
   updateOrderStatus,
 } from '../../lib/orders';
 import { ORDER_STATUSES, type OrderLineItem, type OrderRecord, type OrderStatus } from '../../types/order';
+import { canChangeOrderStatus } from '../../lib/orders/orderListFilters';
+import { orderHasReturns } from '../../lib/orders/orderUtils';
+import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { cn } from '../../lib/utils';
 
@@ -56,8 +60,17 @@ function itemsSignature(items: OrderLineItem[]): string {
 
 const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, onClose, onOrderPatch }) => {
   const { t, isRTL } = useLanguage();
+  const { user } = useAuth();
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // The current status plus every status this order may be moved to by hand.
+  // 'cancelled' is never offered here: cancelling goes through "Cancel order"
+  // so stock is restored atomically on the server.
+  const statusOptions = useMemo(
+    () => (order ? ORDER_STATUSES.filter((s) => s === order.status || canChangeOrderStatus(order, s)) : []),
+    [order]
+  );
 
   // Seed the draft only when the modal opens or a different order is loaded — not on
   // every order-field change, so the incremental patches we apply mid-save don't wipe
@@ -88,6 +101,9 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
     );
   }, [order, draft]);
 
+  // Units of this order are on the returns shelf: items are frozen (the server-side
+  // transaction refuses item edits too).
+  const itemsLocked = orderHasReturns(order);
   const statusDirty = !!order && !!draft && draft.status !== order.status;
   const itemsDirty = useMemo(
     () => !!order && !!draft && itemsSignature(draft.items) !== itemsSignature(order.items),
@@ -110,8 +126,10 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
     setSaving(true);
     try {
       // Items first: saveOrderItems validates stock and may throw before any write.
+      let stockSkippedCount = 0;
       if (itemsDirty) {
         const result = await saveOrderItems(order, draft.items, t);
+        stockSkippedCount = result.stockSkipped?.length ?? 0;
         onOrderPatch(order.id, {
           items: result.items,
           subtotal: result.subtotal,
@@ -130,13 +148,34 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
         onOrderPatch(order.id, details);
       }
       if (statusDirty) {
-        await updateOrderStatus(order.id, draft.status);
-        onOrderPatch(order.id, { status: draft.status });
+        if (!canChangeOrderStatus(order, draft.status)) throw new Error('STATUS_CHANGE_NOT_ALLOWED');
+        const actor = user ? { uid: user.uid, name: user.displayName || user.email } : null;
+        await updateOrderStatus(order.id, draft.status, actor);
+        onOrderPatch(order.id, {
+          status: draft.status,
+          statusUpdatedAt: new Date(),
+          statusUpdatedByUid: actor?.uid ?? null,
+          statusUpdatedByName: actor?.name ?? null,
+        });
       }
       toast.success(t('admin.orders.edit.updated'));
+      if (stockSkippedCount) {
+        // Never re-created: the product, colour or size of these lines no longer exists.
+        toast.warning(t('admin.orders.restockSkipped').replace('{n}', String(stockSkippedCount)));
+      }
       onClose();
     } catch (error) {
-      const msg = isOrderError(error) ? error.message : t('admin.orders.edit.saveFailed');
+      const code = checkoutErrorCode(error);
+      // The order changed or was cancelled elsewhere since this dialog opened: the
+      // guarded transaction refused the write, so nothing was changed for that step.
+      const msg =
+        code === 'ORDER_CHANGED'
+          ? t('admin.orders.edit.orderChanged')
+          : code === 'ORDER_NOT_EDITABLE'
+            ? t('admin.orders.edit.orderNotEditable')
+            : isOrderError(error)
+              ? error.message
+              : t('admin.orders.edit.saveFailed');
       console.error('Order save failed:', error);
       toast.error(msg);
     } finally {
@@ -274,7 +313,7 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
                         saving && 'cursor-not-allowed opacity-60'
                       )}
                     >
-                      {ORDER_STATUSES.filter((s) => s !== 'completed').map((s) => (
+                      {statusOptions.map((s) => (
                         <option key={s} value={s}>
                           {t(`orders.status.${s}`)}
                         </option>
@@ -286,16 +325,22 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
                       aria-hidden
                     />
                   </div>
+                  <p className="mt-1 text-[11px] text-gray-500">{t('admin.orders.edit.cancelHint')}</p>
                 </section>
 
                 <section>
                   <h3 className="mb-2 text-start text-[11px] font-semibold uppercase tracking-wide text-gray-500">
                     {t('admin.orders.edit.lineItems').replace('{n}', String(draft.items.length))}
                   </h3>
+                  {itemsLocked ? (
+                    <p className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      {t('admin.returns.itemsLocked')}
+                    </p>
+                  ) : null}
                   <OrderItemsDraftTable
                     items={draft.items}
                     onItemsChange={(items) => setField('items', items)}
-                    disabled={saving}
+                    disabled={saving || itemsLocked}
                   />
                 </section>
               </div>

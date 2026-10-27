@@ -16,10 +16,17 @@ service firebase.storage {
       allow write: if isAdmin();
     }
 
-    // Product images — public read, admin write
+    // Product media — public read, admin write.
+    // New uploads must be videos of at most 100 MiB (104857600 bytes), the same
+    // limit as src/lib/productVideoUpload.ts. Product images live in Cloudinary;
+    // older images stored here before that (pre-Cloudinary) stay readable and an
+    // admin can still delete anything in this folder.
     match /products/{filename} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow delete: if isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.size <= 104857600
+        && request.resource.contentType.matches('video/.*');
     }
   }
 }

@@ -1,5 +1,7 @@
 import type {
+  CancellationLine,
   OrderLineItem,
+  OrderListBucket,
   OrderRecord,
   OrderStatus,
   PosDiscount,
@@ -7,7 +9,8 @@ import type {
   PosSaleCancellation,
   PosSaleCorrection,
 } from '../../types/order';
-import { CANCELLED_ORDER_STATUS, ORDER_STATUSES } from '../../types/order';
+import { CANCELLED_ORDER_STATUS, NEEDS_REVIEW_BUCKET, ORDER_STATUSES } from '../../types/order';
+import type { OrderReturnSummary } from '../../types/returns';
 import { getShippingCost } from '../shippingZones';
 
 export const ORDER_STATUS_FLOW: OrderStatus[] = ['pending', 'processing', 'shipped', 'delivered'];
@@ -21,9 +24,45 @@ export function toDate(value: unknown): Date | null {
   return null;
 }
 
+/**
+ * Status used for transition/edit/cancel decisions (trim + lower-case, unknown → 'pending').
+ * NOT used for admin list display or counts — see orderListBucket.
+ */
 export function normalizeOrderStatus(raw: unknown): OrderStatus {
-  const status = String(raw ?? 'pending').toLowerCase();
+  const status = String(raw ?? 'pending').trim().toLowerCase();
   return ORDER_STATUSES.includes(status as OrderStatus) ? (status as OrderStatus) : 'pending';
+}
+
+/** True only when the stored value is exactly one of ORDER_STATUSES (what the app itself writes). */
+export function isCanonicalOrderStatus(raw: unknown): raw is OrderStatus {
+  return typeof raw === 'string' && ORDER_STATUSES.includes(raw as OrderStatus);
+}
+
+/**
+ * Where an order is listed and counted in the admin: its exact stored status, or
+ * NEEDS_REVIEW_BUCKET when that is not canonical. This is what keeps the Orders
+ * page counts equal to the dashboard's exact `where('status', '==', 'pending')`.
+ */
+export function orderListBucket(order: Pick<OrderRecord, 'status' | 'statusNeedsReview'>): OrderListBucket {
+  return order.statusNeedsReview ? NEEDS_REVIEW_BUCKET : order.status;
+}
+
+/**
+ * True when the stored status is not one we recognise even after trim + lower-case
+ * (e.g. a legacy "refunded"). Such orders are listed under "Needs review" and
+ * must never be cancelled/restocked on a guess — the server refuses them too.
+ */
+export function isUnrecognizedOrderStatus(raw: unknown): boolean {
+  if (raw === undefined || raw === null) return false; // missing → pending, same as the server
+  const status = String(raw).trim().toLowerCase();
+  return status !== '' && !ORDER_STATUSES.includes(status as OrderStatus);
+}
+
+/** Whether the stored order already carries a cancellation audit record (stock was handled once). */
+export function hasCancellationRecord(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object') return false;
+  const uid = (raw as Record<string, unknown>).cancelledByUid;
+  return typeof uid === 'string' && uid.length > 0;
 }
 
 export function orderStatusStep(status: OrderStatus): number {
@@ -222,6 +261,35 @@ function parsePosSaleCorrections(raw: unknown): PosSaleCorrection[] {
   return out;
 }
 
+const SKIP_REASONS: NonNullable<CancellationLine['reason']>[] = [
+  'coordinate_set',
+  'product_missing',
+  'variant_missing',
+  'size_missing',
+  'not_restocked',
+];
+
+function parseCancellationLines(raw: unknown): CancellationLine[] {
+  if (!Array.isArray(raw)) return [];
+  const out: CancellationLine[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const e = entry as Record<string, unknown>;
+    const productId = typeof e.productId === 'string' ? e.productId : '';
+    if (!productId) continue;
+    const reason = SKIP_REASONS.find((r) => r === e.reason);
+    out.push({
+      productId,
+      name: typeof e.name === 'string' ? e.name : null,
+      colorId: typeof e.colorId === 'string' ? e.colorId : null,
+      size: typeof e.size === 'string' ? e.size : null,
+      quantity: Number(e.quantity) || 0,
+      ...(reason ? { reason } : {}),
+    });
+  }
+  return out;
+}
+
 /** Tolerant of a malformed/legacy entry — a corrupt cancellation record is dropped, not fatal to the whole order. */
 function parsePosSaleCancellation(raw: unknown): PosSaleCancellation | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -237,7 +305,52 @@ function parsePosSaleCancellation(raw: unknown): PosSaleCancellation | null {
       e.registerSessionStatusAtCancellation === 'open' || e.registerSessionStatusAtCancellation === 'closed'
         ? e.registerSessionStatusAtCancellation
         : null,
+    previousStatus:
+      typeof e.previousStatus === 'string' && ORDER_STATUSES.includes(e.previousStatus as OrderStatus)
+        ? (e.previousStatus as OrderStatus)
+        : null,
+    restockApplied: typeof e.restockApplied === 'boolean' ? e.restockApplied : undefined,
+    restoredLines: parseCancellationLines(e.restoredLines),
+    skippedLines: parseCancellationLines(e.skippedLines),
   };
+}
+
+/** Line identity for return caps — same key as server/lib/orderReturnState.js returnLineKey. */
+export function returnLineKey(item: { productId: string; colorId?: string | null; size?: string | null }): string {
+  return [item.productId, item.colorId ?? '', item.size ?? ''].join('|~|');
+}
+
+/** Malformed/negative values count as 0 (same sanitising as the server). */
+export function parseReturnSummary(raw: unknown): OrderReturnSummary | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const whole = (value: unknown) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  };
+  const returnedQtyByKey: Record<string, number> = {};
+  if (r.returnedQtyByKey && typeof r.returnedQtyByKey === 'object' && !Array.isArray(r.returnedQtyByKey)) {
+    for (const [key, qty] of Object.entries(r.returnedQtyByKey as Record<string, unknown>)) {
+      const n = whole(qty);
+      if (n > 0) returnedQtyByKey[key] = n;
+    }
+  }
+  return {
+    returnCount: whole(r.returnCount),
+    openCount: whole(r.openCount),
+    returnedQtyByKey,
+    lastReturnAt: toDate(r.lastReturnAt),
+  };
+}
+
+/** Same rule as server/lib/orderReturnState.js orderHasReturns. */
+export function orderHasReturns(order: { returnSummary?: OrderReturnSummary | null } | null | undefined): boolean {
+  const summary = order?.returnSummary;
+  return !!summary && (summary.returnCount > 0 || Object.keys(summary.returnedQtyByKey).length > 0);
+}
+
+function optionalString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
 }
 
 export function parseOrderDocument(
@@ -272,6 +385,9 @@ export function parseOrderDocument(
     deliveryAddress: typeof data.deliveryAddress === 'string' ? data.deliveryAddress : null,
     deliveryZone,
     status: normalizeOrderStatus(data.status),
+    statusUnrecognized: isUnrecognizedOrderStatus(data.status),
+    rawStatus: typeof data.status === 'string' ? data.status : null,
+    statusNeedsReview: !isCanonicalOrderStatus(data.status),
     subtotal,
     shippingCost,
     total,
@@ -288,14 +404,23 @@ export function parseOrderDocument(
     correctionCount: Number(data.correctionCount) || 0,
     corrections: parsePosSaleCorrections(data.corrections),
     cancellation: parsePosSaleCancellation(data.cancellation),
+    statusUpdatedAt: toDate(data.statusUpdatedAt),
+    statusUpdatedByUid: optionalString(data.statusUpdatedByUid),
+    statusUpdatedByName: optionalString(data.statusUpdatedByName),
+    adminNote: optionalString(data.adminNote),
+    adminNoteUpdatedAt: toDate(data.adminNoteUpdatedAt),
+    adminNoteUpdatedByName: optionalString(data.adminNoteUpdatedByName),
+    returnSummary: parseReturnSummary(data.returnSummary),
   };
 }
 
-export function orderStatusTone(status: OrderStatus): {
+export function orderStatusTone(status: OrderListBucket): {
   badge: string;
   dot: string;
 } {
   switch (status) {
+    case NEEDS_REVIEW_BUCKET:
+      return { badge: 'bg-rose-50 text-rose-700 ring-rose-600/30', dot: 'bg-rose-500' };
     case 'completed':
       return { badge: 'bg-violet-50 text-violet-700 ring-violet-600/20', dot: 'bg-violet-500' };
     case 'delivered':

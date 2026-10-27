@@ -1,0 +1,147 @@
+rules_version = '2';
+// Collections used by this app: products, hero_slides, coordinate_looks, site_settings/*, users/{uid}, orders/{id}
+// After enabling Firestore in the Firebase console, deploy: npm run firebase:deploy:firestore
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    /** Synthetic admin email pattern `{name}-kartacagenai@example.com` (see AuthContext). */
+
+    /** Email from the ID token (required for isOwner checks). */
+    function authEmail() {
+      return (signedIn() && request.auth.token.email is string)
+        ? request.auth.token.email
+        : '';
+    }
+
+    function isSyntheticShortcutAdmin() {
+      return authEmail().matches('(?i)^[^@]+-kartacagenai@example\\.com$');
+    }
+
+    /** Demo admin — match case-insensitive so it matches AuthContext / constants. */
+    function isDemoAdminShortcut() {
+      return authEmail().matches('(?i)^admin@gmail\\.com$');
+    }
+
+    /** Owner accounts; email must appear on the JWT (sign out/in if you changed rules). */
+    function isOwner() {
+      return authEmail().matches('(?i)^(lojain2077@gmail\\.com|marei\\.eyad@gmail\\.com)$')
+        || isSyntheticShortcutAdmin()
+        || isDemoAdminShortcut();
+    }
+
+    /** Signed-in admin from Firestore profile (matches AuthContext role sync). */
+    function isProfileAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isCatalogAdmin() {
+      return isOwner() || isProfileAdmin();
+    }
+
+    /** POS cashier, granted manually via users/{uid}.role in the Firestore console. */
+    function isProfileCashier() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'cashier';
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || isOwner());
+      allow create: if signedIn() && request.auth.uid == userId;
+      // A user may update their own profile but never grant/change their own role — only an owner can do that.
+      allow update: if signedIn() && request.auth.uid == userId
+        && (!('role' in request.resource.data.diff(resource.data).affectedKeys()) || isOwner());
+      allow delete: if isOwner();
+    }
+
+    function isWholeStock(value) {
+      return value is int;
+    }
+
+    function customerCheckoutStockDecrement() {
+      let keys = request.resource.data.diff(resource.data).affectedKeys();
+      let priorStock = resource.data.keys().hasAny(['stock'])
+        ? resource.data.stock
+        : 0;
+      return signedIn()
+        && isWholeStock(request.resource.data.stock)
+        && isWholeStock(priorStock)
+        && request.resource.data.stock >= 0
+        && request.resource.data.stock < priorStock
+        && (keys.hasOnly(['stock'])
+          || keys.hasOnly(['stock', 'sizeStock'])
+          || keys.hasOnly(['stock', 'colorVariants'])
+          || keys.hasOnly(['stock', 'sizeStock', 'colorVariants']));
+    }
+
+    match /products/{id} {
+      allow read: if true;
+      allow create, delete: if isOwner();
+      // Admins manage catalog; customers may only decrement stock (and per-size map) at checkout
+      allow update: if isOwner() || customerCheckoutStockDecrement();
+    }
+
+    match /hero_slides/{id} {
+      allow read: if true;
+      allow write: if isOwner();
+    }
+
+    match /site_settings/{docId} {
+      allow read: if true;
+      allow write: if isOwner();
+    }
+
+    match /orders/{id} {
+      // `returnSummary` is written only by the returns shelf on the server (Admin SDK);
+      // no client — customer or owner — may set or change it.
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && !('returnSummary' in request.resource.data);
+      // Guest orders are created server-side; confirmation page may read them without sign-in.
+      allow read: if resource.data.isGuest == true
+        || (signedIn() && (resource.data.userId == request.auth.uid || isOwner()));
+      allow update: if isOwner()
+        && !('returnSummary' in request.resource.data.diff(resource.data).affectedKeys());
+      allow delete: if isOwner();
+    }
+
+    // Returns shelf (web orders). Every write goes through the owner-only server
+    // endpoints (server/lib/webOrderReturn.js, Admin SDK) so intake caps, status
+    // and restocking stay atomic with the order and the product stock.
+    match /returns/{id} {
+      allow read: if isOwner();
+      allow write: if false;
+    }
+
+    // Stock movement ledger: append-only, written server-side in the same
+    // transaction as the stock change it records.
+    match /stockMovements/{id} {
+      allow read: if isOwner();
+      allow write: if false;
+    }
+
+    // WhatsApp conversation log. Admins read/write from the admin UI; inbound
+    // messages are written server-side by the webhook (Admin SDK bypasses rules).
+    match /coordinate_looks/{id} {
+      allow read: if true;
+      allow create, update, delete: if isCatalogAdmin();
+    }
+
+    match /whatsapp_messages/{id} {
+      allow read, write: if isOwner();
+    }
+
+    // POS register sessions. All writes go through server endpoints using the
+    // Admin SDK (bypasses rules) so totals stay atomic with each sale.
+    match /register_sessions/{id} {
+      allow read: if signedIn() && (resource.data.cashierUid == request.auth.uid || isCatalogAdmin());
+    }
+  }
+}

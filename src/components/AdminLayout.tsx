@@ -20,13 +20,19 @@ import {
   LayoutGrid,
   CreditCard,
   Languages,
+  BarChart3,
+  PackageOpen,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { usePendingOrdersCount } from '../hooks/usePendingOrdersCount';
+import { useOpenReturnsCount } from '../hooks/useOpenReturnsCount';
 import { cn } from '../lib/utils';
 
 const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { logout } = useAuth();
+  const { logout, role } = useAuth();
+  const pendingOrders = usePendingOrdersCount(role === 'admin');
+  const openReturns = useOpenReturnsCount(role === 'admin');
   const location = useLocation();
   const { t, language, setLanguage, isRTL } = useLanguage();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -72,7 +78,15 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { icon: Percent, label: t('admin.nav.discounts'), path: '/admin/discounts' },
     { icon: LayoutGrid, label: t('admin.nav.coordinates'), path: '/admin/coordinates' },
     { icon: ClipboardList, label: t('admin.nav.stock'), path: '/admin/stock' },
-    { icon: ShoppingCart, label: t('admin.nav.orders'), path: '/admin/orders' },
+    { icon: ShoppingCart, label: t('admin.nav.orders'), path: '/admin/orders', badge: pendingOrders },
+    {
+      icon: PackageOpen,
+      label: t('admin.nav.returns'),
+      path: '/admin/returns',
+      badge: openReturns,
+      badgeLabelKey: 'admin.nav.openReturnsBadge',
+    },
+    { icon: BarChart3, label: t('admin.nav.reports'), path: '/admin/reports' },
     { icon: Users, label: t('admin.nav.customers'), path: '/admin/customers' },
     { icon: MessageCircle, label: t('admin.nav.whatsapp'), path: '/admin/whatsapp' },
     { icon: Settings, label: t('admin.nav.settings'), path: '/admin/settings' },
@@ -188,9 +202,24 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                   />
                   <span className="truncate">{item.label}</span>
                 </div>
-                {isActive ? (
-                  isRTL ? <ChevronLeft size={16} className="shrink-0" /> : <ChevronRight size={16} className="shrink-0" />
-                ) : null}
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {'badge' in item && item.badge ? (
+                    <span
+                      className={cn(
+                        'min-w-[1.5rem] rounded-full px-1.5 py-0.5 text-center text-[11px] font-black tabular-nums',
+                        isActive ? 'bg-white text-catchy' : 'bg-orange-500 text-white'
+                      )}
+                      aria-label={t(
+                        'badgeLabelKey' in item && item.badgeLabelKey ? item.badgeLabelKey : 'admin.nav.pendingBadge'
+                      ).replace('{n}', String(item.badge))}
+                    >
+                      {item.badge > 99 ? '99+' : item.badge}
+                    </span>
+                  ) : null}
+                  {isActive ? (
+                    isRTL ? <ChevronLeft size={16} className="shrink-0" /> : <ChevronRight size={16} className="shrink-0" />
+                  ) : null}
+                </div>
               </Link>
             );
           })}

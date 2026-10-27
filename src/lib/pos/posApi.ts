@@ -8,6 +8,7 @@ import type {
   PosSaleResult,
   RegisterSession,
 } from '../../types/pos';
+import type { CancellationLine } from '../../types/order';
 
 export class PosApiError extends Error {
   readonly code: string;
@@ -117,7 +118,7 @@ export async function correctPosSale(
   payload: PosSaleCorrectionPayload,
   t?: (key: string) => string
 ): Promise<PosSaleCorrectionResult> {
-  const result = await postJson<{ total: number; itemCount: number; balanceDue: number; alreadyApplied: boolean }>(
+  const result = await postJson<{ total: number; itemCount: number; balanceDue: number; alreadyApplied: boolean; skippedLines?: unknown }>(
     '/api/pos/sale/correct',
     payload,
     t
@@ -127,6 +128,7 @@ export async function correctPosSale(
     itemCount: result.itemCount,
     balanceDue: result.balanceDue,
     alreadyApplied: result.alreadyApplied,
+    skippedLines: Array.isArray(result.skippedLines) ? (result.skippedLines as CancellationLine[]) : [],
   };
 }
 
@@ -143,6 +145,7 @@ export async function cancelPosSale(
     cancelledByName: string | null;
     reason: string | null;
     registerSessionStatusAtCancellation: 'open' | 'closed' | null;
+    skippedLines?: unknown;
   }>('/api/pos/sale/cancel', payload, t);
   return {
     alreadyCancelled: result.alreadyCancelled,
@@ -152,5 +155,6 @@ export async function cancelPosSale(
     cancelledByName: result.cancelledByName,
     reason: result.reason,
     registerSessionStatusAtCancellation: result.registerSessionStatusAtCancellation,
+    skippedLines: Array.isArray(result.skippedLines) ? (result.skippedLines as CancellationLine[]) : [],
   };
 }

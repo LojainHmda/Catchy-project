@@ -1,3 +1,5 @@
+import { colorVariantsForWrite } from './posSaleCorrection.js';
+
 const GUEST_USER_ID = 'guest';
 
 function sanitizeStoredImageUrl(url) {
@@ -357,7 +359,10 @@ export async function processGuestCheckout(db, { items, delivery }) {
         const payload = { stock: working.stock };
         if (working.sized) payload.sizeStock = working.sizeStock;
         if (working.hasVariants && working.colorVariants?.length) {
-          payload.colorVariants = working.colorVariants;
+          // The stored colour objects, with only `sizeStock` replaced: the parsed copies
+          // carry `undefined` for a colour without nameAr/hex, which the Admin SDK
+          // rejects (that failed every checkout of such a product).
+          payload.colorVariants = colorVariantsForWrite(productSnaps.get(productId).data()?.colorVariants, working.colorVariants);
         }
         tx.update(ref, payload);
       }

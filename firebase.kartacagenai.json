@@ -1,0 +1,8 @@
+{
+  "firestore": [
+    { "database": "catchy", "rules": "firestore.kartacagenai.rules" }
+  ],
+  "storage": [
+    { "bucket": "kartacagenai-catchy-media", "rules": "storage.kartacagenai.rules" }
+  ]
+}

@@ -134,6 +134,10 @@ const PosSaleCorrectionModal: React.FC<PosSaleCorrectionModalProps> = ({
               ? t('admin.orders.cancel.toastRefundOwed').replace('{amount}', formatOrderMoney(Math.abs(result.balanceDue)))
               : t('admin.orders.correct.toastSettled'),
       });
+      if (result.skippedLines.length) {
+        // Never re-created: the product, colour or size of these lines no longer exists.
+        toast.warning(t('admin.orders.restockSkipped').replace('{n}', String(result.skippedLines.length)));
+      }
       onClose();
     } catch (error) {
       const message = error instanceof PosApiError ? error.message : t('admin.orders.correct.genericError');

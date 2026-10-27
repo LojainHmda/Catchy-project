@@ -70,6 +70,7 @@ const PosSaleCancelModal: React.FC<PosSaleCancelModalProps> = ({ open, order, on
               cancelledByName: result.cancelledByName,
               reason: result.reason,
               registerSessionStatusAtCancellation: result.registerSessionStatusAtCancellation,
+              skippedLines: result.skippedLines,
             },
       });
 
@@ -81,6 +82,10 @@ const PosSaleCancelModal: React.FC<PosSaleCancelModalProps> = ({ open, order, on
               ? t('admin.orders.cancel.toastAdditionalDue').replace('{amount}', formatOrderMoney(result.refundDue))
               : t('admin.orders.cancel.toastSettled'),
       });
+      if (result.skippedLines.length) {
+        // Never re-created: the product, colour or size of these lines no longer exists.
+        toast.warning(t('admin.orders.restockSkipped').replace('{n}', String(result.skippedLines.length)));
+      }
       onClose();
     } catch (error) {
       const message = error instanceof PosApiError ? error.message : t('admin.orders.cancel.genericError');

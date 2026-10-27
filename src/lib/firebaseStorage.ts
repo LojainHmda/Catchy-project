@@ -1,4 +1,14 @@
-import { app } from '../firebase';
+import { app, firebaseEmulatorMode } from '../firebase';
+
+/**
+ * Storage is not emulated in the local emulator setup, so real Storage must never
+ * be reached from it: uploads and deletes are refused before the SDK is loaded.
+ */
+function assertStorageAllowed(): void {
+  if (firebaseEmulatorMode) {
+    throw new Error('Firebase Storage is disabled in local emulator mode (no Storage emulator is configured).');
+  }
+}
 
 /**
  * Firebase Storage is only used by the admin hero-video uploader. Its SDK (~100KB)
@@ -18,6 +28,7 @@ export async function uploadFileResumable(
   file: File,
   onProgress: (percent: number) => void
 ): Promise<string> {
+  assertStorageAllowed();
   const { getStorage, ref, uploadBytesResumable, getDownloadURL } = await loadStorageModule();
   const task = uploadBytesResumable(ref(getStorage(app), path), file);
   return new Promise((resolve, reject) => {
@@ -33,6 +44,7 @@ export async function uploadFileResumable(
 }
 
 export async function deleteStorageObject(path: string): Promise<void> {
+  assertStorageAllowed();
   const { getStorage, ref, deleteObject } = await loadStorageModule();
   await deleteObject(ref(getStorage(app), path));
 }

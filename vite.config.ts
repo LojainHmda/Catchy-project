@@ -3,8 +3,30 @@ import react from '@vitejs/plugin-react';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import path from 'path';
 import {defineConfig, loadEnv} from 'vite';
+import {adminCredential, applyEmulatorProcessEnv, enforceDevEnvironment} from './server/lib/emulatorGuard.js';
 
 const WHATSAPP_BROKER_URL = 'https://api.whatsappbiz.com/v1/public/message/';
+
+/**
+ * Emulator mode only: the routes that call real external services (WhatsApp
+ * broker, Cloudinary, arbitrary image URLs) are not registered at all; these
+ * stubs answer instead so nothing can leave the machine.
+ */
+function emulatorBlockedRoutesDevApi() {
+  const blocked = ['/api/whatsapp/send', '/api/admin/upload-image', '/api/image-proxy'];
+  return {
+    name: 'emulator-blocked-routes',
+    configureServer(server: any) {
+      for (const route of blocked) {
+        server.middlewares.use(route, (_req: any, res: any) => {
+          res.statusCode = 503;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ok: false, result: false, code: 'DISABLED_IN_EMULATOR', message: `${route} is disabled in local emulator mode.`}));
+        });
+      }
+    },
+  };
+}
 
 /**
  * Dev-only API route so the browser can send WhatsApp messages without ever
@@ -28,7 +50,8 @@ async function getDevFirestore(env: Record<string, string>) {
     // Default app specifically — posAdmin/cloudinaryAdmin register their own named apps.
     if (!getApps().some((a) => a.name === '[DEFAULT]')) {
       initializeApp({
-        credential: applicationDefault(),
+        // Emulator mode: a credential that can never reach real Google services; otherwise unchanged.
+        credential: adminCredential(() => applicationDefault()),
         projectId: env.VITE_FIREBASE_PROJECT_ID || 'catchy-496207',
       });
     }
@@ -232,6 +255,74 @@ function posDevApi(env: Record<string, string>) {
           });
         };
 
+      // Owner-only web order cancellation (dev mirror of server/index.js — same owner check).
+      server.middlewares.use(
+        '/api/admin/orders/cancel',
+        jsonHandler(async (parsed, req) => {
+          const {verifyAdminRequest} = await import('./server/lib/cloudinaryAdmin.js');
+          const auth = await verifyAdminRequest(req);
+          if (!auth.ok) return {status: auth.status, body: {ok: false, code: 'FORBIDDEN', message: auth.message}};
+          const db = await getDevFirestore(env);
+          if (!db) return {status: 503, body: {ok: false, code: 'UNKNOWN', message: 'Orders are temporarily unavailable.'}};
+          const {cancelWebOrder} = await import('./server/lib/webOrderCancel.js');
+          const result = await cancelWebOrder(db, {
+            actorUid: auth.uid,
+            actorName: auth.email || null,
+            orderId: parsed?.orderId,
+            reason: parsed?.reason,
+            restock: parsed?.restock === true,
+            idempotencyKey: parsed?.idempotencyKey,
+          });
+          return {status: result.ok ? 200 : 400, body: result};
+        })
+      );
+
+      // Owner-only returns shelf (dev mirror of server/index.js RETURN_ROUTES — same owner check).
+      const returnRoutes: Record<string, (lib: any, db: any, auth: any, body: any) => Promise<any>> = {
+        '/api/admin/returns/create': (lib, db, auth, body) =>
+          lib.createWebReturn(db, {
+            actorUid: auth.uid,
+            actorName: auth.email || null,
+            orderId: body?.orderId,
+            lines: body?.lines,
+            reason: body?.reason,
+            note: body?.note,
+            idempotencyKey: body?.idempotencyKey,
+          }),
+        '/api/admin/returns/update': (lib, db, auth, body) =>
+          lib.updateWebReturn(db, {
+            actorUid: auth.uid,
+            actorName: auth.email || null,
+            returnId: body?.returnId,
+            status: body?.status,
+            inspectionNotes: body?.inspectionNotes,
+          }),
+        '/api/admin/returns/resolve': (lib, db, auth, body) =>
+          lib.resolveWebReturn(db, {
+            actorUid: auth.uid,
+            actorName: auth.email || null,
+            returnId: body?.returnId,
+            disposition: body?.disposition,
+            note: body?.note,
+            idempotencyKey: body?.idempotencyKey,
+          }),
+      };
+      for (const [route, run] of Object.entries(returnRoutes)) {
+        server.middlewares.use(
+          route,
+          jsonHandler(async (parsed, req) => {
+            const {verifyAdminRequest} = await import('./server/lib/cloudinaryAdmin.js');
+            const auth = await verifyAdminRequest(req);
+            if (!auth.ok) return {status: auth.status, body: {ok: false, code: 'FORBIDDEN', message: auth.message}};
+            const db = await getDevFirestore(env);
+            if (!db) return {status: 503, body: {ok: false, code: 'UNKNOWN', message: 'Returns are temporarily unavailable.'}};
+            const lib = await import('./server/lib/webOrderReturn.js');
+            const result = await run(lib, db, auth, parsed);
+            return {status: result.ok ? 200 : 400, body: result};
+          })
+        );
+      }
+
       server.middlewares.use(
         '/api/pos/session/open',
         jsonHandler(async (parsed, req) => {
@@ -335,8 +426,24 @@ function posDevApi(env: Record<string, string>) {
   };
 }
 
-export default defineConfig(({mode}) => {
+export default defineConfig(async ({mode, command}) => {
   const env = loadEnv(mode, '.', '');
+  // Fail closed: refuses to start/build unless the environment is either fully
+  // normal or a complete, safe local-emulator setup (see server/lib/emulatorGuard.js).
+  // Normal development and production builds are unaffected.
+  const {emulator, settings} = enforceDevEnvironment({mode, command, env, processEnv: process.env});
+  if (emulator && settings) {
+    // An open port is not proof: refuse unless the emulators on Catchy's dedicated
+    // ports are POSITIVELY Catchy's own demo-catchy suite (process + HTTP identity).
+    const {assertCatchyEmulatorIdentity} = await import('./scripts/emulator/identity.mjs');
+    await assertCatchyEmulatorIdentity();
+    // Pin this Node process (and every API route's firebase-admin call) to the local emulators.
+    applyEmulatorProcessEnv(process.env, settings);
+    console.warn(
+      `[emulator-guard] LOCAL EMULATOR MODE — project ${settings.projectId}, Firestore ${settings.firestore.hostPort}, ` +
+        `Auth ${settings.auth.hostPort}. WhatsApp, Cloudinary and the image proxy are disabled.`
+    );
+  }
   return {
     plugins: [
       react(),
@@ -346,9 +453,9 @@ export default defineConfig(({mode}) => {
       // http://<lan-ip> is never treated as secure by mobile browsers).
       basicSsl(),
       guestCheckoutDevApi(env),
-      whatsappDevApi(env),
-      imageProxyDevApi(),
-      cloudinaryUploadDevApi(env),
+      ...(emulator
+        ? [emulatorBlockedRoutesDevApi()]
+        : [whatsappDevApi(env), imageProxyDevApi(), cloudinaryUploadDevApi(env)]),
       posDevApi(env),
       qzSignDevApi(),
     ],
@@ -366,7 +473,8 @@ export default defineConfig(({mode}) => {
       hmr: process.env.DISABLE_HMR !== 'true',
       // Listen on all network interfaces (not just localhost) so phones/tablets on the
       // same Wi-Fi can reach the dev server; https comes from the basicSsl() plugin above.
-      host: true,
+      // Emulator mode stays on this machine only.
+      host: emulator ? '127.0.0.1' : true,
     },
     build: {
       rollupOptions: {

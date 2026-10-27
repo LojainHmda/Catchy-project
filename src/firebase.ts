@@ -1,6 +1,7 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import {
   getAuth,
+  connectAuthEmulator,
   GoogleAuthProvider,
   onAuthStateChanged,
   signInWithPopup,
@@ -11,6 +12,7 @@ import {
 } from 'firebase/auth';
 import {
   getFirestore,
+  connectFirestoreEmulator,
   collection,
   doc,
   getDoc,
@@ -36,6 +38,7 @@ import {
   sum,
 } from 'firebase/firestore';
 import { DEFAULT_FIRESTORE_DATABASE_ID, resolveFirestoreDatabaseId } from './lib/firestoreDatabaseId';
+import { resolveEmulatorSettings } from './lib/emulatorConfig';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY as string | undefined,
@@ -72,6 +75,19 @@ const db: ReturnType<typeof getFirestore> =
     : getFirestore(app, firestoreDatabaseId);
 
 export const auth = getAuth(app);
+
+// Local Firebase Emulator mode (npm run dev:emulator only). Throws — so the app
+// refuses to start — if emulator settings are present but unsafe; returns null in
+// normal development and production, where nothing below runs.
+const emulatorSettings = resolveEmulatorSettings(import.meta.env, import.meta.env.DEV);
+if (emulatorSettings) {
+  connectFirestoreEmulator(db, emulatorSettings.firestore.host, emulatorSettings.firestore.port);
+  connectAuthEmulator(auth, emulatorSettings.authUrl);
+  console.warn(`[emulator] Using LOCAL Firebase emulators for project ${emulatorSettings.projectId}.`);
+}
+/** True only in the local emulator dev server. Features that would reach real services check this. */
+export const firebaseEmulatorMode = emulatorSettings !== null;
+
 export { app, db };
 
 // Firebase Storage is only used by one admin page (AdminHeroVideo) — its SDK is

@@ -7,12 +7,13 @@ import { downloadInvoiceImage, type InvoiceLabels } from '../../lib/orders/invoi
 import { SHIPPING_ZONES } from '../../lib/shippingZones';
 import { orderItemImageSrc, resolveOrderItemImages } from '../../hooks/useOrderItemImages';
 import type { OrderRecord } from '../../types/order';
+import AdminStrokeIcon from '../admin/AdminStrokeIcon';
 
 type InvoiceDownloadButtonProps = {
   order: OrderRecord;
   className?: string;
-  /** `solid` for a prominent CTA, `outline` (default) for a secondary action. */
-  variant?: 'outline' | 'solid';
+  /** `solid` for a prominent CTA, `outline` (default) for a secondary action, `icon` for admin order rows. */
+  variant?: 'outline' | 'solid' | 'icon';
 };
 
 const InvoiceDownloadButton: React.FC<InvoiceDownloadButtonProps> = ({
@@ -65,6 +66,30 @@ const InvoiceDownloadButton: React.FC<InvoiceDownloadButtonProps> = ({
       setBusy(false);
     }
   };
+
+  // Square icon-only form for the admin Orders rows (Sisley-style quick action):
+  // same download behaviour, the label lives in aria-label/title.
+  if (variant === 'icon') {
+    const label = busy ? t('invoice.downloading') : t('invoice.download');
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          void handleDownload();
+        }}
+        disabled={busy}
+        aria-label={label}
+        title={label}
+        className={cn(
+          'flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-600 text-white transition-colors hover:bg-emerald-700 disabled:opacity-60',
+          className
+        )}
+      >
+        {busy ? <Loader2 size={14} className="animate-spin" /> : <AdminStrokeIcon name="download" className="h-3.5 w-3.5" />}
+      </button>
+    );
+  }
 
   const base =
     'inline-flex items-center justify-center gap-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition disabled:cursor-not-allowed disabled:opacity-60';

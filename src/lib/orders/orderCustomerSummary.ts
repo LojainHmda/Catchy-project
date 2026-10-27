@@ -40,7 +40,8 @@ export function orderDeliveryLabel(order: OrderRecord, t: (key: string) => strin
   return zone ?? address ?? t('admin.customers.unknownLocationFallback');
 }
 
-function customerKey(order: OrderRecord): string {
+/** Groups orders into one customer: phone, then account uid, then email, then name. */
+export function customerKey(order: OrderRecord): string {
   const phone = order.customerPhone?.replace(/\s+/g, '').trim();
   if (phone) return `phone:${phone}`;
 

@@ -6,6 +6,11 @@ import express from 'express';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertServerNotInEmulatorMode } from './lib/emulatorGuard.js';
+
+// This server loads the REAL .env (dotenv above), so it must never be combined
+// with local-emulator variables. No-op in production (they are never set there).
+assertServerNotInEmulatorMode();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = path.resolve(__dirname, '../dist');
@@ -290,6 +295,77 @@ app.post('/api/pos/sale/cancel', async (req, res) => {
   });
   res.status(result.ok ? 200 : result.code === 'FORBIDDEN' ? 403 : 400).json(result);
 });
+
+// Owner-only: cancel a web order and restore its stock in one transaction, with
+// an audit entry (see server/lib/webOrderCancel.js). Uses the same owner check as
+// the image-upload endpoint — not the POS staff check — so profile admins and
+// cashiers cannot use it.
+app.post('/api/admin/orders/cancel', async (req, res) => {
+  const { verifyAdminRequest } = await import('./lib/cloudinaryAdmin.js');
+  const auth = await verifyAdminRequest(req);
+  if (!auth.ok) return res.status(auth.status).json({ ok: false, code: 'FORBIDDEN', message: auth.message });
+
+  const db = await getFirestore();
+  if (!db) return res.status(503).json({ ok: false, code: 'UNKNOWN', message: 'Orders are temporarily unavailable.' });
+
+  const { cancelWebOrder } = await import('./lib/webOrderCancel.js');
+  const result = await cancelWebOrder(db, {
+    actorUid: auth.uid,
+    actorName: auth.email || null,
+    orderId: req.body?.orderId,
+    reason: req.body?.reason,
+    restock: req.body?.restock === true,
+    idempotencyKey: req.body?.idempotencyKey,
+  });
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
+// Owner-only returns shelf for web orders (see server/lib/webOrderReturn.js):
+// intake into quarantine, inspection, and final disposition (restock only when
+// the owner confirms the item is sellable). Same owner check as order cancel.
+const RETURN_ROUTES = {
+  '/api/admin/returns/create': (lib, db, auth, body) =>
+    lib.createWebReturn(db, {
+      actorUid: auth.uid,
+      actorName: auth.email || null,
+      orderId: body?.orderId,
+      lines: body?.lines,
+      reason: body?.reason,
+      note: body?.note,
+      idempotencyKey: body?.idempotencyKey,
+    }),
+  '/api/admin/returns/update': (lib, db, auth, body) =>
+    lib.updateWebReturn(db, {
+      actorUid: auth.uid,
+      actorName: auth.email || null,
+      returnId: body?.returnId,
+      status: body?.status,
+      inspectionNotes: body?.inspectionNotes,
+    }),
+  '/api/admin/returns/resolve': (lib, db, auth, body) =>
+    lib.resolveWebReturn(db, {
+      actorUid: auth.uid,
+      actorName: auth.email || null,
+      returnId: body?.returnId,
+      disposition: body?.disposition,
+      note: body?.note,
+      idempotencyKey: body?.idempotencyKey,
+    }),
+};
+for (const [route, run] of Object.entries(RETURN_ROUTES)) {
+  app.post(route, async (req, res) => {
+    const { verifyAdminRequest } = await import('./lib/cloudinaryAdmin.js');
+    const auth = await verifyAdminRequest(req);
+    if (!auth.ok) return res.status(auth.status).json({ ok: false, code: 'FORBIDDEN', message: auth.message });
+
+    const db = await getFirestore();
+    if (!db) return res.status(503).json({ ok: false, code: 'UNKNOWN', message: 'Returns are temporarily unavailable.' });
+
+    const lib = await import('./lib/webOrderReturn.js');
+    const result = await run(lib, db, auth, req.body);
+    res.status(result.ok ? 200 : 400).json(result);
+  });
+}
 
 // ── Static SPA + client-side routing fallback ──
 app.use(express.static(DIST_DIR));

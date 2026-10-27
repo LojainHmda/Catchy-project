@@ -5,6 +5,7 @@ import { cn, sanitizeIntegerInput } from '../lib/utils';
 import { coerceProductImages, PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
 import { useLanguage } from '../context/LanguageContext';
 import { CATEGORY_KEYS } from '../constants';
+import StockLedgerPanel from '../components/stock/StockLedgerPanel';
 
 type ProductRow = {
   id: string;
@@ -359,6 +360,7 @@ const AdminStock = () => {
         </div>
       )}
       </div>
+      <StockLedgerPanel />
     </div>
   );
 };

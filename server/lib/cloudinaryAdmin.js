@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { v2 as cloudinary } from 'cloudinary';
 import { isSyntheticAdminEmail } from './adminIdentity.js';
+import { adminCredential } from './emulatorGuard.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVICE_ACCOUNT_PATH = path.resolve(__dirname, '../../service-account.json');
@@ -33,15 +34,15 @@ async function getAdminAuth() {
     const { getAuth } = await import('firebase-admin/auth');
     const existing = getApps().find((a) => a.name === APP_NAME);
     const projectId = process.env.VITE_FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT;
-    const app =
-      existing ||
-      (existsSync(SERVICE_ACCOUNT_PATH)
-        // Local dev convenience — production (Cloud Run) has no key file and uses its own service identity.
-        ? initializeApp(
-            { credential: cert(JSON.parse(readFileSync(SERVICE_ACCOUNT_PATH, 'utf8'))), projectId },
-            APP_NAME
-          )
-        : initializeApp({ credential: applicationDefault(), projectId }, APP_NAME));
+    // Emulator mode: a credential that can never reach real Google services.
+    // Otherwise unchanged — local dev convenience: the key file when present;
+    // production (Cloud Run) has no key file and uses its own service identity.
+    const credential = adminCredential(() =>
+      existsSync(SERVICE_ACCOUNT_PATH)
+        ? cert(JSON.parse(readFileSync(SERVICE_ACCOUNT_PATH, 'utf8')))
+        : applicationDefault()
+    );
+    const app = existing || initializeApp({ credential, projectId }, APP_NAME);
     return getAuth(app);
   })();
   return authPromise;

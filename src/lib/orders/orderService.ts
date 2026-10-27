@@ -10,12 +10,15 @@ import {
   updateDoc,
   addDoc,
   serverTimestamp,
+  runTransaction,
 } from '../../firebase';
 import type {
   CartLineItem,
+  OrderActor,
   OrderCustomer,
   OrderLineItem,
   OrderRecord,
+  OrderStatus,
   PlaceOrderResult,
 } from '../../types/order';
 import {
@@ -29,17 +32,27 @@ import {
 import {
   aggregateFromVariants,
   aggregateSizeStockFromVariants,
+  colorVariantsForWrite,
   decrementColorVariants,
-  defaultVariantId,
+  exactStockCell,
   parseColorVariants,
-  resolveVariantSelection,
+  type StockCellProblem,
 } from '../productVariants';
-import type { ProductColorVariant } from '../../types/product';
 import { isCoordinateCartId, coordinateLookIdFromCart, validateCoordinateItemSizes, coordinateAvailableSets, formatCoordinateItemSizes } from '../coordinateCart';
 import { resolveCoordinate } from '../coordinateResolve';
 import { getShippingCost } from '../shippingZones';
 import { OrderError } from './orderErrors';
-import { firstProductImageUrl, parseOrderDocument, sanitizeStoredImageUrl } from './orderUtils';
+import {
+  firstProductImageUrl,
+  hasCancellationRecord,
+  normalizeOrderStatus,
+  parseOrderDocument,
+  orderHasReturns,
+  parseOrderLineItems,
+  parseReturnSummary,
+  sanitizeStoredImageUrl,
+} from './orderUtils';
+import { canChangeOrderStatus } from './orderListFilters';
 import { primaryCoordinateImage } from '../coordinateImages';
 
 const PRODUCTS_COLLECTION = 'products';
@@ -88,13 +101,17 @@ async function applyInventoryUpdates(
     sizeStock?: SizeStock;
     sized: boolean;
     colorVariants?: ReturnType<typeof parseColorVariants>;
+    /** The product's colorVariants exactly as stored (written back with only sizeStock changed). */
+    storedColorVariants?: unknown;
     hasVariants?: boolean;
   }[]
 ): Promise<void> {
   for (const update of updates) {
     const payload: Record<string, unknown> = { stock: update.stock };
     if (update.hasVariants && update.colorVariants) {
-      payload.colorVariants = update.colorVariants;
+      // Never the parsed copies: they carry `undefined` (a colour without nameAr/hex),
+      // which made this write throw — the order was kept but its stock never deducted.
+      payload.colorVariants = colorVariantsForWrite(update.storedColorVariants, update.colorVariants);
       payload.sizeStock = aggregateSizeStockFromVariants(update.colorVariants);
     } else if (update.sized && update.sizeStock) {
       payload.sizeStock = update.sizeStock;
@@ -349,6 +366,7 @@ function buildCheckoutPayload(
         ? {
             hasVariants: true,
             colorVariants: working.colorVariants,
+            storedColorVariants: data.colorVariants,
             sizeStock: working.sizeStock,
             sized: true,
           }
@@ -439,11 +457,81 @@ export async function fetchAllOrders(
   });
 }
 
-export async function updateOrderStatus(orderId: string, status: string): Promise<void> {
+/** Statuses whose items/customer details an admin may still edit (must match AdminOrderDetailModal). */
+export const ORDER_EDITABLE_STATUSES: OrderStatus[] = ['pending', 'processing', 'shipped'];
+
+/**
+ * Admin status change, stamped with who made it. Runs as a transaction that
+ * re-reads the order and validates the change against its CURRENT stored
+ * state — never against what the calling screen last saw — so an order that
+ * was cancelled (or otherwise changed) elsewhere cannot be moved by a stale
+ * list or edit dialog. Throws OrderError('ORDER_CHANGED') when refused.
+ * Never used for cancellation — that goes through cancelWebOrder (server) so
+ * stock is restored atomically.
+ */
+export async function updateOrderStatus(orderId: string, status: OrderStatus, actor?: OrderActor | null): Promise<void> {
+  const ref = doc(db, 'orders', orderId);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new OrderError('ORDER_CHANGED', 'This order no longer exists.');
+    const data = (snap.data() ?? {}) as Record<string, unknown>;
+    const current = {
+      status: normalizeOrderStatus(data.status),
+      source: data.source === 'pos' ? ('pos' as const) : ('web' as const),
+      // Stored return state: an order with returns may only move forward.
+      returnSummary: parseReturnSummary(data.returnSummary),
+    };
+    if (hasCancellationRecord(data.cancellation) || !canChangeOrderStatus(current, status)) {
+      throw new OrderError('ORDER_CHANGED', 'This order changed since it was loaded. Refresh and try again.');
+    }
+    tx.update(ref, {
+      status,
+      updatedAt: serverTimestamp(),
+      ...(actor
+        ? { statusUpdatedAt: serverTimestamp(), statusUpdatedByUid: actor.uid, statusUpdatedByName: actor.name ?? null }
+        : {}),
+    });
+  });
+}
+
+/** Comparable fingerprint of line items (what affects stock and totals). */
+function itemsFingerprint(items: Pick<OrderLineItem, 'productId' | 'colorId' | 'size' | 'quantity' | 'price'>[]): string {
+  return JSON.stringify(items.map((i) => [i.productId, i.colorId ?? '', i.size ?? '', i.quantity, i.price]));
+}
+
+/**
+ * Inside a transaction: refuse unless the stored order is still editable and,
+ * when `expectedItems` is given, still has exactly the items the screen loaded.
+ * Item edits (expectedItems given) are also refused once any return was logged:
+ * changing items would change stock under units already on the returns shelf.
+ */
+function assertStoredOrderEditable(
+  data: Record<string, unknown> | undefined,
+  expectedItems?: OrderLineItem[]
+): void {
+  if (!data) throw new OrderError('ORDER_CHANGED', 'This order no longer exists.');
+  const status = normalizeOrderStatus(data.status);
+  if (data.source === 'pos' || hasCancellationRecord(data.cancellation) || !ORDER_EDITABLE_STATUSES.includes(status)) {
+    throw new OrderError('ORDER_NOT_EDITABLE', 'This order can no longer be edited (it was cancelled or completed).');
+  }
+  if (expectedItems && orderHasReturns({ returnSummary: parseReturnSummary(data.returnSummary) })) {
+    throw new OrderError('ORDER_NOT_EDITABLE', 'Items on this order can no longer be edited because it has returns.');
+  }
+  if (expectedItems && itemsFingerprint(parseOrderLineItems(data.items)) !== itemsFingerprint(expectedItems)) {
+    throw new OrderError('ORDER_CHANGED', 'This order changed since it was loaded. Refresh and try again.');
+  }
+}
+
+/** Internal staff note (never shown to customers). An empty note clears it. */
+export async function updateOrderAdminNote(orderId: string, note: string, actor: OrderActor): Promise<string | null> {
+  const trimmed = note.trim().slice(0, 2000) || null;
   await updateDoc(doc(db, 'orders', orderId), {
-    status,
+    adminNote: trimmed,
+    adminNoteUpdatedAt: serverTimestamp(),
+    adminNoteUpdatedByName: actor.name ?? null,
     updatedAt: serverTimestamp(),
   });
+  return trimmed;
 }
 
 export type OrderCustomerDetailsUpdate = {
@@ -466,6 +554,20 @@ export type OrderItemsMutationResult = {
   shippingCost: number;
   total: number;
   itemCount: number;
+  /**
+   * Units that were removed from the order but could NOT be put back into stock
+   * because their product was deleted or their colour/size no longer exists.
+   * Never re-created — reported so the admin can adjust stock by hand.
+   */
+  stockSkipped?: OrderStockSkip[];
+};
+
+export type OrderStockSkip = {
+  productId: string;
+  colorId: string | null;
+  size: string | null;
+  quantity: number;
+  reason: StockCellProblem;
 };
 
 /** Drop runtime-only / undefined fields so the array is safe to persist. */
@@ -484,19 +586,6 @@ function toStoredLineItem(item: OrderLineItem): Record<string, unknown> {
   return stored;
 }
 
-/** Firestore rejects `undefined`; rebuild each variant with only the keys it actually has. */
-function cleanVariantForWrite(variant: ProductColorVariant): Record<string, unknown> {
-  const out: Record<string, unknown> = {
-    id: variant.id,
-    name: variant.name,
-    images: variant.images,
-    sizeStock: variant.sizeStock,
-  };
-  if (variant.nameAr) out.nameAr = variant.nameAr;
-  if (variant.hex) out.hex = variant.hex;
-  return out;
-}
-
 async function persistOrderItems(
   order: OrderRecord,
   items: OrderLineItem[]
@@ -506,21 +595,32 @@ async function persistOrderItems(
   const itemCount = normalized.reduce((sum, item) => sum + item.quantity, 0);
   const total = subtotal + order.shippingCost;
 
-  await updateDoc(doc(db, 'orders', order.id), {
-    items: normalized.map(toStoredLineItem),
-    subtotal,
-    total,
-    itemCount,
-    updatedAt: serverTimestamp(),
+  // Write the items only if the stored order is still editable AND still has the
+  // items this screen loaded (the stock deltas were computed from those). If it
+  // was cancelled or edited elsewhere, this throws before any stock is touched.
+  const ref = doc(db, 'orders', order.id);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    assertStoredOrderEditable(snap.exists() ? ((snap.data() ?? {}) as Record<string, unknown>) : undefined, order.items);
+    tx.update(ref, {
+      items: normalized.map(toStoredLineItem),
+      subtotal,
+      total,
+      itemCount,
+      updatedAt: serverTimestamp(),
+    });
   });
 
   return { items: normalized, subtotal, shippingCost: order.shippingCost, total, itemCount };
 }
 
 /**
- * Apply a signed stock change for one product selection. `consume > 0` reduces stock
- * (item added/increased), `consume < 0` restores it (item removed/decreased). Throws
- * `OrderError('OUT_OF_STOCK')` only when consuming more than is available.
+ * Apply a signed stock change to EXACTLY one product colour/size. `consume > 0`
+ * reduces stock (item added/increased), `consume < 0` restores it (item
+ * removed/decreased). Never falls back to the default colour or the first size:
+ *  - consuming from a cell that no longer exists throws (nothing is written);
+ *  - restoring to a cell that no longer exists is skipped and reported
+ *    ({ applied: false, reason }) — a deleted product/colour/size is never re-created.
  */
 async function applyOrderStockChange(
   productId: string,
@@ -528,56 +628,53 @@ async function applyOrderStockChange(
   size: string | null | undefined,
   consume: number,
   t: (key: string) => string = (key) => key
-): Promise<void> {
-  if (!productId || isCoordinateCartId(productId) || !consume) return;
+): Promise<{ applied: true } | { applied: false; reason: StockCellProblem }> {
+  if (!productId || isCoordinateCartId(productId) || !consume) return { applied: true };
 
   const ref = doc(db, PRODUCTS_COLLECTION, productId);
   const snap = await getDoc(ref);
-  if (!snap.exists()) return;
-  const data = snap.data() ?? {};
-
-  const variants = parseColorVariants(data.colorVariants);
-  if (variants.length > 0) {
-    const id = colorId && variants.some((v) => v.id === colorId) ? colorId : defaultVariantId({ colorVariants: variants });
-    const idx = variants.findIndex((v) => v.id === id);
-    if (idx < 0) return;
-    const variant = variants[idx]!;
-    const sizeStock = { ...variant.sizeStock };
-    const key = size ?? Object.keys(sizeStock)[0];
-    if (!key) return;
-    const current = Math.max(0, sizeStock[key] ?? 0);
-    if (consume > 0 && current < consume) {
-      throw new OrderError('OUT_OF_STOCK', t('admin.orders.edit.notEnoughStock'));
+  const data = snap.exists() ? ((snap.data() ?? {}) as Record<string, unknown>) : null;
+  const cell = exactStockCell(data, colorId, size);
+  if (cell.ok === false) {
+    if (consume > 0) {
+      throw new OrderError(
+        cell.reason === 'product_missing' ? 'PRODUCT_MISSING' : 'OUT_OF_STOCK',
+        t(cell.reason === 'product_missing' ? 'admin.orders.edit.productMissing' : 'admin.orders.edit.optionUnavailable')
+      );
     }
-    sizeStock[key] = Math.max(0, current - consume);
+    return { applied: false, reason: cell.reason };
+  }
+  if (consume > 0 && cell.available < consume) {
+    throw new OrderError('OUT_OF_STOCK', t('admin.orders.edit.notEnoughStock'));
+  }
+  const product = data!;
+
+  const variants = parseColorVariants(product.colorVariants);
+  if (variants.length > 0) {
+    const idx = variants.findIndex((v) => v.id === cell.colorId);
+    const variant = variants[idx]!;
+    const key = cell.size!;
+    const sizeStock = { ...variant.sizeStock, [key]: Math.max(0, (variant.sizeStock[key] ?? 0) - consume) };
     const next = [...variants];
     next[idx] = { ...variant, sizeStock };
     const agg = aggregateSizeStockFromVariants(next);
     await updateDoc(ref, {
-      colorVariants: next.map(cleanVariantForWrite),
+      colorVariants: colorVariantsForWrite(product.colorVariants, next),
       sizeStock: agg,
       stock: totalFromSizeStock(agg),
     });
-    return;
+    return { applied: true };
   }
 
-  const { sizeStock, stock } = resolveProductInventory(data);
-  const sizeKeys = Object.keys(sizeStock);
-  if (sizeKeys.length > 0) {
-    const key = size ?? sizeKeys[0]!;
-    const current = Math.max(0, sizeStock[key] ?? 0);
-    if (consume > 0 && current < consume) {
-      throw new OrderError('OUT_OF_STOCK', t('admin.orders.edit.notEnoughStock'));
-    }
-    const nextStock = { ...sizeStock, [key]: Math.max(0, current - consume) };
+  const { sizeStock, stock } = resolveProductInventory(product);
+  if (cell.size) {
+    const nextStock = { ...sizeStock, [cell.size]: Math.max(0, (sizeStock[cell.size] ?? 0) - consume) };
     await updateDoc(ref, { sizeStock: nextStock, stock: totalFromSizeStock(nextStock) });
-    return;
+    return { applied: true };
   }
 
-  if (consume > 0 && stock < consume) {
-    throw new OrderError('OUT_OF_STOCK', t('admin.orders.edit.notEnoughStock'));
-  }
   await updateDoc(ref, { stock: Math.max(0, stock - consume) });
+  return { applied: true };
 }
 
 type StockSelection = { productId: string; colorId: string | null; size: string | null };
@@ -629,32 +726,46 @@ export async function saveOrderItems(
     deltas.push({ ...meta.get(key)!, consume });
   }
 
-  // Validate every increase against live stock before writing anything.
+  // Validate every increase against the EXACT live colour/size before writing anything.
+  // A colour or size that no longer exists is refused — never taken from another one.
   for (const delta of deltas) {
     if (delta.consume <= 0) continue;
     const snap = await getDoc(doc(db, PRODUCTS_COLLECTION, delta.productId));
     if (!snap.exists()) {
       throw new OrderError('PRODUCT_MISSING', t('admin.orders.edit.productMissing'));
     }
-    const selection = resolveVariantSelection(snap.data() ?? {}, delta.colorId);
-    const available = stockForSelection(selection.sizeStock, selection.stock, delta.size);
-    if (available < delta.consume) {
-      const name = String(snap.data()?.name ?? 'product');
-      throw new OrderError('OUT_OF_STOCK', t('admin.orders.edit.onlyNLeftInStock').replace('{n}', String(available)).replace('{name}', name));
+    const data = (snap.data() ?? {}) as Record<string, unknown>;
+    const name = String(data.name ?? 'product');
+    const cell = exactStockCell(data, delta.colorId, delta.size);
+    if (cell.ok === false) {
+      throw new OrderError('OUT_OF_STOCK', t('admin.orders.edit.optionUnavailable').replace('{name}', name));
+    }
+    if (cell.available < delta.consume) {
+      throw new OrderError('OUT_OF_STOCK', t('admin.orders.edit.onlyNLeftInStock').replace('{n}', String(cell.available)).replace('{name}', name));
     }
   }
 
   const result = await persistOrderItems(order, nextItems);
 
+  const stockSkipped: OrderStockSkip[] = [];
   for (const delta of deltas) {
     try {
-      await applyOrderStockChange(delta.productId, delta.colorId, delta.size, delta.consume, t);
+      const outcome = await applyOrderStockChange(delta.productId, delta.colorId, delta.size, delta.consume, t);
+      if (outcome.applied === false) {
+        stockSkipped.push({
+          productId: delta.productId,
+          colorId: delta.colorId,
+          size: delta.size,
+          quantity: Math.abs(delta.consume),
+          reason: outcome.reason,
+        });
+      }
     } catch (error) {
       console.warn(`Order ${order.id} saved; stock adjust failed for ${delta.productId}:`, error);
     }
   }
 
-  return result;
+  return { ...result, stockSkipped };
 }
 
 export async function updateOrderCustomerDetails(
@@ -676,5 +787,11 @@ export async function updateOrderCustomerDetails(
     payload.deliveryAddress = details.deliveryAddress?.trim() || null;
   }
 
-  await updateDoc(doc(db, 'orders', orderId), payload);
+  // Same current-state guard as item edits: never change a cancelled/completed order from a stale screen.
+  const ref = doc(db, 'orders', orderId);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    assertStoredOrderEditable(snap.exists() ? ((snap.data() ?? {}) as Record<string, unknown>) : undefined);
+    tx.update(ref, payload);
+  });
 }

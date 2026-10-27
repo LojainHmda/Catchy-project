@@ -1,6 +1,20 @@
+import type { OrderReturnSummary } from './returns';
+
 export const ORDER_STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled', 'completed'] as const;
 
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
+
+/**
+ * Admin list bucket for an order whose STORED status is not exactly one of
+ * ORDER_STATUSES (unknown like "Refunded", mis-cased/padded like " Processing ",
+ * empty or missing). Such orders are listed and counted under "Needs review" —
+ * never under 'pending' — so list counts match the dashboard's exact-match
+ * `status == 'pending'` query. Transition/cancel safety still uses the
+ * normalised `status` (see orderUtils.normalizeOrderStatus).
+ */
+export const NEEDS_REVIEW_BUCKET = 'needs_review' as const;
+
+export type OrderListBucket = OrderStatus | typeof NEEDS_REVIEW_BUCKET;
 
 /**
  * The single rule for "does this order still represent real revenue?" — a
@@ -87,19 +101,36 @@ export type PosSaleCorrection = {
   after: { items: OrderLineItem[]; subtotal: number; discount: PosDiscount | null; total: number };
 };
 
+/** One order line as recorded in a web-order cancellation audit entry. */
+export type CancellationLine = {
+  productId: string;
+  name: string | null;
+  colorId: string | null;
+  size: string | null;
+  quantity: number;
+  /** Only on skipped lines: why stock was not put back automatically (see server/lib/webOrderCancel.js). */
+  reason?: 'coordinate_set' | 'product_missing' | 'variant_missing' | 'size_missing' | 'not_restocked';
+};
+
 /**
- * Recorded once (and only once — cancellation is terminal) when a completed
- * POS sale is voided — see PosSaleCancelModal. `order.status` becomes
- * 'cancelled'; `items`/`total`/`payment` are preserved untouched as the
- * historical record of what was sold and collected.
+ * Recorded once (and only once — cancellation is terminal). For a POS sale see
+ * PosSaleCancelModal; for a web order see server/lib/webOrderCancel.js.
+ * `order.status` becomes 'cancelled'; `items`/`total`/`payment` are preserved
+ * untouched as the historical record of what was sold.
  */
 export type PosSaleCancellation = {
   cancelledAt: Date | null;
   cancelledByUid: string;
   cancelledByName: string | null;
   reason: string | null;
-  /** The register session's open/closed status at the moment of cancellation (informational only). */
+  /** The register session's open/closed status at the moment of cancellation (POS only, informational). */
   registerSessionStatusAtCancellation: 'open' | 'closed' | null;
+  /** Web orders only: status the order had when it was cancelled. */
+  previousStatus?: OrderStatus | null;
+  /** Web orders only: whether stock was put back. */
+  restockApplied?: boolean;
+  restoredLines?: CancellationLine[];
+  skippedLines?: CancellationLine[];
 };
 
 export type OrderRecord = {
@@ -112,6 +143,12 @@ export type OrderRecord = {
   deliveryAddress: string | null;
   deliveryZone: string | null;
   status: OrderStatus;
+  /** The stored status was not a known value even after trim + lower-case; such orders are never cancelled/restocked. */
+  statusUnrecognized?: boolean;
+  /** The status exactly as stored (null when missing or not a string) — shown on "Needs review" badges. */
+  rawStatus?: string | null;
+  /** Stored status is not exactly a canonical value — listed under "Needs review" (see NEEDS_REVIEW_BUCKET). */
+  statusNeedsReview?: boolean;
   subtotal: number;
   shippingCost: number;
   total: number;
@@ -134,8 +171,27 @@ export type OrderRecord = {
   balanceDue?: number | null;
   correctionCount?: number;
   corrections?: PosSaleCorrection[];
-  /** Set only once a POS sale is cancelled (status becomes 'cancelled'). Absent/undefined/null otherwise. */
+  /** Set only once a POS sale or web order is cancelled (status becomes 'cancelled'). Absent/undefined/null otherwise. */
   cancellation?: PosSaleCancellation | null;
+  /** Who last changed `status` from the admin, and when (absent on older orders). */
+  statusUpdatedAt?: Date | null;
+  statusUpdatedByUid?: string | null;
+  statusUpdatedByName?: string | null;
+  /** Internal staff note — never shown to the customer. */
+  adminNote?: string | null;
+  adminNoteUpdatedAt?: Date | null;
+  adminNoteUpdatedByName?: string | null;
+  /**
+   * Returns shelf summary (server-written). Once any return exists the order can no
+   * longer be cancelled, moved backwards or have its items edited.
+   */
+  returnSummary?: OrderReturnSummary | null;
+};
+
+/** The admin performing a change, stamped onto the order for attribution. */
+export type OrderActor = {
+  uid: string;
+  name: string | null;
 };
 
 export type PlaceOrderResult = {

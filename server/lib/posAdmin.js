@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isSyntheticAdminEmail } from './adminIdentity.js';
+import { adminCredential } from './emulatorGuard.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVICE_ACCOUNT_PATH = path.resolve(__dirname, '../../service-account.json');
@@ -22,15 +23,15 @@ async function getPosApp() {
     const { initializeApp, applicationDefault, cert, getApps } = await import('firebase-admin/app');
     const existing = getApps().find((a) => a.name === APP_NAME);
     const projectId = process.env.VITE_FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT;
-    return (
-      existing ||
-      (existsSync(SERVICE_ACCOUNT_PATH)
-        ? initializeApp(
-            { credential: cert(JSON.parse(readFileSync(SERVICE_ACCOUNT_PATH, 'utf8'))), projectId },
-            APP_NAME
-          )
-        : initializeApp({ credential: applicationDefault(), projectId }, APP_NAME))
+    // Emulator mode: a credential that can never reach real Google services
+    // (service-account.json and application-default credentials are not read).
+    // Otherwise unchanged: the key file when present, else application-default credentials.
+    const credential = adminCredential(() =>
+      existsSync(SERVICE_ACCOUNT_PATH)
+        ? cert(JSON.parse(readFileSync(SERVICE_ACCOUNT_PATH, 'utf8')))
+        : applicationDefault()
     );
+    return existing || initializeApp({ credential, projectId }, APP_NAME);
   })();
   return appPromise;
 }

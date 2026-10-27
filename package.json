@@ -5,6 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000",
+    "emulators": "powershell -ExecutionPolicy Bypass -File scripts/emulators.ps1",
+    "dev:emulator": "powershell -ExecutionPolicy Bypass -File scripts/dev-emulator.ps1",
+    "emulator:check": "node scripts/emulator/preflight.mjs",
+    "emulator:verify": "node scripts/emulator/verify-identity.mjs",
+    "emulator:seed": "node scripts/emulator/seed.mjs",
+    "emulator:reset": "node scripts/emulator/reset.mjs",
     "start": "node server/index.js",
     "dev:android-reverse": "powershell -ExecutionPolicy Bypass -File scripts/reverse-android-dev.ps1",
     "setup:qz-tray": "powershell -ExecutionPolicy Bypass -File scripts/setup-qz-tray-windows.ps1",
