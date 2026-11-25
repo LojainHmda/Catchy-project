@@ -7,6 +7,8 @@ import { useOrder } from '../hooks/useOrder';
 import OrderLineItemsList from '../components/orders/OrderLineItemsList';
 import OrderStatusBadge from '../components/orders/OrderStatusBadge';
 import OrderTotalsBreakdown from '../components/orders/OrderTotalsBreakdown';
+import { orderWebDiscountAmount } from '../lib/orders/webOrderDiscount';
+import { orderDeliveryPlaceLabel } from '../lib/orders/orderDelivery';
 import InvoiceDownloadButton from '../components/orders/InvoiceDownloadButton';
 import { shortOrderId } from '../lib/orders';
 import { cn } from '../lib/utils';
@@ -14,7 +16,7 @@ import { cn } from '../lib/utils';
 const OrderConfirmation = () => {
   const { orderId } = useParams<{ orderId: string }>();
   const { user, loading: authLoading } = useAuth();
-  const { t, isRTL } = useLanguage();
+  const { t, isRTL, language } = useLanguage();
   const { order, loading, error } = useOrder(orderId);
 
   if (authLoading) {
@@ -85,15 +87,23 @@ const OrderConfirmation = () => {
             subtotal={order.subtotal}
             shippingCost={order.shippingCost}
             total={order.total}
+            discount={orderWebDiscountAmount(order)}
           />
         </div>
 
-        {order.deliveryAddress ? (
-          <div className="mb-5 rounded-xl border border-gray-100 bg-gray-50/60 px-4 py-3">
+        {order.deliveryLocation || order.deliveryAddress ? (
+          <div className="mb-5 rounded-xl border border-gray-100 bg-gray-50/60 px-4 py-3" data-testid="order-confirmation-delivery">
             <p className={cn('text-[10px] font-bold uppercase tracking-wider text-gray-400', isRTL && 'font-arabic')}>
-              {t('cart.deliveryAddress')}
+              {t(order.deliveryLocation ? 'cart.deliveryZone' : 'cart.deliveryAddress')}
             </p>
-            <p className={cn('mt-1 text-sm text-gray-800', isRTL && 'font-arabic')}>{order.deliveryAddress}</p>
+            {order.deliveryLocation ? (
+              <p className={cn('mt-1 text-sm font-medium text-gray-900', isRTL && 'font-arabic')}>
+                {orderDeliveryPlaceLabel(order, t, language)}
+              </p>
+            ) : null}
+            {order.deliveryAddress ? (
+              <p className={cn('mt-1 text-sm text-gray-800', isRTL && 'font-arabic')}>{order.deliveryAddress}</p>
+            ) : null}
             {order.customerPhone ? (
               <p className="mt-1 text-xs text-gray-500" dir="ltr">
                 {order.customerPhone}

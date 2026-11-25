@@ -1,5 +1,6 @@
 import type { OrderRecord } from '../../types/order';
 import { CANCELLED_ORDER_STATUS } from '../../types/order';
+import { orderAddressLine, orderDeliveryArea, orderDeliveryLine } from './orderDelivery';
 
 export type OrderCustomerSummary = {
   key: string;
@@ -7,7 +8,12 @@ export type OrderCustomerSummary = {
   phone: string | null;
   email: string | null;
   deliveryLocations: string[];
-  zones: string[];
+  /**
+   * Stable delivery-area keys of this customer's orders ('region:<id>' for newer orders,
+   * 'zone:<id>' for the former zones) — never translated labels, so filtering keeps
+   * working after an admin-language switch. See orderDelivery.ts.
+   */
+  areas: string[];
   latestAddress: string | null;
   orderCount: number;
   newCount: number;
@@ -19,25 +25,8 @@ export type OrderCustomerSummary = {
   lastOrderAt: Date | null;
 };
 
-const ZONE_LABEL_KEYS: Record<string, string> = {
-  west_bank: 'shipping.zone.westBank',
-  jerusalem: 'shipping.zone.jerusalem',
-  abu_ghosh: 'shipping.zone.abuGhosh',
-  inside_israel: 'shipping.zone.insideIsrael',
-};
-
-/** Translated zone label for display. `zoneId` stays the stable identity (used for filtering/grouping) — only this label is language-dependent. */
-export function shippingZoneLabel(zoneId: string | null | undefined, t: (key: string) => string): string | null {
-  if (!zoneId?.trim()) return null;
-  const labelKey = ZONE_LABEL_KEYS[zoneId];
-  return labelKey ? t(labelKey) : zoneId.replace(/_/g, ' ');
-}
-
-export function orderDeliveryLabel(order: OrderRecord, t: (key: string) => string): string {
-  const zone = shippingZoneLabel(order.deliveryZone, t);
-  const address = order.deliveryAddress?.trim();
-  if (zone && address) return `${zone} · ${address}`;
-  return zone ?? address ?? t('admin.customers.unknownLocationFallback');
+export function orderDeliveryLabel(order: OrderRecord, t: (key: string) => string, language = 'en'): string {
+  return orderDeliveryLine(order, t, language) ?? t('admin.customers.unknownLocationFallback');
 }
 
 /** Groups orders into one customer: phone, then account uid, then email, then name. */
@@ -56,12 +45,17 @@ export function customerKey(order: OrderRecord): string {
   return `order:${order.id}`;
 }
 
-export function aggregateOrderCustomers(orders: OrderRecord[], t: (key: string) => string): OrderCustomerSummary[] {
+export function aggregateOrderCustomers(
+  orders: OrderRecord[],
+  t: (key: string) => string,
+  language = 'en'
+): OrderCustomerSummary[] {
   const map = new Map<string, OrderCustomerSummary>();
 
   for (const order of orders) {
     const key = customerKey(order);
     let row = map.get(key);
+    const address = orderAddressLine(order, t, language);
 
     if (!row) {
       row = {
@@ -70,8 +64,8 @@ export function aggregateOrderCustomers(orders: OrderRecord[], t: (key: string) 
         phone: order.customerPhone?.trim() || null,
         email: order.customerEmail?.trim() || null,
         deliveryLocations: [],
-        zones: [],
-        latestAddress: order.deliveryAddress?.trim() || null,
+        areas: [],
+        latestAddress: address,
         orderCount: 0,
         newCount: 0,
         inProgressCount: 0,
@@ -96,28 +90,26 @@ export function aggregateOrderCustomers(orders: OrderRecord[], t: (key: string) 
     if (order.customerPhone?.trim()) row.phone = order.customerPhone.trim();
     if (order.customerEmail?.trim()) row.email = order.customerEmail.trim();
 
-    const location = orderDeliveryLabel(order, t);
+    const location = orderDeliveryLabel(order, t, language);
     if (!row.deliveryLocations.includes(location)) {
       row.deliveryLocations.push(location);
     }
 
-    // row.zones stores the stable zone id (not the translated label) so zone
-    // filtering keeps working correctly after an admin-language switch.
-    const zoneId = order.deliveryZone?.trim();
-    if (zoneId && !row.zones.includes(zoneId)) {
-      row.zones.push(zoneId);
+    const area = orderDeliveryArea(order);
+    if (area.kind !== 'unknown' && !row.areas.includes(area.key)) {
+      row.areas.push(area.key);
     }
 
-    if (order.deliveryAddress?.trim()) {
-      row.latestAddress = order.deliveryAddress.trim();
+    if (address) {
+      row.latestAddress = address;
     }
 
     const orderTime = order.createdAt?.getTime() ?? 0;
     const lastTime = row.lastOrderAt?.getTime() ?? 0;
     if (orderTime >= lastTime) {
       row.lastOrderAt = order.createdAt;
-      if (order.deliveryAddress?.trim()) {
-        row.latestAddress = order.deliveryAddress.trim();
+      if (address) {
+        row.latestAddress = address;
       }
     }
 
@@ -143,14 +135,4 @@ export function aggregateOrderCustomers(orders: OrderRecord[], t: (key: string) 
   return [...map.values()].sort(
     (a, b) => (b.lastOrderAt?.getTime() ?? 0) - (a.lastOrderAt?.getTime() ?? 0)
   );
-}
-
-/** Keyed by the stable zone id (e.g. "west_bank"), not the translated label — see shippingZoneLabel. */
-export function zoneOrderCounts(orders: OrderRecord[]): Record<string, number> {
-  const counts: Record<string, number> = { all: orders.length };
-  for (const order of orders) {
-    const zoneId = order.deliveryZone?.trim() || 'unknown';
-    counts[zoneId] = (counts[zoneId] ?? 0) + 1;
-  }
-  return counts;
 }

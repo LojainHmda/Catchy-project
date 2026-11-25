@@ -48,6 +48,12 @@ async function getAdminAuth() {
   return authPromise;
 }
 
+/** This app's admin criteria for an already-verified email (owner, demo admin, or this project's synthetic admin). */
+export function isStoreAdminEmail(email, projectId) {
+  const lower = String(email || '').toLowerCase();
+  return DEFAULT_OWNER_EMAILS.has(lower) || lower === DEMO_ADMIN_EMAIL || isSyntheticAdminEmail(lower, projectId);
+}
+
 /** Verifies the caller is a signed-in Firebase user matching this app's admin criteria. */
 export async function verifyAdminRequest(req) {
   const header = req.headers?.authorization || req.headers?.Authorization || '';
@@ -64,7 +70,7 @@ export async function verifyAdminRequest(req) {
     if (!isOwner && !isDemoAdmin && !isSyntheticAdmin) {
       return { ok: false, status: 403, message: 'This account is not an admin.' };
     }
-    return { ok: true, uid: decoded.uid, email };
+    return { ok: true, uid: decoded.uid, email, projectId: decoded.aud };
   } catch (err) {
     return { ok: false, status: 401, message: err?.message || 'Invalid or expired token.' };
   }

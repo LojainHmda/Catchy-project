@@ -515,6 +515,51 @@ describe('Cancelled POS sale with lines that could not be restocked', () => {
   });
 });
 
+describe('Delivery place on orders (new checkout) next to old zone orders', () => {
+  const placeOrder = () =>
+    order({
+      id: 'hhhhhhhh8888',
+      customerName: 'Rana',
+      deliveryZone: null,
+      deliveryAddress: null,
+      deliveryLocation: { id: 'jenin-025', name: 'برقين', regionId: 'jenin', regionName: 'جنين', regionNameEn: 'Jenin', price: 20 },
+    });
+
+  it('the order detail shows the place and its region; the optional address may be empty', async () => {
+    fx.orders = [placeOrder()];
+    render(h(AdminOrders), '/admin/orders?order=hhhhhhhh8888');
+    const place = document.querySelector('[data-testid="order-detail-delivery-place"]')!;
+    expect(place.textContent).toContain('admin.orders.detail.deliveryPlace');
+    expect(place.textContent).toContain('برقين · Jenin');
+    expect(text()).toContain('admin.orders.detail.addressDetails');
+  });
+
+  it('an old order still shows its former zone and full address', async () => {
+    fx.orders = [order({ id: 'iiiiiiii9999' })];
+    render(h(AdminOrders), '/admin/orders?order=iiiiiiii9999');
+    const place = document.querySelector('[data-testid="order-detail-delivery-place"]')!;
+    expect(place.textContent).toContain('admin.orders.detail.zone');
+    expect(place.textContent).toContain('shipping.zone.westBank');
+    expect(text()).toContain('Ramallah');
+  });
+
+  it('the edit dialog shows the place read-only and edits only the address details', async () => {
+    fx.orders = [placeOrder()];
+    render(h(AdminOrders), '/admin/orders?order=hhhhhhhh8888');
+    await act(async () => byText('admin.common.edit')!.click());
+    const editDialog = document.querySelector('[aria-labelledby="admin-order-edit-title"]')!;
+    expect(editDialog.querySelector('[data-testid="edit-delivery-place"]')!.textContent).toContain('برقين · Jenin');
+    expect(editDialog.textContent).toContain('admin.orders.edit.addressDetails');
+  });
+
+  it('the Reports "by delivery area" panel lists the region of new orders and the zone of old ones', async () => {
+    fx.orders = [placeOrder(), order({ id: 'iiiiiiii9999', total: 220 })];
+    render(h(AdminReports), '/admin/reports');
+    expect(text()).toContain('Jenin');
+    expect(text()).toContain('shipping.zone.westBank');
+  });
+});
+
 describe('Reports page', () => {
   it('renders booked and fulfilled revenue and the breakdown panels', async () => {
     render(h(AdminReports), '/admin/reports');

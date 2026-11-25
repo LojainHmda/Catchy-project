@@ -6,11 +6,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { cn } from '../lib/utils';
 import TickerBanner from './TickerBanner';
 import SearchOverlay from './SearchOverlay';
-import {
-  ANNOUNCEMENT_DEFAULTS,
-  subscribeAnnouncement,
-  type AnnouncementSettings,
-} from '../lib/announcementBanner';
+import { subscribeAnnouncement, type AnnouncementSettings } from '../lib/announcementBanner';
 
 const Navbar = () => {
   const location = useLocation();
@@ -19,12 +15,18 @@ const Navbar = () => {
   const { language, setLanguage, t, isRTL } = useLanguage();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [announcement, setAnnouncement] = useState<AnnouncementSettings>(ANNOUNCEMENT_DEFAULTS);
+  // Hidden until the saved setting has arrived from the server (null = not known yet).
+  // Starting from the built-in defaults (which are "on") made the bar flash on every page
+  // load even when the owner had switched it off. A failed load keeps it hidden too.
+  const [announcement, setAnnouncement] = useState<AnnouncementSettings | null>(null);
   const isAr = language === 'ar';
 
   useEffect(() => { closeCart(); setMenuOpen(false); }, [location.pathname, closeCart]);
 
-  useEffect(() => subscribeAnnouncement(setAnnouncement), []);
+  useEffect(
+    () => subscribeAnnouncement(setAnnouncement, { serverConfirmed: true, onError: () => setAnnouncement(null) }),
+    []
+  );
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 10);
@@ -45,11 +47,12 @@ const Navbar = () => {
   return (
     <>
       {/* Announcement bar */}
-      {announcement.enabled && (
+      {announcement?.enabled && (
         <div
           className="w-full bg-primary text-on-primary text-center py-2 text-xs tracking-wide"
           dir={isRTL ? 'rtl' : 'ltr'}
           style={{ fontFamily: 'var(--font-body)' }}
+          data-testid="announcement-bar"
         >
           <span className="material-symbols-outlined align-middle mx-1" style={{ fontSize: '14px' }}>local_shipping</span>
           {isAr ? announcement.textAr : announcement.textEn}

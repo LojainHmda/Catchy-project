@@ -19,8 +19,9 @@ import OrderCustomerHistory from './OrderCustomerHistory';
 import { formatOrderDateTime, formatOrderMoney, shortOrderId } from '../../lib/orders';
 import { canCancelWebOrder, canStartWebReturn, returnableLinesFor } from '../../lib/orders/orderListFilters';
 import { orderHasReturns } from '../../lib/orders/orderUtils';
+import { orderWebDiscountAmount } from '../../lib/orders/webOrderDiscount';
 import { fetchReturnsForOrder } from '../../lib/returns/returnsApi';
-import { SHIPPING_ZONES } from '../../lib/shippingZones';
+import { orderDeliveryPlaceLabel } from '../../lib/orders/orderDelivery';
 import type { ReturnRecord } from '../../types/returns';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -151,7 +152,8 @@ const AdminOrderDetailModal: React.FC<AdminOrderDetailModalProps> = ({
   const canReturn =
     !!order && role === 'admin' && canStartWebReturn(order) && returnableLinesFor(order).lines.some((l) => l.remaining > 0);
   const hasReturns = orderHasReturns(order);
-  const zoneLabelKey = SHIPPING_ZONES.find((z) => z.id === order?.deliveryZone)?.labelKey ?? null;
+  // Newer orders: the chosen place and its region; older orders: their former zone.
+  const deliveryPlace = order ? orderDeliveryPlaceLabel(order, t, language) : null;
 
   const copyOrderLink = async () => {
     if (!order) return;
@@ -253,13 +255,16 @@ const AdminOrderDetailModal: React.FC<AdminOrderDetailModalProps> = ({
                       </div>
                     </div>
                     <div className="mt-2 border-t border-gray-200/80 pt-2">
-                      <ReadonlyField label={t('admin.orders.detail.address')} value={order.deliveryAddress} />
+                      <ReadonlyField
+                        label={t(order.deliveryLocation ? 'admin.orders.detail.addressDetails' : 'admin.orders.detail.address')}
+                        value={order.deliveryAddress}
+                      />
                     </div>
                     {order.source !== 'pos' ? (
-                      <div className="mt-2 border-t border-gray-200/80 pt-2">
+                      <div className="mt-2 border-t border-gray-200/80 pt-2" data-testid="order-detail-delivery-place">
                         <ReadonlyField
-                          label={t('admin.orders.detail.zone')}
-                          value={zoneLabelKey ? t(zoneLabelKey) : order.deliveryZone}
+                          label={t(order.deliveryLocation ? 'admin.orders.detail.deliveryPlace' : 'admin.orders.detail.zone')}
+                          value={deliveryPlace}
                         />
                       </div>
                     ) : null}
@@ -275,10 +280,32 @@ const AdminOrderDetailModal: React.FC<AdminOrderDetailModalProps> = ({
                     </div>
                     <div>
                       <dt className="text-gray-500">{t('admin.orders.detail.discount')}</dt>
-                      <dd className="font-medium tabular-nums text-gray-900">
-                        {order.discount?.amount ? `−${formatOrderMoney(order.discount.amount)}` : '—'}
+                      <dd className="font-medium tabular-nums text-gray-900" data-testid="order-detail-discount">
+                        {order.source === 'pos'
+                          ? order.discount?.amount
+                            ? `−${formatOrderMoney(order.discount.amount)}`
+                            : '—'
+                          : orderWebDiscountAmount(order) > 0
+                            ? <bdi>{`−${formatOrderMoney(orderWebDiscountAmount(order))}`}</bdi>
+                            : '—'}
                       </dd>
                     </div>
+                    {order.source !== 'pos' && order.webDiscount && orderWebDiscountAmount(order) > 0 ? (
+                      <div className="col-span-2 sm:col-span-4" data-testid="order-detail-web-discount">
+                        <dt className="sr-only">{t('admin.orders.webDiscount.title')}</dt>
+                        <dd className="text-gray-600">
+                          {t('admin.orders.webDiscount.detailLine').replace('{reason}', order.webDiscount.reason ?? '—')}
+                          {order.webDiscount.appliedByName || order.webDiscount.appliedAt ? (
+                            <span className="text-gray-400">
+                              {' · '}
+                              {t('admin.orders.webDiscount.appliedBy')
+                                .replace('{name}', order.webDiscount.appliedByName ?? '—')
+                                .replace('{date}', formatOrderDateTime(order.webDiscount.appliedAt, locale))}
+                            </span>
+                          ) : null}
+                        </dd>
+                      </div>
+                    ) : null}
                     <div>
                       <dt className="text-gray-500">{t('admin.common.total')}</dt>
                       <dd className="font-semibold tabular-nums text-gray-900">{formatOrderMoney(order.total)}</dd>

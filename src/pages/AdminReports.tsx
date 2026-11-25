@@ -4,7 +4,7 @@ import { useOrdersList } from '../hooks/useOrdersList';
 import { useLanguage } from '../context/LanguageContext';
 import { formatOrderDate, formatOrderMoney } from '../lib/orders';
 import { resolveDateRange, type DateRangePreset } from '../lib/orders/orderListFilters';
-import { shippingZoneLabel } from '../lib/orders/orderCustomerSummary';
+import { deliveryAreaLabel } from '../lib/orders/orderDelivery';
 import { buildSalesReport, orderLinesCsvRows, reportSummaryCsvRows } from '../lib/reports/salesReport';
 import { csvFileName, downloadCsv, toCsv } from '../lib/csv';
 import { ORDER_STATUSES } from '../types/order';
@@ -204,6 +204,8 @@ const AdminReports = () => {
                 <dd className="text-end tabular-nums">{money(report.posCard)}</dd>
                 <dt className="text-gray-500">{t('admin.reports.posDiscounts')}</dt>
                 <dd className="text-end tabular-nums">{money(report.posDiscounts)}</dd>
+                <dt className="text-gray-500">{t('admin.reports.webDiscounts')}</dt>
+                <dd className="text-end tabular-nums" data-testid="report-web-discounts">{money(report.webDiscounts)} <span className="text-gray-400">({report.webDiscountedOrders})</span></dd>
               </dl>
             </Panel>
 
@@ -299,7 +301,7 @@ const AdminReports = () => {
                   <tbody className="divide-y divide-gray-100">
                     {report.byZone.map((z) => (
                       <tr key={z.zone}>
-                        <td className="py-1.5">{z.zone === 'unknown' ? t('admin.reports.unknownZone') : shippingZoneLabel(z.zone, t)}</td>
+                        <td className="py-1.5">{deliveryAreaLabel(z.area, t, language) ?? t('admin.reports.unknownZone')}</td>
                         <td className="py-1.5 text-end tabular-nums">{z.count}</td>
                         <td className="py-1.5 text-end tabular-nums">{money(z.revenue)}</td>
                       </tr>

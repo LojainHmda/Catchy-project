@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { sortPosProductsNewestFirst, type PosProduct } from './posProduct';
+import {
+  filterPosSellable,
+  posCategoryCount,
+  resolvePosBarcodeScan,
+  sortPosProductsNewestFirst,
+  type PosProduct,
+} from './posProduct';
 
 function product(id: string, createdAt?: number): PosProduct {
   return {
@@ -41,5 +47,55 @@ describe('sortPosProductsNewestFirst — POS terminal grid ordering', () => {
     sortPosProductsNewestFirst(products);
 
     expect(products).toEqual(original);
+  });
+});
+
+describe('filterPosSellable — what the register offers', () => {
+  const list: PosProduct[] = [
+    { ...product('in-stock'), category: 'Shirts' },
+    { ...product('hidden-online-in-stock'), category: 'Shirts', visible: false },
+    { ...product('sold-out'), category: 'Shirts', stock: 0 },
+    { ...product('sold-out-sizes'), category: 'Shirts', stock: 0, sizeStock: { S: 0, M: 0 } },
+    { ...product('hidden-and-sold-out'), category: 'Shirts', stock: 0, visible: false },
+  ];
+
+  it('keeps every in-stock product — including ones hidden from the online store — and drops sold-out ones', () => {
+    expect(filterPosSellable(list).map((p) => p.id)).toEqual(['in-stock', 'hidden-online-in-stock']);
+  });
+
+  it('category counts follow the same rule', () => {
+    expect(posCategoryCount(list, { kind: 'category', id: 'Shirts' })).toBe(2);
+    expect(posCategoryCount(list, { kind: 'all' })).toBe(2);
+  });
+});
+
+describe('resolvePosBarcodeScan', () => {
+  const list: PosProduct[] = [
+    { ...product('a'), barcode: '111' },
+    { ...product('b-sold-out'), barcode: '222', stock: 0 },
+    { ...product('c-sold-out'), barcode: '333', stock: 0 },
+    { ...product('c-in-stock'), barcode: '333' },
+    { ...product('hidden-online'), barcode: '444', visible: false },
+  ];
+
+  it('opens an in-stock match (by barcode or by product id)', () => {
+    expect(resolvePosBarcodeScan(list, '111')).toEqual({ kind: 'open', productId: 'a' });
+    expect(resolvePosBarcodeScan(list, 'a')).toEqual({ kind: 'open', productId: 'a' });
+  });
+
+  it('opens a product hidden from the online store when it has stock', () => {
+    expect(resolvePosBarcodeScan(list, '444')).toEqual({ kind: 'open', productId: 'hidden-online' });
+  });
+
+  it('says "out of stock" for a sold-out product instead of a search that finds nothing', () => {
+    expect(resolvePosBarcodeScan(list, '222')).toEqual({ kind: 'outOfStock', name: 'b-sold-out' });
+  });
+
+  it('prefers an in-stock product when two share a barcode', () => {
+    expect(resolvePosBarcodeScan(list, '333')).toEqual({ kind: 'open', productId: 'c-in-stock' });
+  });
+
+  it('falls back to the search box for an unknown code', () => {
+    expect(resolvePosBarcodeScan(list, '999')).toEqual({ kind: 'search' });
   });
 });

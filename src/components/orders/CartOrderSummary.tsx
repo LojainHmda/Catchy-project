@@ -90,8 +90,8 @@ const CartOrderSummary: React.FC<CartOrderSummaryProps> = ({
             ? {
                 customerName: pendingDelivery.customerName,
                 customerPhone: pendingDelivery.customerPhone,
+                deliveryLocationId: pendingDelivery.deliveryLocationId,
                 deliveryAddress: pendingDelivery.deliveryAddress,
-                deliveryZone: pendingDelivery.deliveryZone,
                 email: pendingDelivery.email ?? '',
               }
             : {}),

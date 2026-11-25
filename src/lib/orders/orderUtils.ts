@@ -1,5 +1,6 @@
 import type {
   CancellationLine,
+  DeliveryLocationSnapshot,
   OrderLineItem,
   OrderListBucket,
   OrderRecord,
@@ -8,10 +9,11 @@ import type {
   PosPayment,
   PosSaleCancellation,
   PosSaleCorrection,
+  WebOrderDiscount,
 } from '../../types/order';
 import { CANCELLED_ORDER_STATUS, NEEDS_REVIEW_BUCKET, ORDER_STATUSES } from '../../types/order';
 import type { OrderReturnSummary } from '../../types/returns';
-import { getShippingCost } from '../shippingZones';
+import { legacyShippingCost } from '../shippingZones';
 
 export const ORDER_STATUS_FLOW: OrderStatus[] = ['pending', 'processing', 'shipped', 'delivered'];
 
@@ -216,6 +218,27 @@ function parsePosDiscount(raw: unknown): PosDiscount | null {
   };
 }
 
+/**
+ * Web orders' admin discount: a fixed ILS amount (server-written; see
+ * server/lib/webOrderDiscount.js). Anything malformed or not positive → none. A record
+ * left over from the removed percentage option (local test data only) is read as the
+ * fixed amount it last stored.
+ */
+export function parseWebDiscount(raw: unknown): WebOrderDiscount | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const d = raw as Record<string, unknown>;
+  const amount = Number(d.amount);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return {
+    amount,
+    reason: typeof d.reason === 'string' && d.reason.trim() ? d.reason.trim() : null,
+    // Firestore Timestamp, or an ISO string when it comes back from the server endpoint.
+    appliedAt: typeof d.appliedAt === 'string' && Number.isFinite(Date.parse(d.appliedAt)) ? new Date(d.appliedAt) : toDate(d.appliedAt),
+    appliedByUid: typeof d.appliedByUid === 'string' ? d.appliedByUid : null,
+    appliedByName: typeof d.appliedByName === 'string' ? d.appliedByName : null,
+  };
+}
+
 function parseCorrectionBeforeSnapshot(raw: unknown): PosSaleCorrection['before'] {
   const snap = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   return {
@@ -353,6 +376,24 @@ function optionalString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
+/** The delivery-place snapshot stored on newer web orders; null when absent or unusable. */
+export function parseDeliveryLocationSnapshot(raw: unknown): DeliveryLocationSnapshot | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const id = typeof r.id === 'string' ? r.id.trim() : '';
+  const name = typeof r.name === 'string' ? r.name.trim() : '';
+  if (!id || !name) return null;
+  const price = r.price === null || r.price === undefined || r.price === '' ? NaN : Number(r.price);
+  return {
+    id,
+    name,
+    regionId: typeof r.regionId === 'string' ? r.regionId.trim() : '',
+    regionName: typeof r.regionName === 'string' ? r.regionName.trim() : '',
+    regionNameEn: optionalString(r.regionNameEn)?.trim() ?? null,
+    price: Number.isFinite(price) ? price : null,
+  };
+}
+
 export function parseOrderDocument(
   id: string,
   data: Record<string, unknown>,
@@ -366,13 +407,26 @@ export function parseOrderDocument(
   const subtotal = Number(data.subtotal) || itemsSubtotal;
   const deliveryZone =
     typeof data.deliveryZone === 'string' && data.deliveryZone.trim() ? data.deliveryZone.trim() : null;
+  const deliveryLocation = parseDeliveryLocationSnapshot(data.deliveryLocation);
+  // The stored shipping cost is the price charged. Fallbacks only for records saved without
+  // one: the place snapshot's price, else (oldest orders) the former zone's price.
   const shippingCost =
     Number.isFinite(Number(data.shippingCost)) && data.shippingCost !== null && data.shippingCost !== undefined
       ? Number(data.shippingCost)
-      : deliveryZone
-        ? getShippingCost(deliveryZone)
-        : 0;
-  const total = Number(data.total) || subtotal + shippingCost;
+      : deliveryLocation?.price != null
+        ? deliveryLocation.price
+        : deliveryZone
+          ? legacyShippingCost(deliveryZone)
+          : 0;
+  const source = data.source === 'pos' ? 'pos' : 'web';
+  const webDiscount = source === 'web' ? parseWebDiscount(data.webDiscount) : null;
+  const storedTotal = Number(data.total);
+  // A discounted web order can legitimately total 0 (100% off, free shipping), so its
+  // stored total is trusted as-is; everything else keeps the old fallback.
+  const total =
+    webDiscount && data.total !== null && data.total !== undefined && Number.isFinite(storedTotal)
+      ? storedTotal
+      : storedTotal || subtotal + shippingCost;
 
   return {
     id,
@@ -384,6 +438,7 @@ export function parseOrderDocument(
     customerPhone: typeof data.customerPhone === 'string' ? data.customerPhone : null,
     deliveryAddress: typeof data.deliveryAddress === 'string' ? data.deliveryAddress : null,
     deliveryZone,
+    deliveryLocation,
     status: normalizeOrderStatus(data.status),
     statusUnrecognized: isUnrecognizedOrderStatus(data.status),
     rawStatus: typeof data.status === 'string' ? data.status : null,
@@ -394,12 +449,13 @@ export function parseOrderDocument(
     itemCount,
     createdAt: toDate(data.createdAt),
     items,
-    source: data.source === 'pos' ? 'pos' : 'web',
+    source,
     registerSessionId: typeof data.registerSessionId === 'string' ? data.registerSessionId : null,
     cashierUid: typeof data.cashierUid === 'string' ? data.cashierUid : null,
     cashierName: typeof data.cashierName === 'string' ? data.cashierName : null,
     payment: parsePosPayment(data.payment),
     discount: parsePosDiscount(data.discount),
+    webDiscount,
     balanceDue: data.balanceDue == null ? null : Number(data.balanceDue) || 0,
     correctionCount: Number(data.correctionCount) || 0,
     corrections: parsePosSaleCorrections(data.corrections),

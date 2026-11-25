@@ -1,7 +1,8 @@
 import { canonicalCategory } from './category';
 import { coerceProductImages, isRemoteImageUrl, isUsableImageSrc, sanitizeImageSrc } from './productImages';
 import { colorCount, parseColorVariants, resolveListingInventory } from './productVariants';
-import { hasSizedInventory, sortedSizeStockEntries, totalFromSizeStock } from './productInventory';
+import { hasSizedInventory, sortedSizeStockEntries } from './productInventory';
+import { createdAtMillis, hasStock, isSellableOnline } from './productAvailability';
 
 /** Compact color swatch for catalog cards — hex + labels, no heavy image payload. */
 export type CatalogColorSwatch = {
@@ -33,14 +34,6 @@ export type CatalogListProduct = {
   /** POS barcode/SKU, when set. */
   barcode?: string;
 };
-
-/** Coerce a Firestore Timestamp / ISO string / number into epoch millis. */
-function toMillis(value: unknown): number | undefined {
-  if (value == null) return undefined;
-  const date = (value as { toDate?: () => Date })?.toDate?.() ?? value;
-  const ms = new Date(date as string | number | Date).getTime();
-  return Number.isFinite(ms) ? ms : undefined;
-}
 
 const MAX_CATALOG_SWATCHES = 5;
 
@@ -90,7 +83,7 @@ export function toCatalogListProduct(id: string, data: Record<string, unknown>):
     stock,
     ...(Object.keys(sizeStock).length > 0 ? { sizeStock } : {}),
     visible: data.visible !== false,
-    ...(toMillis(data.createdAt) !== undefined ? { createdAt: toMillis(data.createdAt) } : {}),
+    ...(createdAtMillis(data.createdAt) !== undefined ? { createdAt: createdAtMillis(data.createdAt) } : {}),
     ...(typeof data.barcode === 'string' && data.barcode.trim() ? { barcode: data.barcode.trim() } : {}),
   };
 }
@@ -98,13 +91,12 @@ export function toCatalogListProduct(id: string, data: Record<string, unknown>):
 /**
  * Whether a catalog product is buyable. Mirrors the product page: a sized product
  * needs at least one size with stock; an unsized product needs total stock.
+ * (Same rule as the POS — see productAvailability.ts.)
  */
 export function catalogProductInStock(
   product: Pick<CatalogListProduct, 'sizeStock' | 'stock'>
 ): boolean {
-  const sizeStock = product.sizeStock ?? {};
-  if (hasSizedInventory(sizeStock)) return totalFromSizeStock(sizeStock) > 0;
-  return (product.stock ?? 0) > 0;
+  return hasStock(product);
 }
 
 /** Sizes to show on a catalog card — only those still in stock (finished sizes hidden). */
@@ -135,8 +127,7 @@ export function productCollectionKeys(product: Pick<CatalogListProduct, 'categor
 export function categoryCountsFromProducts(products: CatalogListProduct[]): Map<string, number> {
   const map = new Map<string, number>();
   products.forEach((p) => {
-    if (!p.visible) return;
-    if (!catalogProductInStock(p)) return;
+    if (!isSellableOnline(p)) return;
     productCollectionKeys(p).forEach((key) => {
       map.set(key, (map.get(key) ?? 0) + 1);
     });

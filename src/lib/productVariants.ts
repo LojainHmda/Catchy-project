@@ -9,6 +9,7 @@ import {
   type SizeRow,
   type SizeStock,
 } from './productInventory';
+import { hasStock } from './productAvailability';
 import type { ProductColorVariant } from '../types/product';
 
 export type ColorVariantFormRow = {
@@ -180,11 +181,9 @@ export function resolveListingInventory(data: ProductInventoryFields): {
   return resolveProductInventory(data);
 }
 
-/** Whether a storefront listing should treat the product as buyable (variant-aware). */
+/** Whether a storefront listing should treat the product as buyable (variant-aware; productAvailability.ts). */
 export function isProductInStock(data: ProductInventoryFields): boolean {
-  const { sizeStock, stock } = resolveListingInventory(data);
-  if (hasSizedInventory(sizeStock)) return totalFromSizeStock(sizeStock) > 0;
-  return stock > 0;
+  return hasStock(resolveListingInventory(data));
 }
 
 /** Sum inventory across all color variants (for catalog chips / legacy fields). */

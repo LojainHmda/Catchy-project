@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import './lib/heroSlidesCache';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import Navbar from './components/Navbar';
@@ -21,7 +21,9 @@ import OrderConfirmation from './pages/OrderConfirmation';
 import CartDrawer from './components/CartDrawer';
 import Footer from './components/Footer';
 import BottomNav from './components/BottomNav';
+import WhatsAppButton from './components/WhatsAppButton';
 import { prefetchCatalogIndex } from './lib/catalog/catalogService';
+import AnalyticsTracker from './components/AnalyticsTracker';
 
 // Admin pages — lazy loaded so public users never download this code
 const AdminDashboard    = lazy(() => import('./pages/AdminDashboard'));
@@ -37,6 +39,11 @@ const AdminOrders       = lazy(() => import('./pages/AdminOrders'));
 const AdminWhatsApp     = lazy(() => import('./pages/AdminWhatsApp'));
 const AdminReports      = lazy(() => import('./pages/AdminReports'));
 const AdminReturns      = lazy(() => import('./pages/AdminReturns'));
+const AdminAnalytics    = lazy(() => import('./pages/AdminAnalytics'));
+const AdminDeliveryPrices = lazy(() => import('./pages/AdminDeliveryPrices'));
+const McpAuthorize      = lazy(() => import('./pages/McpAuthorize'));
+// Owner-only floating counter — lazy so its code stays out of the visitor bundle.
+const LiveVisitorsBadge = lazy(() => import('./components/admin/LiveVisitorsBadge'));
 const PosTerminal       = lazy(() => import('./pages/PosTerminal'));
 const PosRegisterClose  = lazy(() => import('./pages/PosRegisterClose'));
 
@@ -45,6 +52,17 @@ function CatalogWarmup() {
     prefetchCatalogIndex();
   }, []);
   return null;
+}
+
+/** Loads the live-visitor badge only for admin profiles (the server re-checks the owner). */
+function AdminLiveVisitors() {
+  const { user, role } = useAuth();
+  if (!user || role !== 'admin') return null;
+  return (
+    <Suspense fallback={null}>
+      <LiveVisitorsBadge />
+    </Suspense>
+  );
 }
 
 const AdminSpinner = () => (
@@ -86,9 +104,11 @@ const AppContent = () => {
         <Route path="/admin/stock" element={<AdminRoute><AdminStock /></AdminRoute>} />
         <Route path="/admin/orders" element={<AdminRoute><AdminOrders /></AdminRoute>} />
         <Route path="/admin/customers" element={<AdminRoute><AdminCustomers /></AdminRoute>} />
+        <Route path="/admin/delivery-prices" element={<AdminRoute><AdminDeliveryPrices /></AdminRoute>} />
         <Route path="/admin/whatsapp" element={<AdminRoute><AdminWhatsApp /></AdminRoute>} />
         <Route path="/admin/reports" element={<AdminRoute><AdminReports /></AdminRoute>} />
         <Route path="/admin/returns" element={<AdminRoute><AdminReturns /></AdminRoute>} />
+        <Route path="/admin/analytics" element={<AdminRoute><AdminAnalytics /></AdminRoute>} />
         <Route path="/admin/settings" element={<AdminRoute><div className="p-10 text-center">{t('admin.settings.comingSoon')}</div></AdminRoute>} />
 
         {/* Point of Sale — admin or cashier, own full-screen layout */}
@@ -106,6 +126,7 @@ const AppContent = () => {
                 <Route path="/coordinate/:id" element={<CoordinateDetail />} />
                 <Route path="/product/:id" element={<ProductDetail />} />
                 <Route path="/login" element={<Login />} />
+                <Route path="/mcp-authorize" element={<Suspense fallback={null}><McpAuthorize /></Suspense>} />
                 <Route path="/cart" element={<Cart />} />
                 <Route path="/orders" element={<Orders />} />
                 <Route path="/orders/confirmation/:orderId" element={<OrderConfirmation />} />
@@ -116,6 +137,7 @@ const AppContent = () => {
             <Footer />
             <CartDrawer />
             <BottomNav />
+            <WhatsAppButton />
           </>
         } />
       </Routes>
@@ -145,6 +167,8 @@ export default function App() {
             />
             <AppContent />
             <CatalogWarmup />
+            <AnalyticsTracker />
+            <AdminLiveVisitors />
           </Router>
         </CartProvider>
       </LanguageProvider>

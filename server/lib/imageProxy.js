@@ -5,14 +5,27 @@
 const ALLOWED_HOST_RE =
   /(^|\.)(firebasestorage\.googleapis\.com|storage\.googleapis\.com|firebasestorage\.app|googleusercontent\.com)$/i;
 
+// Product photos uploaded since the Cloudinary pipeline live on res.cloudinary.com
+// (server/lib/cloudinaryUpload.js). Only this store's own Cloudinary account is
+// relayed: the first path segment is the cloud name (/<cloud>/image/upload/...).
+const CLOUDINARY_HOST = 'res.cloudinary.com';
+
+function isOwnCloudinaryImage(u, cloudName) {
+  if (u.hostname.toLowerCase() !== CLOUDINARY_HOST) return false;
+  const name = String(cloudName ?? '').trim();
+  if (!name) return false; // not configured → fail closed
+  const [first, kind] = u.pathname.split('/').filter(Boolean);
+  return first === name && kind === 'image';
+}
+
 const MAX_BYTES = 8 * 1024 * 1024; // 8 MB cap
 
 /** True when `raw` is an https URL we're willing to fetch on the client's behalf. */
-export function isAllowedImageUrl(raw) {
+export function isAllowedImageUrl(raw, { cloudinaryCloudName = process.env.CLOUDINARY_CLOUD_NAME } = {}) {
   try {
     const u = new URL(String(raw));
     if (u.protocol !== 'https:') return false;
-    return ALLOWED_HOST_RE.test(u.hostname);
+    return ALLOWED_HOST_RE.test(u.hostname) || isOwnCloudinaryImage(u, cloudinaryCloudName);
   } catch {
     return false;
   }

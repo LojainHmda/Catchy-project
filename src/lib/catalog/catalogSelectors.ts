@@ -1,6 +1,7 @@
 import { canonicalCategory } from '../category';
 import { isProductDiscounted } from '../catalogSale';
-import { catalogProductInStock, productCollectionKeys, type CatalogListProduct } from '../catalogProductList';
+import { productCollectionKeys, type CatalogListProduct } from '../catalogProductList';
+import { isSellableOnline } from '../productAvailability';
 import type { StoreCategory } from '../categoriesService';
 import {
   catalogCoordinateLooks,
@@ -27,6 +28,10 @@ export function sortCatalogProducts(
   return list;
 }
 
+/**
+ * What the public store lists — the catalog grid AND the header search box both use this, so
+ * they always agree: only products shown online and in stock (productAvailability.ts).
+ */
 export function filterCatalogProducts(
   products: CatalogListProduct[],
   query: Pick<CatalogQueryState, 'selectedCats' | 'saleOnly' | 'search'>
@@ -34,8 +39,7 @@ export function filterCatalogProducts(
   const needle = query.search.trim().toLowerCase();
 
   return products.filter((p) => {
-    if (!p.visible) return false;
-    if (!catalogProductInStock(p)) return false;
+    if (!isSellableOnline(p)) return false;
     if (query.saleOnly && !isProductDiscounted(p)) return false;
     if (needle) {
       const haystack = [String(p.name), ...productCollectionKeys(p)].join(' ').toLowerCase();
@@ -48,6 +52,19 @@ export function filterCatalogProducts(
     }
     return true;
   });
+}
+
+/**
+ * Category chip click on the Catalog page: show only the clicked category, replacing any
+ * previous choice (multiple selected categories are shown as a union, so appending made
+ * "Tops" then "Dresses" show both). Clicking the category that is already the only one
+ * selected clears the filter. Removing a single filter pill still goes through toggleCat.
+ */
+export function nextCategorySelection(selectedCats: string[], clicked: string): string[] {
+  const key = canonicalCategory(clicked).toLowerCase();
+  const alreadyOnlySelection =
+    selectedCats.length === 1 && canonicalCategory(selectedCats[0]).toLowerCase() === key;
+  return alreadyOnlySelection ? [] : [clicked];
 }
 
 export type CatalogCategoryOption = {

@@ -3,13 +3,8 @@ import { Link } from 'react-router-dom';
 import { Search, Loader2, RefreshCw } from 'lucide-react';
 import { useOrdersList } from '../hooks/useOrdersList';
 import { formatOrderDate, formatOrderMoney } from '../lib/orders';
-import {
-  aggregateOrderCustomers,
-  shippingZoneLabel,
-  zoneOrderCounts,
-  type OrderCustomerSummary,
-} from '../lib/orders/orderCustomerSummary';
-import { SHIPPING_ZONES } from '../lib/shippingZones';
+import { aggregateOrderCustomers, type OrderCustomerSummary } from '../lib/orders/orderCustomerSummary';
+import { deliveryAreaCounts, deliveryAreaLabel, type OrderDeliveryArea } from '../lib/orders/orderDelivery';
 import { cn } from '../lib/utils';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -59,9 +54,19 @@ function StatusCountBadge({
   );
 }
 
-function locationDisplay(row: OrderCustomerSummary, t: (key: string) => string): { primary: string; secondary: string | null } {
-  const primary = row.zones.length
-    ? row.zones.map((id) => shippingZoneLabel(id, t) ?? id).join(', ')
+function locationDisplay(
+  row: OrderCustomerSummary,
+  t: (key: string) => string,
+  language: string,
+  areaByKey: ReadonlyMap<string, OrderDeliveryArea>
+): { primary: string; secondary: string | null } {
+  const primary = row.areas.length
+    ? row.areas
+        .map((key) => {
+          const area = areaByKey.get(key);
+          return (area && deliveryAreaLabel(area, t, language)) ?? key;
+        })
+        .join(', ')
     : t('admin.customers.unknownZone');
   const secondary = row.latestAddress;
   return { primary, secondary };
@@ -74,11 +79,14 @@ const AdminCustomers = () => {
   const [zoneFilter, setZoneFilter] = useState<ZoneFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
-  // language is in the deps so zone-derived display strings (customer name
+  // language is in the deps so area-derived display strings (customer name
   // fallback, delivery location text) stay in sync with the admin's current language.
-  const customers = useMemo(() => aggregateOrderCustomers(orders, t), [orders, t, language]);
+  const customers = useMemo(() => aggregateOrderCustomers(orders, t, language), [orders, t, language]);
 
-  const zoneCounts = useMemo(() => zoneOrderCounts(orders), [orders]);
+  // Orders per delivery area: the place's region (newer orders) or the former zone (older ones).
+  const areaCounts = useMemo(() => deliveryAreaCounts(orders), [orders]);
+  const knownAreas = useMemo(() => areaCounts.areas.filter((row) => row.area.kind !== 'unknown'), [areaCounts]);
+  const areaByKey = useMemo(() => new Map(knownAreas.map((row) => [row.area.key, row.area])), [knownAreas]);
 
   const statusCounts = useMemo(() => {
     return {
@@ -93,7 +101,7 @@ const AdminCustomers = () => {
     const q = searchTerm.trim().toLowerCase();
 
     return customers.filter((row) => {
-      if (zoneFilter !== 'all' && !row.zones.includes(zoneFilter)) return false;
+      if (zoneFilter !== 'all' && !row.areas.includes(zoneFilter)) return false;
 
       if (statusFilter === 'new' && row.newCount === 0) return false;
       if (statusFilter === 'in_progress' && row.inProgressCount === 0) return false;
@@ -106,8 +114,8 @@ const AdminCustomers = () => {
         (row.phone?.toLowerCase().includes(q) ?? false) ||
         (row.email?.toLowerCase().includes(q) ?? false) ||
         (row.latestAddress?.toLowerCase().includes(q) ?? false) ||
-        // deliveryLocations already carries the translated zone label + address,
-        // so it covers zone-name search too — no need to also search row.zones (ids).
+        // deliveryLocations already carries the place, region / former zone and address,
+        // so it covers area-name search too — no need to also search row.areas (keys).
         row.deliveryLocations.some((loc) => loc.toLowerCase().includes(q))
       );
     });
@@ -118,16 +126,16 @@ const AdminCustomers = () => {
     const newOrders = orders.filter((o) => o.status === 'pending').length;
     const inProgress = orders.filter((o) => o.status === 'processing').length;
     const shipped = orders.filter((o) => o.status === 'shipped').length;
-    const zones = new Set(orders.map((o) => o.deliveryZone?.trim()).filter(Boolean)).size;
+    const zones = knownAreas.length;
     return { withOrders, newOrders, inProgress, shipped, zones };
-  }, [customers, orders]);
+  }, [customers, orders, knownAreas]);
 
   const zoneFilters: { key: ZoneFilter; label: string; count?: number }[] = [
-    { key: 'all', label: t('admin.customers.allZones'), count: zoneCounts.all },
-    ...SHIPPING_ZONES.map((zone) => ({
-      key: zone.id as string,
-      label: shippingZoneLabel(zone.id, t) as string,
-      count: zoneCounts[zone.id] ?? 0,
+    { key: 'all', label: t('admin.customers.allZones'), count: areaCounts.all },
+    ...knownAreas.map((row) => ({
+      key: row.area.key,
+      label: deliveryAreaLabel(row.area, t, language) ?? row.area.key,
+      count: row.count,
     })),
   ];
 
@@ -257,7 +265,7 @@ const AdminCustomers = () => {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {filtered.map((row) => {
-                      const { primary, secondary } = locationDisplay(row, t);
+                      const { primary, secondary } = locationDisplay(row, t, language, areaByKey);
                       return (
                         <tr key={row.key} className="transition-colors hover:bg-gray-50/60">
                           <td className="max-w-[12rem] px-4 py-2.5">
@@ -305,7 +313,7 @@ const AdminCustomers = () => {
 
               <ul className="divide-y divide-gray-100 md:hidden">
                 {filtered.map((row) => {
-                  const { primary, secondary } = locationDisplay(row, t);
+                  const { primary, secondary } = locationDisplay(row, t, language, areaByKey);
                   return (
                     <li key={row.key} className="px-4 py-3">
                       <div className="flex items-start justify-between gap-3">

@@ -15,7 +15,7 @@ const Footer = () => {
 
   return (
     <footer
-      className="w-full bg-secondary-container px-5 py-6 pb-20 sm:pb-6"
+      className="w-full bg-secondary-container px-5 py-6 pb-36 sm:pb-32 xl:pb-6"
       dir={isRTL ? 'rtl' : 'ltr'}
     >
       <div className="mx-auto max-w-5xl">

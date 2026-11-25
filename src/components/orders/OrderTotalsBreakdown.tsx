@@ -1,16 +1,15 @@
 import React from 'react';
 import { useLanguage } from '../../context/LanguageContext';
 import { formatOrderMoney } from '../../lib/orders';
-import { SHIPPING_ZONES, type ShippingZoneId } from '../../lib/shippingZones';
 import { cn } from '../../lib/utils';
 
 type OrderTotalsBreakdownProps = {
   subtotal: number;
-  shippingCost: number;
+  /** null = not known yet (checkout before a delivery place is chosen / prices loaded): shown as "—". */
+  shippingCost: number | null;
   total: number;
-  deliveryZone?: ShippingZoneId | '' | null;
-  /** Show all zone rates (cart before selection). */
-  showShippingRates?: boolean;
+  /** Admin discount taken off a web order (NIS); a row is shown only when > 0. */
+  discount?: number;
   compact?: boolean;
 };
 
@@ -18,8 +17,7 @@ const OrderTotalsBreakdown: React.FC<OrderTotalsBreakdownProps> = ({
   subtotal,
   shippingCost,
   total,
-  deliveryZone,
-  showShippingRates = false,
+  discount = 0,
   compact = false,
 }) => {
   const { t, isRTL } = useLanguage();
@@ -30,56 +28,34 @@ const OrderTotalsBreakdown: React.FC<OrderTotalsBreakdownProps> = ({
   );
 
   return (
-    <div className={cn(compact ? 'space-y-1' : 'space-y-2', !compact && !showShippingRates && 'space-y-3')}>
+    <div className={cn(compact ? 'space-y-1' : 'space-y-3')}>
       <div className={rowClass}>
         <span>{t('cart.subtotal')}</span>
         <span className="tabular-nums text-gray-900">{formatOrderMoney(subtotal)}</span>
       </div>
 
-      {showShippingRates ? (
-        <div className="space-y-1.5">
-          <p className={cn('text-[10px] font-bold uppercase tracking-wider text-gray-400', isRTL && 'font-arabic')}>
-            {t('cart.shippingRates')}
-          </p>
-          <p
-            className={cn(
-              'flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-center text-[10px] leading-snug text-gray-600',
-              isRTL && 'font-arabic'
-            )}
-          >
-            {SHIPPING_ZONES.map((zone, index) => (
-              <React.Fragment key={zone.id}>
-                {index > 0 ? (
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-catchy" aria-hidden />
-                ) : null}
-                <span className={cn(deliveryZone === zone.id && 'font-semibold text-catchy')}>
-                  {t(zone.labelKey)} {formatOrderMoney(zone.cost)}
-                </span>
-              </React.Fragment>
-            ))}
-          </p>
+      {discount > 0 ? (
+        <div className={rowClass} data-testid="order-totals-discount">
+          <span>{t('orders.discount')}</span>
+          <bdi className="tabular-nums text-gray-900">−{formatOrderMoney(discount)}</bdi>
         </div>
-      ) : (
-        <div className={rowClass}>
-          <span>{t('cart.shipping')}</span>
-          <span className="tabular-nums text-gray-900">{formatOrderMoney(shippingCost)}</span>
-        </div>
-      )}
+      ) : null}
 
-      {showShippingRates ? (
-        <p className={cn('text-[10px] leading-relaxed text-gray-400', isRTL && 'font-arabic')}>
-          {t('cart.shippingAddedAtCheckout')}
-        </p>
-      ) : (
-        <div className={cn('flex items-center justify-between border-t border-gray-200', compact ? 'pt-1' : 'pt-2')}>
-          <span className={cn('font-medium text-gray-900', compact ? 'text-xs' : 'text-sm', isRTL ? 'font-arabic' : 'font-serif')}>
-            {t('cart.total')}
-          </span>
-          <span className={cn('font-black tabular-nums text-gray-900', compact ? 'text-sm' : 'text-lg')}>
-            {formatOrderMoney(total)}
-          </span>
-        </div>
-      )}
+      <div className={rowClass}>
+        <span>{t('cart.shipping')}</span>
+        <span className="tabular-nums text-gray-900" data-testid="order-totals-shipping">
+          {shippingCost === null ? '—' : formatOrderMoney(shippingCost)}
+        </span>
+      </div>
+
+      <div className={cn('flex items-center justify-between border-t border-gray-200', compact ? 'pt-1' : 'pt-2')}>
+        <span className={cn('font-medium text-gray-900', compact ? 'text-xs' : 'text-sm', isRTL ? 'font-arabic' : 'font-serif')}>
+          {t('cart.total')}
+        </span>
+        <span className={cn('font-black tabular-nums text-gray-900', compact ? 'text-sm' : 'text-lg')} data-testid="order-totals-total">
+          {formatOrderMoney(total)}
+        </span>
+      </div>
     </div>
   );
 };

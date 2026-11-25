@@ -29,11 +29,16 @@ export default function TickerBanner() {
   });
   const [ready, setReady] = useState(false);
 
+  // Rendered only once the saved setting is known (`ready`). An empty answer from the
+  // local cache is not known yet, and a failed load keeps the ticker hidden: a banner the
+  // owner switched off must never appear because its setting could not be read.
   useEffect(() => {
     const ref = doc(db, 'site_settings', 'site');
     const unsub = onSnapshot(
       ref,
       (snap) => {
+        const fromCache = snap.metadata.fromCache; // read first: exists() narrows the type below
+        if (!snap.exists() && fromCache) return;
         if (snap.exists()) {
           const d = snap.data();
           setSettings({
@@ -47,7 +52,7 @@ export default function TickerBanner() {
         }
         setReady(true);
       },
-      () => setReady(true)
+      () => setReady(false)
     );
     return () => unsub();
   }, []);
@@ -62,6 +67,7 @@ export default function TickerBanner() {
     <div
       dir="ltr"
       className="w-full overflow-hidden"
+      data-testid="ticker-banner"
       style={{
         backgroundColor: settings.backgroundColor,
         whiteSpace: 'nowrap',

@@ -5,17 +5,28 @@ import { ChevronDown, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import OrderItemsDraftTable from './OrderItemsDraftTable';
 import {
+  AdminOrderApiError,
   checkoutErrorCode,
   formatOrderMoney,
   isOrderError,
   saveOrderItems,
+  setWebOrderDiscountRequest,
   shortOrderId,
   updateOrderCustomerDetails,
   updateOrderStatus,
 } from '../../lib/orders';
 import { ORDER_STATUSES, type OrderLineItem, type OrderRecord, type OrderStatus } from '../../types/order';
 import { canChangeOrderStatus } from '../../lib/orders/orderListFilters';
+import { orderDeliveryPlaceLabel } from '../../lib/orders/orderDelivery';
 import { orderHasReturns } from '../../lib/orders/orderUtils';
+import {
+  MAX_WEB_DISCOUNT_REASON_LENGTH,
+  validateWebDiscountDraft,
+  webDiscountDraftChanged,
+  webDiscountDraftFromOrder,
+  webOrderTotal,
+  type WebDiscountDraft,
+} from '../../lib/orders/webOrderDiscount';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { cn } from '../../lib/utils';
@@ -59,9 +70,10 @@ function itemsSignature(items: OrderLineItem[]): string {
 }
 
 const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, onClose, onOrderPatch }) => {
-  const { t, isRTL } = useLanguage();
+  const { t, isRTL, language } = useLanguage();
   const { user } = useAuth();
   const [draft, setDraft] = useState<EditDraft | null>(null);
+  const [discountDraft, setDiscountDraft] = useState<WebDiscountDraft>({ mode: 'none', amount: '', reason: '' });
   const [saving, setSaving] = useState(false);
 
   // The current status plus every status this order may be moved to by hand.
@@ -78,6 +90,7 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
   useEffect(() => {
     if (open && order) {
       setDraft(draftFromOrder(order));
+      setDiscountDraft(webDiscountDraftFromOrder(order));
       setSaving(false);
     }
   }, [open, order?.id]);
@@ -109,33 +122,66 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
     () => !!order && !!draft && itemsSignature(draft.items) !== itemsSignature(order.items),
     [order, draft]
   );
-  const dirty = customerDirty || statusDirty || itemsDirty;
+  // Admin whole-order discount: a fixed ILS amount (web orders only — POS sales are never edited here).
+  const discountEnabled = !!order && order.source !== 'pos';
+  const discountDirty = discountEnabled && !!order && webDiscountDraftChanged(order, discountDraft);
+  const dirty = customerDirty || statusDirty || itemsDirty || discountDirty;
+
+  const draftSubtotal = useMemo(
+    () => (draft ? draft.items.reduce((sum, item) => sum + item.price * item.quantity, 0) : 0),
+    [draft]
+  );
+  // Checked against the subtotal the items WILL have, with the same rules as the server.
+  const discountCheck = useMemo(
+    () => (discountEnabled ? validateWebDiscountDraft(discountDraft, draftSubtotal) : null),
+    [discountEnabled, discountDraft, draftSubtotal]
+  );
+  const discountAmount = discountCheck?.ok ? discountCheck.amount : 0;
+  const discountInvalid = !!discountCheck && !discountCheck.ok;
 
   const draftTotal = useMemo(() => {
     if (!order || !draft) return 0;
-    const subtotal = draft.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    return subtotal + order.shippingCost;
-  }, [order, draft]);
+    // No discount: exactly the previous preview formula.
+    return discountAmount > 0 ? webOrderTotal(draftSubtotal, order.shippingCost, discountAmount) : draftSubtotal + order.shippingCost;
+  }, [order, draft, draftSubtotal, discountAmount]);
+
+  const setDiscountField = <K extends keyof WebDiscountDraft>(field: K, value: WebDiscountDraft[K]) => {
+    setDiscountDraft((prev) => ({ ...prev, [field]: value }));
+  };
 
   const setField = <K extends keyof EditDraft>(field: K, value: EditDraft[K]) => {
     setDraft((prev) => (prev ? { ...prev, [field]: value } : prev));
   };
 
   const save = async () => {
-    if (saving || !order || !draft || !dirty) return;
+    if (saving || !order || !draft || !dirty || discountInvalid) return;
     setSaving(true);
     try {
       // Items first: saveOrderItems validates stock and may throw before any write.
+      // It also re-derives an existing discount for the new subtotal.
       let stockSkippedCount = 0;
+      let subtotalNow = order.subtotal;
       if (itemsDirty) {
         const result = await saveOrderItems(order, draft.items, t);
         stockSkippedCount = result.stockSkipped?.length ?? 0;
+        subtotalNow = result.subtotal;
         onOrderPatch(order.id, {
           items: result.items,
           subtotal: result.subtotal,
           total: result.total,
           itemCount: result.itemCount,
+          webDiscount: result.webDiscount ?? null,
         });
+      }
+      // Discount next (before any status change: only open orders accept one). The
+      // owner-only server endpoint validates it and recomputes the total from the
+      // stored subtotal — refusing if that is no longer what this screen showed.
+      if (discountDirty && discountCheck?.ok) {
+        const result = await setWebOrderDiscountRequest(
+          { orderId: order.id, discount: discountCheck.discount, expectedSubtotal: subtotalNow },
+          t
+        );
+        onOrderPatch(order.id, { webDiscount: result.webDiscount, total: result.total });
       }
       if (customerDirty) {
         const details = {
@@ -173,7 +219,7 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
           ? t('admin.orders.edit.orderChanged')
           : code === 'ORDER_NOT_EDITABLE'
             ? t('admin.orders.edit.orderNotEditable')
-            : isOrderError(error)
+            : isOrderError(error) || error instanceof AdminOrderApiError
               ? error.message
               : t('admin.orders.edit.saveFailed');
       console.error('Order save failed:', error);
@@ -282,9 +328,17 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
                         />
                       </div>
                     </div>
+                    {order.deliveryLocation ? (
+                      // The delivery place and its price are fixed once the order is placed
+                      // (its shipping cost was charged for it); only the details below are editable.
+                      <p className="mt-2 flex min-w-0 items-baseline gap-1.5 border-t border-gray-200/80 pt-2" data-testid="edit-delivery-place">
+                        <span className="shrink-0 text-gray-500">{t('admin.orders.detail.deliveryPlace')}:</span>
+                        <span className="min-w-0 truncate font-medium text-gray-900">{orderDeliveryPlaceLabel(order, t, language)}</span>
+                      </p>
+                    ) : null}
                     <div className="mt-2 flex items-center gap-1.5 border-t border-gray-200/80 pt-2">
                       <label htmlFor="edit-customer-address" className="shrink-0 text-gray-500">
-                        {t('admin.orders.edit.address')}
+                        {t(order.deliveryLocation ? 'admin.orders.edit.addressDetails' : 'admin.orders.edit.address')}
                       </label>
                       <input
                         id="edit-customer-address"
@@ -343,6 +397,90 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
                     disabled={saving || itemsLocked}
                   />
                 </section>
+
+                {discountEnabled ? (
+                  <section className="mt-4" aria-labelledby="edit-discount-title">
+                    <h3 id="edit-discount-title" className="mb-2 text-start text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                      {t('admin.orders.webDiscount.title')}
+                    </h3>
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm">
+                      <div role="radiogroup" aria-label={t('admin.orders.webDiscount.title')} className="inline-flex flex-wrap gap-1">
+                        {(['none', 'amount'] as const).map((mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            role="radio"
+                            aria-checked={discountDraft.mode === mode}
+                            disabled={saving}
+                            onClick={() => setDiscountField('mode', mode)}
+                            className={cn(
+                              'h-8 rounded-md border px-3 text-xs font-semibold transition disabled:opacity-60',
+                              discountDraft.mode === mode
+                                ? 'border-catchy bg-catchy text-white'
+                                : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-100'
+                            )}
+                          >
+                            {t(`admin.orders.webDiscount.mode.${mode}`)}
+                          </button>
+                        ))}
+                      </div>
+
+                      {discountDraft.mode !== 'none' ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+                          <div className="flex w-40 items-center gap-1.5">
+                            <label htmlFor="edit-discount-value" className="shrink-0 text-gray-500">
+                              {t('admin.orders.webDiscount.value')}
+                            </label>
+                            <input
+                              id="edit-discount-value"
+                              type="text"
+                              inputMode="decimal"
+                              dir="ltr"
+                              value={discountDraft.amount}
+                              disabled={saving}
+                              onChange={(e) => setDiscountField('amount', e.target.value)}
+                              className={INPUT_CLASS}
+                            />
+                            <span className="shrink-0 text-gray-500">ILS</span>
+                          </div>
+                          <div className="flex min-w-[12rem] flex-1 items-center gap-1.5">
+                            <label htmlFor="edit-discount-reason" className="shrink-0 text-gray-500">
+                              {t('admin.orders.webDiscount.reason')}
+                            </label>
+                            <input
+                              id="edit-discount-reason"
+                              type="text"
+                              maxLength={MAX_WEB_DISCOUNT_REASON_LENGTH}
+                              value={discountDraft.reason}
+                              disabled={saving}
+                              placeholder={t('admin.orders.webDiscount.reasonPlaceholder')}
+                              onChange={(e) => setDiscountField('reason', e.target.value)}
+                              className={INPUT_CLASS}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {discountCheck && !discountCheck.ok ? (
+                        <p role="alert" className="mt-2 text-xs font-medium text-red-600">
+                          {t(`admin.orders.webDiscount.error.${discountCheck.error}`)}
+                        </p>
+                      ) : null}
+
+                      <dl className="mt-2.5 grid grid-cols-[1fr_auto] gap-x-4 gap-y-0.5 border-t border-gray-200/80 pt-2 text-xs" data-testid="edit-discount-breakdown">
+                        <dt className="text-gray-500">{t('admin.orders.webDiscount.subtotal')}</dt>
+                        <dd className="text-end tabular-nums text-gray-900">{formatOrderMoney(draftSubtotal)}</dd>
+                        <dt className="text-gray-500">{t('admin.orders.webDiscount.discountLine')}</dt>
+                        <dd className="text-end tabular-nums text-gray-900">{discountAmount > 0 ? <bdi>{`−${formatOrderMoney(discountAmount)}`}</bdi> : '—'}</dd>
+                        <dt className="text-gray-500">{t('admin.orders.webDiscount.shipping')}</dt>
+                        <dd className="text-end tabular-nums text-gray-900">{formatOrderMoney(order.shippingCost)}</dd>
+                        <dt className="font-semibold text-gray-900">{t('admin.orders.webDiscount.total')}</dt>
+                        <dd className="text-end font-semibold tabular-nums text-gray-900">{formatOrderMoney(draftTotal)}</dd>
+                      </dl>
+                      <p className="mt-1.5 text-[11px] text-gray-500">{t('admin.orders.webDiscount.hint')}</p>
+                    </div>
+                  </section>
+                ) : null}
               </div>
 
               <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-5 py-3 sm:px-6">
@@ -365,7 +503,7 @@ const AdminOrderEditModal: React.FC<AdminOrderEditModalProps> = ({ open, order, 
                   <button
                     type="button"
                     onClick={save}
-                    disabled={saving || !dirty}
+                    disabled={saving || !dirty || discountInvalid}
                     className="inline-flex h-9 items-center gap-1.5 rounded-md bg-catchy px-4 text-xs font-semibold text-white transition hover:bg-catchy-dark disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {saving ? <Loader2 size={14} className="animate-spin" /> : null}

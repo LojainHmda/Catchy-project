@@ -8,6 +8,7 @@ import OrderLineItemsList from '../components/orders/OrderLineItemsList';
 import OrderStatusBadge from '../components/orders/OrderStatusBadge';
 import OrderStatusTimeline from '../components/orders/OrderStatusTimeline';
 import OrderTotalsBreakdown from '../components/orders/OrderTotalsBreakdown';
+import { orderWebDiscountAmount } from '../lib/orders/webOrderDiscount';
 import InvoiceDownloadButton from '../components/orders/InvoiceDownloadButton';
 import { formatOrderDateTime, formatOrderMoney, shortOrderId } from '../lib/orders';
 import { cn } from '../lib/utils';
@@ -113,6 +114,7 @@ const OrderDetail = () => {
             subtotal={order.subtotal}
             shippingCost={order.shippingCost}
             total={order.total}
+            discount={orderWebDiscountAmount(order)}
           />
         </section>
       </div>

@@ -4,6 +4,7 @@ import { db, doc, onSnapshot } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
 import { cn } from '../lib/utils';
 import { fetchLatestProducts, LATEST_PRODUCTS_COUNT } from '../lib/latestProducts';
+import type { CatalogListProduct } from '../lib/catalogProductList';
 import { coerceProductImages, PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
 import { cloudinaryTransform } from '../lib/cloudinaryTransform';
 import { useStoreCategories } from '../hooks/useStoreCategories';
@@ -102,7 +103,7 @@ const Home = () => {
   const [heroSlidesReady, setHeroSlidesReady] = useState(
     () => normalizeHeroSlides(readCachedHeroSlides()).length > 0
   );
-  const [newArrivals, setNewArrivals] = useState<any[]>([]);
+  const [newArrivals, setNewArrivals] = useState<CatalogListProduct[]>([]);
   const [newArrivalsReady, setNewArrivalsReady] = useState(false);
   const [heroAspect, setHeroAspect] = useState('16 / 9');
   const [newArrivalsBg, setNewArrivalsBg] = useState<NewArrivalsBackgroundSettings>(
@@ -142,7 +143,7 @@ const Home = () => {
     let cancelled = false;
     (async () => {
       try {
-        const list = await fetchLatestProducts(db);
+        const list = await fetchLatestProducts();
         if (!cancelled) setNewArrivals(list);
       } catch (err) {
         console.error('Could not load latest products:', err);

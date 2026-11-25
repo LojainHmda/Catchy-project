@@ -48,7 +48,7 @@ import {
 } from '../lib/orders/orderListFilters';
 import { orderListBucket } from '../lib/orders/orderUtils';
 import { csvFileName, downloadCsv, toCsv } from '../lib/csv';
-import { SHIPPING_ZONES } from '../lib/shippingZones';
+import { orderDeliveryPlaceLabel } from '../lib/orders/orderDelivery';
 import {
   NEEDS_REVIEW_BUCKET,
   ORDER_STATUSES,
@@ -168,7 +168,7 @@ function SourceChip({ source, label }: { source: OrderRecord['source']; label: s
 const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, '')}`;
 
 const AdminOrders = () => {
-  const { t, isRTL } = useLanguage();
+  const { t, isRTL, language } = useLanguage();
   const { user, role } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const { orders, loading, refreshing, reload, patchOrder } = useOrdersList('admin');
@@ -397,10 +397,8 @@ const AdminOrders = () => {
     isAdmin && canStartWebReturn(o) && returnableLinesFor(o).lines.some((l) => l.remaining > 0);
   const canCancelRow = (o: OrderRecord) => isAdmin && canCancelWebOrder(o);
 
-  const zoneLabel = (o: OrderRecord) => {
-    const key = SHIPPING_ZONES.find((z) => z.id === o.deliveryZone)?.labelKey;
-    return key ? t(key) : null;
-  };
+  // The chosen place and its region (newer orders) or the former zone (older ones).
+  const zoneLabel = (o: OrderRecord) => orderDeliveryPlaceLabel(o, t, language);
 
   const sourceLabel = (o: OrderRecord) => t(o.source === 'pos' ? 'admin.orders.sourcePos' : 'admin.orders.sourceWeb');
 

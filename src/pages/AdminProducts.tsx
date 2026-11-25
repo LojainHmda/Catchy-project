@@ -1,6 +1,6 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { db, collection, getDocs, doc, updateDoc, query, orderBy, limit, startAfter } from '../firebase';
+import { db, doc, updateDoc } from '../firebase';
 import { Plus, Search, Edit2, Trash2, Package, Loader2, RefreshCw, ImageIcon, ChevronDown, Eye, EyeOff, QrCode, Barcode } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { CATEGORY_KEYS, CATEGORY_ICONS } from '../constants';
@@ -21,20 +21,25 @@ import AdminProductFormModal from '../components/admin/AdminProductFormModal';
 import AdminProductQrModal from '../components/admin/AdminProductQrModal';
 import AdminProductBarcodeModal from '../components/admin/AdminProductBarcodeModal';
 import AdminCategoriesPanel from '../components/admin/AdminCategoriesPanel';
-import { resolveProductInventory } from '../lib/productInventory';
+import { resolveListingInventory } from '../lib/productVariants';
+import { hasStock } from '../lib/productAvailability';
+import { fetchAllProducts } from '../lib/admin/fetchAllProducts';
 import { getDiscountPercent, isProductOnSale } from '../lib/productDiscount';
 import { hasNewArrivalTag, MAX_NEW_ARRIVAL_PRODUCTS, migrateLegacyNewArrivalProducts, productCategoryLabel } from '../lib/productTags';
-
-const PAGE_SIZE = 50;
 
 type ListTab = 'all' | 'new_arrivals' | 'categories';
 
 type StockFilter = 'all' | 'in' | 'low' | 'out';
 
-/** Bucket a product's total stock — thresholds match the header stats (Low ≤ 10, Out = 0). */
-function stockStatusOf(stock: number): Exclude<StockFilter, 'all'> {
-  if (stock <= 0) return 'out';
-  if (stock <= 10) return 'low';
+/**
+ * Bucket a product's stock — thresholds match the header stats (Low ≤ 10). "Out" is exactly the
+ * rule that hides a product from the online store and the POS (productAvailability.ts), using the
+ * same variant-aware numbers, so Admin's "Out of stock" list is precisely what those screens hide.
+ */
+function stockStatusOf(product: Record<string, unknown>): Exclude<StockFilter, 'all'> {
+  const inventory = resolveListingInventory(product);
+  if (!hasStock(inventory)) return 'out';
+  if (inventory.stock <= 10) return 'low';
   return 'in';
 }
 
@@ -42,8 +47,6 @@ const AdminProducts = () => {
   const { t } = useLanguage();
   const [products, setProducts] = useState<any[]>([]);
   const [listLoading, setListLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [qrProduct, setQrProduct] = useState<any>(null);
@@ -54,18 +57,14 @@ const AdminProducts = () => {
   const [stockFilter, setStockFilter] = useState<StockFilter>('all');
   const [coordinateLooks, setCoordinateLooks] = useState<CoordinateLook[]>([]);
 
-  const lastDocRef = useRef<any>(null);
   const migrationDoneRef = useRef(false);
 
+  // The WHOLE catalog, newest first — search, filters and the totals below must cover every
+  // product, not just a first page (sold-out and hidden products stay listed here).
   const fetchProducts = useCallback(async () => {
     setListLoading(true);
-    lastDocRef.current = null;
     try {
-      const q = query(collection(db, 'products'), orderBy('createdAt', 'desc'), limit(PAGE_SIZE));
-      const snap = await getDocs(q);
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      lastDocRef.current = snap.docs[snap.docs.length - 1] ?? null;
-      setHasMore(snap.docs.length === PAGE_SIZE);
+      const list = await fetchAllProducts();
       setProducts(list);
 
       // Run legacy migration once in background — never blocks initial render
@@ -77,14 +76,8 @@ const AdminProducts = () => {
               toast.success(t('admin.products.page.toastNewArrivalsSynced'), {
                 description: t('admin.products.page.toastNewArrivalsDesc').replace('{n}', String(migrated)),
               });
-              // Reload first page to reflect updated tags
-              const snap2 = await getDocs(
-                query(collection(db, 'products'), orderBy('createdAt', 'desc'), limit(PAGE_SIZE))
-              );
-              const list2 = snap2.docs.map((d) => ({ id: d.id, ...d.data() }));
-              lastDocRef.current = snap2.docs[snap2.docs.length - 1] ?? null;
-              setHasMore(snap2.docs.length === PAGE_SIZE);
-              setProducts(list2);
+              // Reload to reflect updated tags
+              setProducts(await fetchAllProducts());
             }
           })
           .catch((err) => console.warn('Migration check failed:', err));
@@ -95,31 +88,6 @@ const AdminProducts = () => {
       setListLoading(false);
     }
   }, []);
-
-  const loadMore = useCallback(async () => {
-    if (!hasMore || loadingMore || !lastDocRef.current) return;
-    setLoadingMore(true);
-    try {
-      const q = query(
-        collection(db, 'products'),
-        orderBy('createdAt', 'desc'),
-        startAfter(lastDocRef.current),
-        limit(PAGE_SIZE)
-      );
-      const snap = await getDocs(q);
-      const newDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      if (snap.docs.length > 0) lastDocRef.current = snap.docs[snap.docs.length - 1];
-      setHasMore(snap.docs.length === PAGE_SIZE);
-      setProducts((prev) => {
-        const seen = new Set(prev.map((p) => p.id));
-        return [...prev, ...newDocs.filter((d) => !seen.has(d.id))];
-      });
-    } catch (error) {
-      console.error('Error loading more products:', error);
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [hasMore, loadingMore]);
 
   useEffect(() => {
     fetchProducts();
@@ -174,7 +142,7 @@ const AdminProducts = () => {
     let lowStock = 0;
     let outOfStock = 0;
     products.forEach((p) => {
-      const status = stockStatusOf(resolveProductInventory(p).stock);
+      const status = stockStatusOf(p);
       if (status === 'out') outOfStock += 1;
       else if (status === 'low') lowStock += 1;
       else inStock += 1;
@@ -214,7 +182,7 @@ const AdminProducts = () => {
           return false;
         }
       }
-      if (stockFilter !== 'all' && stockStatusOf(resolveProductInventory(p).stock) !== stockFilter) {
+      if (stockFilter !== 'all' && stockStatusOf(p) !== stockFilter) {
         return false;
       }
       if (!q) return true;
@@ -447,7 +415,7 @@ const AdminProducts = () => {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {filteredProducts.map((product) => {
-                    const { sizeStock, stock } = resolveProductInventory(product);
+                    const { sizeStock, stock } = resolveListingInventory(product);
                     const images = coerceProductImages(product);
                     const displayCategory = productCategoryLabel(product.category);
                     return (
@@ -576,7 +544,7 @@ const AdminProducts = () => {
 
             <ul className="divide-y divide-gray-100 md:hidden">
               {filteredProducts.map((product) => {
-                const { sizeStock, stock } = resolveProductInventory(product);
+                const { sizeStock, stock } = resolveListingInventory(product);
                 const displayCategory = productCategoryLabel(product.category);
                 return (
                   <li key={product.id} className="px-4 py-3">
@@ -656,39 +624,10 @@ const AdminProducts = () => {
       </div>
 
       <div className="mt-3 flex flex-col items-center gap-2">
-        {hasMore && !searchTerm && listTab === 'all' && categoryFilter === 'all' && stockFilter === 'all' ? (
-          <button
-            type="button"
-            onClick={loadMore}
-            disabled={loadingMore}
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
-          >
-            {loadingMore ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <ChevronDown size={14} />
-            )}
-            {t('admin.products.page.loadMore')}
-          </button>
-        ) : null}
-        {hasMore && (searchTerm || listTab === 'new_arrivals' || categoryFilter !== 'all' || stockFilter !== 'all') ? (
-          <p className="text-[11px] text-amber-700">
-            {t('admin.products.page.partialSearchNotice').replace('{n}', String(products.length))}{' '}
-            <button
-              type="button"
-              onClick={loadMore}
-              className="underline underline-offset-2 hover:text-amber-900"
-            >
-              {t('admin.products.page.loadMoreShort')}
-            </button>
-            {t('admin.products.page.partialSearchSuffix')}
-          </p>
-        ) : null}
         <p className="text-xs text-gray-400">
           {t('admin.products.page.showingCount')
             .replace('{shown}', String(filteredProducts.length))
-            .replace('{total}', String(products.length))
-            .replace('{plus}', hasMore ? '+' : '')}
+            .replace('{total}', String(products.length))}
         </p>
       </div>
       </>

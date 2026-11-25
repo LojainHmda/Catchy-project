@@ -1,16 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { X } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 import {
   emptyDeliveryForm,
   validateDeliveryDetails,
   type DeliveryFormValues,
 } from '../../lib/orders';
-import { computeOrderTotals } from '../../lib/shippingZones';
+import { deliveryLocationPrice, type DeliveryLocation } from '../../lib/delivery/deliveryAreas';
+import { useDeliveryLocationIndex, useDeliveryPrices } from '../../hooks/useDeliveryData';
 import type { DeliveryDetails } from '../../types/order';
-import type { ShippingZoneId } from '../../lib/shippingZones';
 import { cn } from '../../lib/utils';
 import CheckoutDeliveryForm from './CheckoutDeliveryForm';
 import OrderTotalsBreakdown from './OrderTotalsBreakdown';
@@ -39,14 +39,17 @@ const CheckoutDeliveryModal: React.FC<CheckoutDeliveryModalProps> = ({
     emptyDeliveryForm(defaultDelivery?.email ?? '')
   );
   const [submitAttempted, setSubmitAttempted] = useState(false);
+  // Place list (loaded on first open) and live prices (re-sent when an admin changes them).
+  const locations = useDeliveryLocationIndex(open);
+  const prices = useDeliveryPrices(open);
 
   useEffect(() => {
     if (!open) return;
     setDeliveryValues({
       customerName: defaultDelivery?.customerName ?? '',
       customerPhone: defaultDelivery?.customerPhone ?? '',
+      deliveryLocationId: defaultDelivery?.deliveryLocationId ?? '',
       deliveryAddress: defaultDelivery?.deliveryAddress ?? '',
-      deliveryZone: defaultDelivery?.deliveryZone ?? '',
       email: defaultDelivery?.email ?? '',
     });
     setSubmitAttempted(false);
@@ -54,8 +57,8 @@ const CheckoutDeliveryModal: React.FC<CheckoutDeliveryModalProps> = ({
     open,
     defaultDelivery?.customerName,
     defaultDelivery?.customerPhone,
+    defaultDelivery?.deliveryLocationId,
     defaultDelivery?.deliveryAddress,
-    defaultDelivery?.deliveryZone,
     defaultDelivery?.email,
   ]);
 
@@ -68,23 +71,38 @@ const CheckoutDeliveryModal: React.FC<CheckoutDeliveryModalProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open, onClose]);
 
-  const validation = useMemo(() => validateDeliveryDetails(deliveryValues), [deliveryValues]);
+  const locationIndex = locations.index;
+  const validationOptions = useMemo(
+    () => ({ isKnownLocation: (id: string) => Boolean(locationIndex?.byId.has(id)) }),
+    [locationIndex]
+  );
+  const validation = useMemo(
+    () => validateDeliveryDetails(deliveryValues, validationOptions),
+    [deliveryValues, validationOptions]
+  );
 
   const fieldErrors = useMemo(() => {
     if (!submitAttempted || validation.ok) return {};
     return { [validation.field]: t(validation.messageKey) };
   }, [submitAttempted, t, validation]);
 
-  const totals = useMemo(
-    () => computeOrderTotals(subtotal, deliveryValues.deliveryZone as ShippingZoneId),
-    [deliveryValues.deliveryZone, subtotal]
+  const priceSettings = prices.settings;
+  const priceForLocation = useCallback(
+    (location: DeliveryLocation) => (priceSettings ? deliveryLocationPrice(location, priceSettings)?.price ?? null : null),
+    [priceSettings]
   );
+  const selectedLocation = locationIndex?.byId.get(deliveryValues.deliveryLocationId) ?? null;
+  // null until a place is chosen and its current price is known (shown as "—").
+  const shippingCost = selectedLocation ? priceForLocation(selectedLocation) : null;
+  const total = subtotal + (shippingCost ?? 0);
+  const waitingForPrice = validation.ok && shippingCost === null;
 
   const handleSubmit = () => {
     setSubmitAttempted(true);
-    const result = validateDeliveryDetails(deliveryValues);
-    if (!result.ok) return;
-    onConfirm(result.details);
+    const result = validateDeliveryDetails(deliveryValues, validationOptions);
+    if (!result.ok || shippingCost === null) return;
+    // The price shown here travels with the order: if it changed meanwhile, nothing is placed.
+    onConfirm({ ...result.details, expectedShippingCost: shippingCost });
   };
 
   if (typeof document === 'undefined') return null;
@@ -150,28 +168,36 @@ const CheckoutDeliveryModal: React.FC<CheckoutDeliveryModalProps> = ({
                   showAllErrors={submitAttempted}
                   fieldErrors={fieldErrors}
                   embedded
+                  locationIndex={locationIndex}
+                  locationsLoadFailed={locations.error}
+                  onRetryLocations={locations.retry}
+                  priceForLocation={priceForLocation}
                 />
               </div>
 
               <div className="shrink-0 border-t border-gray-100 bg-white px-4 py-2.5 sm:px-5">
                 <div className="mb-2 rounded-lg border border-gray-100 bg-gray-50/60 px-2.5 py-2">
-                  <OrderTotalsBreakdown
-                    subtotal={totals.subtotal}
-                    shippingCost={totals.shippingCost}
-                    total={totals.total}
-                    compact
-                  />
+                  <OrderTotalsBreakdown subtotal={subtotal} shippingCost={shippingCost} total={total} compact />
                 </div>
+
+                {waitingForPrice && prices.error ? (
+                  <p className={cn('mb-2 text-[10px] text-red-600', isRTL && 'font-arabic')} data-testid="checkout-prices-unavailable">
+                    {t('cart.deliveryPricesUnavailable')}
+                  </p>
+                ) : null}
 
                 <div className="flex flex-row-reverse gap-2">
                   <button
                     type="button"
                     onClick={handleSubmit}
+                    disabled={waitingForPrice}
                     className={cn(
-                      'flex flex-1 items-center justify-center gap-2 rounded-xl bg-catchy py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-white shadow-md shadow-catchy/20 transition hover:bg-catchy-dark active:scale-[0.98]',
+                      'flex flex-1 items-center justify-center gap-2 rounded-xl bg-catchy py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-white shadow-md shadow-catchy/20 transition hover:bg-catchy-dark active:scale-[0.98] disabled:cursor-wait disabled:opacity-60',
                       isRTL && 'font-arabic'
                     )}
+                    data-testid="checkout-delivery-continue"
                   >
+                    {waitingForPrice && !prices.error ? <Loader2 size={12} className="animate-spin" aria-hidden /> : null}
                     {t('cart.deliveryModalContinue')}
                   </button>
                   <button

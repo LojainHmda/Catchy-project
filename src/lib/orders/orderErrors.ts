@@ -6,6 +6,8 @@ export type OrderErrorCode =
   | 'OUT_OF_STOCK'
   | 'PRODUCT_MISSING'
   | 'DELIVERY_INVALID'
+  /** The delivery price of the chosen place changed after the customer saw it — nothing was written. */
+  | 'DELIVERY_PRICE_CHANGED'
   /** The order changed since this screen loaded it (e.g. cancelled elsewhere) — the write was refused. */
   | 'ORDER_CHANGED'
   /** The order is no longer in an editable state (cancelled, completed, delivered…). */
@@ -64,5 +66,6 @@ const ORDER_ERROR_CODES = new Set<OrderErrorCode>([
   'OUT_OF_STOCK',
   'PRODUCT_MISSING',
   'DELIVERY_INVALID',
+  'DELIVERY_PRICE_CHANGED',
   'UNKNOWN',
 ]);

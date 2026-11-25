@@ -320,6 +320,23 @@ app.post('/api/admin/orders/cancel', async (req, res) => {
   res.status(result.ok ? 200 : 400).json(result);
 });
 
+// Owner-only: apply, change or remove an admin discount on a web order (never POS),
+// recomputing the total in one transaction (see server/lib/webOrderDiscount.js).
+// Same owner check as order cancel.
+app.post('/api/admin/orders/discount', async (req, res) => {
+  const { verifyAdminRequest } = await import('./lib/cloudinaryAdmin.js');
+  const auth = await verifyAdminRequest(req);
+  const { handleWebOrderDiscountRequest } = await import('./lib/webOrderDiscount.js');
+  try {
+    const db = auth.ok ? await getFirestore() : null;
+    const result = await handleWebOrderDiscountRequest(db, auth, req.body);
+    res.status(result.status).json(result.body);
+  } catch (err) {
+    console.error('[orders/discount] failed:', err?.message || err);
+    res.status(500).json({ ok: false, code: 'UNKNOWN', message: 'Could not save the discount.' });
+  }
+});
+
 // Owner-only returns shelf for web orders (see server/lib/webOrderReturn.js):
 // intake into quarantine, inspection, and final disposition (restock only when
 // the owner confirms the item is sellable). Same owner check as order cancel.
@@ -364,6 +381,64 @@ for (const [route, run] of Object.entries(RETURN_ROUTES)) {
     const lib = await import('./lib/webOrderReturn.js');
     const result = await run(lib, db, auth, req.body);
     res.status(result.ok ? 200 : 400).json(result);
+  });
+}
+
+// ── Visitor analytics (see server/lib/analytics.js) ──
+// Public collect endpoint: anonymous page views / heartbeats, written only by this server
+// (no Firestore rule allows browsers to touch the analytics collections). The live count
+// and the summary are owner-only, with the same check as order cancel.
+let analyticsStore = null;
+async function getAnalyticsStore() {
+  if (analyticsStore) return analyticsStore;
+  const db = await getFirestore();
+  if (!db) return null;
+  const { createFirestoreAnalyticsStore } = await import('./lib/analytics.js');
+  analyticsStore = await createFirestoreAnalyticsStore(db);
+  return analyticsStore;
+}
+const clientIp = (req) => String(req.get('x-forwarded-for') || '').split(',')[0].trim() || req.socket?.remoteAddress || '';
+
+app.post('/api/analytics/collect', async (req, res) => {
+  const { handleCollect } = await import('./lib/analytics.js');
+  const result = await handleCollect(getAnalyticsStore, { body: req.body, headers: req.headers, ip: clientIp(req) });
+  if (result.body) res.status(result.status).json(result.body);
+  else res.status(result.status).end();
+});
+
+const ANALYTICS_ADMIN_ROUTES = {
+  '/api/admin/analytics/live': (lib, auth) => lib.handleLive(getAnalyticsStore, auth),
+  '/api/admin/analytics/summary': (lib, auth, body) => lib.handleSummary(getAnalyticsStore, auth, body),
+};
+for (const [route, run] of Object.entries(ANALYTICS_ADMIN_ROUTES)) {
+  app.post(route, async (req, res) => {
+    const { verifyAdminRequest } = await import('./lib/cloudinaryAdmin.js');
+    const lib = await import('./lib/analytics.js');
+    try {
+      const auth = await verifyAdminRequest(req);
+      const result = await run(lib, auth, req.body);
+      res.status(result.status).json(result.body);
+    } catch (err) {
+      console.error('[analytics] admin request failed:', err?.message || err);
+      res.status(500).json({ ok: false, code: 'UNKNOWN', message: 'Analytics request failed.' });
+    }
+  });
+}
+
+// ── Read-only MCP server for claude.ai / ChatGPT connectors (server/lib/mcp/) ──
+// Store owners sign in through OAuth (Catchy consent page); every request re-checks the
+// owner. Off (503) until CATCHY_MCP_SECRET is configured.
+{
+  const { mountCatchyMcp } = await import('./lib/mcp/routes.js');
+  const { verifyAdminRequest, isStoreAdminEmail } = await import('./lib/cloudinaryAdmin.js');
+  const analyticsLib = await import('./lib/analytics.js');
+  mountCatchyMcp(app, {
+    getSecret: () => process.env.CATCHY_MCP_SECRET,
+    baseUrl: process.env.CATCHY_MCP_BASE_URL || undefined,
+    getDb: getFirestore,
+    verifyOwner: verifyAdminRequest,
+    isAdminEmail: isStoreAdminEmail,
+    analytics: { getStore: getAnalyticsStore, handleSummary: analyticsLib.handleSummary, handleLive: analyticsLib.handleLive },
   });
 }
 

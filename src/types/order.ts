@@ -59,9 +59,26 @@ export type OrderLineItem = {
 export type DeliveryDetails = {
   customerName: string;
   customerPhone: string;
+  /** Catchy delivery place id (server/lib/delivery/deliveryLocations.js) — required. */
+  deliveryLocationId: string;
+  /** Optional street, building, house number and directions ('' when left empty). */
   deliveryAddress: string;
-  deliveryZone: string;
   email?: string | null;
+  /** The delivery price the customer was shown; the order is refused if the current price differs. */
+  expectedShippingCost?: number | null;
+};
+
+/**
+ * What an order stores about its delivery place (written at checkout, never re-read from
+ * the place list): its name and region as they were, and the delivery price charged.
+ */
+export type DeliveryLocationSnapshot = {
+  id: string;
+  name: string;
+  regionId: string;
+  regionName: string;
+  regionNameEn: string | null;
+  price: number | null;
 };
 
 export type OrderCustomer = {
@@ -87,6 +104,21 @@ export type PosDiscount = {
   value: number;
   amount: number;
   reason?: string | null;
+};
+
+/**
+ * Admin whole-order discount on a WEB order (never POS — POS uses `discount`): a fixed
+ * ILS amount with a reason. Written by the owner-only server endpoint
+ * (server/lib/webOrderDiscount.js). Totals: `total = subtotal − amount + shippingCost`;
+ * item prices are never changed.
+ */
+export type WebOrderDiscount = {
+  /** The ILS taken off the items subtotal (never above the subtotal; shipping is never discounted). */
+  amount: number;
+  reason: string | null;
+  appliedAt: Date | null;
+  appliedByUid: string | null;
+  appliedByName: string | null;
 };
 
 /** One entry in a POS sale's correction audit trail — see PosSaleCorrectionModal. */
@@ -140,8 +172,12 @@ export type OrderRecord = {
   customerEmail: string | null;
   customerName: string | null;
   customerPhone: string | null;
+  /** Optional street / building / directions (newer orders); the full free-text address on older ones. */
   deliveryAddress: string | null;
+  /** Orders from the old checkout only: one of the four former zones (see src/lib/shippingZones.ts). */
   deliveryZone: string | null;
+  /** Newer web orders: the chosen delivery place, as it was at checkout. Absent on older orders and POS sales. */
+  deliveryLocation?: DeliveryLocationSnapshot | null;
   status: OrderStatus;
   /** The stored status was not a known value even after trim + lower-case; such orders are never cancelled/restocked. */
   statusUnrecognized?: boolean;
@@ -162,6 +198,8 @@ export type OrderRecord = {
   cashierName?: string | null;
   payment?: PosPayment | null;
   discount?: PosDiscount | null;
+  /** Web orders only: admin whole-order discount (absent/null = none). See WebOrderDiscount. */
+  webDiscount?: WebOrderDiscount | null;
   /**
    * Set only after a POS sale correction: `total - originalPaymentCollected`.
    * Positive = customer now owes more than they paid; negative = a refund is

@@ -89,6 +89,9 @@ export function useCheckout(options: CheckoutOptions = {}) {
           toast.error(t('cart.productUnavailable'));
         } else if (code === 'DELIVERY_INVALID') {
           toast.error(t('cart.deliveryInvalid'));
+        } else if (code === 'DELIVERY_PRICE_CHANGED') {
+          // Nothing was placed: going back shows the new price before confirming again.
+          toast.error(t('cart.deliveryPriceChanged'));
         } else if (code === 'NOT_SIGNED_IN') {
           toast.error(t('cart.signInToCheckout'));
         } else if (code === 'EMPTY_CART') {

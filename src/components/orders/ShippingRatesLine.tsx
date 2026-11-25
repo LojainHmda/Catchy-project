@@ -1,27 +1,30 @@
 import React from 'react';
 import { useLanguage } from '../../context/LanguageContext';
+import { useDeliveryPrices } from '../../hooks/useDeliveryData';
+import { deliveryPriceRange } from '../../lib/delivery/deliveryAreas';
 import { formatOrderMoney } from '../../lib/orders';
-import { SHIPPING_ZONES } from '../../lib/shippingZones';
 import { cn } from '../../lib/utils';
 
+/**
+ * One line above checkout in the cart drawer: the current delivery price range (prices
+ * are set per area in Admin -> Delivery prices; the exact one appears once the customer
+ * picks their area at checkout).
+ */
 const ShippingRatesLine: React.FC = () => {
   const { t, isRTL } = useLanguage();
+  const { settings } = useDeliveryPrices();
+  const range = settings ? deliveryPriceRange(settings) : null;
 
   return (
     <p
-      className={cn(
-        'flex flex-nowrap items-center justify-center gap-x-1.5 overflow-x-auto text-[9px] leading-none text-gray-600 no-scrollbar',
-        isRTL && 'font-arabic'
-      )}
+      className={cn('min-h-[9px] text-center text-[9px] leading-none text-gray-600', isRTL && 'font-arabic')}
+      data-testid="shipping-rates-line"
     >
-      {SHIPPING_ZONES.map((zone, index) => (
-        <React.Fragment key={zone.id}>
-          {index > 0 ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-catchy" aria-hidden /> : null}
-          <span className="shrink-0 whitespace-nowrap">
-            {t(zone.labelKey)} {formatOrderMoney(zone.cost)}
-          </span>
-        </React.Fragment>
-      ))}
+      {range
+        ? range.min === range.max
+          ? t('cart.shippingFlat').replace('{price}', formatOrderMoney(range.min))
+          : t('cart.shippingRange').replace('{min}', formatOrderMoney(range.min)).replace('{max}', formatOrderMoney(range.max))
+        : null}
     </p>
   );
 };

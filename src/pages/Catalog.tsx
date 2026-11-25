@@ -42,6 +42,7 @@ const Catalog = () => {
     selectedCats,
     saleOnly,
     toggleCat,
+    selectCat,
     toggleSaleFilter,
     clearAllFilters,
     retryLoad,
@@ -55,7 +56,6 @@ const Catalog = () => {
     productsGridLoading,
     coordinatesSectionLoading,
     fetchError,
-    indexComplete,
     debouncedSearch,
   } = useCatalog();
 
@@ -142,12 +142,10 @@ const Catalog = () => {
       const tag = ` · ${t('catalog.saleOnly')}`;
       forPart = forPart ? forPart + tag : tag;
     }
-    const truncated = !indexComplete ? t('catalog.partialIndex') : '';
     return t('catalog.showingPaged')
       .replace('{start}', String(start))
       .replace('{end}', String(end))
       .replace('{total}', String(totalGridCount))
-      .replace('{more}', truncated)
       .replace('{for}', forPart);
   }, [
     totalGridCount,
@@ -156,7 +154,6 @@ const Catalog = () => {
     saleOnly,
     productsGridLoading,
     coordinatesSectionLoading,
-    indexComplete,
     t,
   ]);
 
@@ -257,7 +254,7 @@ const Catalog = () => {
                       <button
                         key={opt.id}
                         type="button"
-                        onClick={() => toggleCat(opt.id)}
+                        onClick={() => selectCat(opt.id)}
                         aria-pressed={checked}
                         className={cn(
                           chipClass(checked),

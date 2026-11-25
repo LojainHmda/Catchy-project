@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { useLanguage } from '../../context/LanguageContext';
 import { cn } from '../../lib/utils';
 import { downloadInvoiceImage, type InvoiceLabels } from '../../lib/orders/invoiceImage';
-import { SHIPPING_ZONES } from '../../lib/shippingZones';
+import { orderAddressLine, orderDeliveryPlaceLabel } from '../../lib/orders/orderDelivery';
 import { orderItemImageSrc, resolveOrderItemImages } from '../../hooks/useOrderItemImages';
 import type { OrderRecord } from '../../types/order';
 import AdminStrokeIcon from '../admin/AdminStrokeIcon';
@@ -45,17 +45,19 @@ const InvoiceDownloadButton: React.FC<InvoiceDownloadButtonProps> = ({
         priceCol: t('invoice.price'),
         totalCol: t('invoice.total'),
         subtotal: t('cart.subtotal'),
+        discount: t('orders.discount'),
         shipping: t('cart.shipping'),
         total: t('cart.total'),
         thanks: t('invoice.thanks'),
       };
-      const zone = SHIPPING_ZONES.find((z) => z.id === order.deliveryZone);
       const resolvedImages = await resolveOrderItemImages(order.items);
       const itemImageSrcs = order.items.map((item) => orderItemImageSrc(item, resolvedImages));
       await downloadInvoiceImage(order, labels, {
         isRTL,
         locale,
-        shippingZoneLabel: zone ? t(zone.labelKey) : null,
+        // Shipping row: the chosen place (newer orders) or the former zone (older ones).
+        shippingZoneLabel: orderDeliveryPlaceLabel(order, t, language),
+        addressLine: orderAddressLine(order, t, language),
         itemImageSrcs,
       });
       toast.success(t('invoice.downloaded'));

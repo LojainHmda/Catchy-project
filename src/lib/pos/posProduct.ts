@@ -2,7 +2,8 @@ import { canonicalCategory } from '../category';
 import { isProductDiscounted } from '../catalogSale';
 import { productCollectionKeys } from '../catalogProductList';
 import { coerceProductImages, sanitizeImageSrc } from '../productImages';
-import { hasSizedInventory, totalFromSizeStock, type SizeStock } from '../productInventory';
+import { totalFromSizeStock, type SizeStock } from '../productInventory';
+import { createdAtMillis, hasStock, isSellableInPos } from '../productAvailability';
 import { hasNewArrivalTag } from '../productTags';
 import { parseColorVariants, resolveListingInventory } from '../productVariants';
 import type { ProductColorVariant } from '../../types/product';
@@ -31,13 +32,6 @@ export type PosProduct = {
   colorVariants: ProductColorVariant[];
 };
 
-function toMillis(value: unknown): number | undefined {
-  if (value == null) return undefined;
-  const date = (value as { toDate?: () => Date })?.toDate?.() ?? value;
-  const ms = new Date(date as string | number | Date).getTime();
-  return Number.isFinite(ms) ? ms : undefined;
-}
-
 export function toPosProduct(id: string, data: Record<string, unknown>): PosProduct {
   const colorVariants = parseColorVariants(data.colorVariants);
   const { sizeStock, stock } = resolveListingInventory(data);
@@ -54,7 +48,7 @@ export function toPosProduct(id: string, data: Record<string, unknown>): PosProd
     tags: Array.isArray(data.tags) ? (data.tags as unknown[]).filter((t): t is string => typeof t === 'string') : undefined,
     visible: data.visible !== false,
     barcode: typeof data.barcode === 'string' && data.barcode.trim() ? data.barcode.trim() : undefined,
-    createdAt: toMillis(data.createdAt),
+    createdAt: createdAtMillis(data.createdAt),
     images: coerceProductImages(data),
     stock,
     sizeStock,
@@ -63,8 +57,15 @@ export function toPosProduct(id: string, data: Record<string, unknown>): PosProd
 }
 
 export function posProductInStock(product: Pick<PosProduct, 'sizeStock' | 'stock'>): boolean {
-  if (hasSizedInventory(product.sizeStock)) return totalFromSizeStock(product.sizeStock) > 0;
-  return product.stock > 0;
+  return hasStock(product);
+}
+
+/**
+ * What the register offers: every product with stock — including products hidden from the
+ * online store (they stay sellable in the shop) — and no sold-out ones (productAvailability.ts).
+ */
+export function filterPosSellable(products: PosProduct[]): PosProduct[] {
+  return products.filter(isSellableInPos);
 }
 
 /** Size/stock + display image scoped to a color, when the product has variants. */
@@ -104,8 +105,28 @@ export function filterPosProductsByCategory(products: PosProduct[], selection: P
   return products.filter((p) => productCollectionKeys(p).some((k) => k.toLowerCase() === key));
 }
 
+export type PosBarcodeScanResult =
+  | { kind: 'open'; productId: string }
+  | { kind: 'outOfStock'; name: string }
+  | { kind: 'search' };
+
+/**
+ * A scanned barcode (the admin-entered value, or the product id when none was set — see
+ * productBarcodeValue): open the first match that has stock. If every match is sold out, say
+ * so — sold-out products are not listed in the register, so searching would only show "no
+ * match". Unknown codes fall back to the search box.
+ */
+export function resolvePosBarcodeScan(products: PosProduct[], code: string): PosBarcodeScanResult {
+  const matches = products.filter((p) => (p.barcode && p.barcode === code) || p.id === code);
+  const sellable = matches.find(isSellableInPos);
+  if (sellable) return { kind: 'open', productId: sellable.id };
+  if (matches.length > 0) return { kind: 'outOfStock', name: matches[0]!.name };
+  return { kind: 'search' };
+}
+
+/** How many products the register offers in a category — same rule as the grid (filterPosSellable). */
 export function posCategoryCount(products: PosProduct[], selection: PosCategorySelection): number {
-  return filterPosProductsByCategory(products, selection).filter((p) => p.visible).length;
+  return filterPosSellable(filterPosProductsByCategory(products, selection)).length;
 }
 
 /** Newest first — same missing-timestamp-safe comparison as the customer catalog (lib/catalog/catalogSelectors.ts). */

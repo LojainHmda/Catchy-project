@@ -4,10 +4,9 @@ import type { CoordinateLook } from '../../types/coordinates';
 export type CatalogSortKey = 'newest' | 'priceAsc' | 'priceDesc';
 
 export type CatalogIndex = {
+  /** Every product in the store, newest first (hidden and sold-out ones are filtered where listed). */
   products: CatalogListProduct[];
   counts: Map<string, number>;
-  /** False when the store may have more products than we loaded. */
-  complete: boolean;
 };
 
 export type CatalogCoordinatesBundle = {

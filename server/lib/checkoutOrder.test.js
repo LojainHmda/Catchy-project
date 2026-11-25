@@ -3,11 +3,12 @@ import { describe, it, expect } from 'vitest';
 import { processGuestCheckout } from './checkoutOrder.js';
 import { createFakeAdminFirestore, containsUndefined } from './testing/fakeAdminFirestore.js';
 
+// Burqin (Jenin region, starting price 20).
 const delivery = {
   customerName: 'Test Guest',
   customerPhone: '0590000999',
-  deliveryAddress: 'Test Street 1, Test City',
-  deliveryZone: 'west_bank',
+  deliveryLocationId: 'jenin-025',
+  deliveryAddress: 'Test Street 1',
   email: 'guest@example.test',
 };
 
@@ -85,6 +86,94 @@ describe('processGuestCheckout — refusals write nothing', () => {
     const result = await processGuestCheckout(db, { items: [item('plain', 1)], delivery: { ...delivery, customerPhone: '12345' } });
     expect(result).toMatchObject({ ok: false, code: 'DELIVERY_INVALID' });
     expect(db._get('products', 'plain').stock).toBe(10);
+  });
+
+  it.each([
+    ['other first two digits', '0791234567', 'The first two digits of the mobile number must be 05.'],
+    ['no leading 0', '5912345678', 'The first two digits of the mobile number must be 05.'],
+    ['+970 country code (never rewritten to 05…)', '+970591234567', 'The first two digits of the mobile number must be 05.'],
+    ['00970 country code', '00970591234567', 'The first two digits of the mobile number must be 05.'],
+    ['05 but too short', '059123456', 'Please enter a 10-digit mobile number starting with 05.'],
+  ])('a mobile number that is not 05 + 8 digits is refused: %s', async (_label, customerPhone, message) => {
+    const db = seed();
+    const before = productsOf(db);
+    const result = await processGuestCheckout(db, { items: [item('plain', 1)], delivery: { ...delivery, customerPhone } });
+    expect(result).toMatchObject({ ok: false, code: 'DELIVERY_INVALID', field: 'customerPhone', message });
+    expect(productsOf(db)).toEqual(before);
+    expect(db._list('orders')).toHaveLength(0);
+    expect(db._attempts()).toBe(0);
+  });
+
+  it('a 05 number is stored exactly as entered (separators removed only)', async () => {
+    const db = seed();
+    const result = await processGuestCheckout(db, { items: [item('plain', 1)], delivery: { ...delivery, customerPhone: '059-123-4567' } });
+    expect(result.ok).toBe(true);
+    expect(db._list('orders')[0].customerPhone).toBe('0591234567');
+  });
+});
+
+describe('processGuestCheckout — delivery place and price', () => {
+  it('stores the chosen place as a snapshot with its starting price; no old zone field', async () => {
+    const db = seed();
+    const result = await processGuestCheckout(db, { items: [item('plain', 1)], delivery });
+    expect(result).toMatchObject({ ok: true, total: 70 });
+    const [order] = db._list('orders');
+    expect(order).toMatchObject({
+      deliveryAddress: 'Test Street 1',
+      deliveryLocation: { id: 'jenin-025', name: 'برقين', regionId: 'jenin', regionName: 'جنين', regionNameEn: 'Jenin', price: 20 },
+      shippingCost: 20,
+      total: 70,
+    });
+    expect(order).not.toHaveProperty('deliveryZone');
+    expect(containsUndefined(order)).toBe(false);
+  });
+
+  it('charges the admin price: the region price, or the place\'s own price', async () => {
+    const db = seed();
+    db._set('site_settings', 'delivery_prices', { regionPrices: { jenin: 25 } });
+    await processGuestCheckout(db, { items: [item('plain', 1)], delivery });
+    db._set('site_settings', 'delivery_prices', { regionPrices: { jenin: 25 }, locationPrices: { 'jenin-025': 12 } });
+    await processGuestCheckout(db, { items: [item('plain', 1)], delivery });
+    const [first, second] = db._list('orders');
+    expect(first).toMatchObject({ shippingCost: 25, total: 75, deliveryLocation: { price: 25 } });
+    expect(second).toMatchObject({ shippingCost: 12, total: 62, deliveryLocation: { price: 12 } });
+  });
+
+  it.each([
+    ['empty', ''],
+    ['spaces only', '   '],
+    ['missing', undefined],
+  ])('accepts the order with NO street / house details (%s) and stores null', async (_label, deliveryAddress) => {
+    const db = seed();
+    const result = await processGuestCheckout(db, { items: [item('plain', 1)], delivery: { ...delivery, deliveryAddress } });
+    expect(result.ok).toBe(true);
+    expect(db._list('orders')[0].deliveryAddress).toBeNull();
+  });
+
+  it('refuses, writing nothing, when the price changed after the customer saw it', async () => {
+    const db = seed();
+    db._set('site_settings', 'delivery_prices', { regionPrices: { jenin: 30 } });
+    const before = productsOf(db);
+    const refused = await processGuestCheckout(db, { items: [item('plain', 1)], delivery: { ...delivery, expectedShippingCost: 20 } });
+    expect(refused).toMatchObject({ ok: false, code: 'DELIVERY_PRICE_CHANGED', shippingCost: 30 });
+    expect(productsOf(db)).toEqual(before);
+    expect(db._list('orders')).toHaveLength(0);
+    const accepted = await processGuestCheckout(db, { items: [item('plain', 1)], delivery: { ...delivery, expectedShippingCost: 30 } });
+    expect(accepted).toMatchObject({ ok: true, total: 80 });
+  });
+
+  it.each([
+    ['no place', { deliveryLocationId: '' }],
+    ['an unknown place id', { deliveryLocationId: 'nowhere-001' }],
+    ['an old-checkout zone instead of a place', { deliveryLocationId: undefined, deliveryZone: 'west_bank' }],
+  ])('refuses %s before anything is read or written', async (_label, overrides) => {
+    const db = seed();
+    const before = productsOf(db);
+    const result = await processGuestCheckout(db, { items: [item('plain', 1)], delivery: { ...delivery, ...overrides } });
+    expect(result).toMatchObject({ ok: false, code: 'DELIVERY_INVALID' });
+    expect(productsOf(db)).toEqual(before);
+    expect(db._list('orders')).toHaveLength(0);
+    expect(db._attempts()).toBe(0);
   });
 });
 

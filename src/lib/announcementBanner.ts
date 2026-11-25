@@ -30,15 +30,35 @@ function fromDoc(data: Record<string, unknown> | undefined): AnnouncementSetting
   };
 }
 
+export type SubscribeAnnouncementOptions = {
+  /**
+   * Called instead of delivering the defaults when the settings cannot be read. The
+   * storefront uses it to keep the bar hidden: a bar the owner switched off must never
+   * appear just because its setting failed to load.
+   */
+  onError?: (error: unknown) => void;
+  /**
+   * Deliver only a real answer: skip an "empty" snapshot that comes from the local cache
+   * (offline / server not reached yet), which would otherwise look like "never configured
+   * → default on".
+   */
+  serverConfirmed?: boolean;
+};
+
 /** Subscribe to live announcement-bar settings. Returns an unsubscribe function. */
 export function subscribeAnnouncement(
-  cb: (settings: AnnouncementSettings) => void
+  cb: (settings: AnnouncementSettings) => void,
+  options: SubscribeAnnouncementOptions = {}
 ): () => void {
   const ref = doc(db, DOC.collection, DOC.id);
   return onSnapshot(
     ref,
-    (snap) => cb(fromDoc(snap.exists() ? (snap.data() as Record<string, unknown>) : undefined)),
-    () => cb(ANNOUNCEMENT_DEFAULTS)
+    (snap) => {
+      const fromCache = snap.metadata.fromCache; // read first: exists() narrows the type below
+      if (options.serverConfirmed && !snap.exists() && fromCache) return;
+      cb(fromDoc(snap.exists() ? (snap.data() as Record<string, unknown>) : undefined));
+    },
+    (error) => (options.onError ? options.onError(error) : cb(ANNOUNCEMENT_DEFAULTS))
   );
 }
 

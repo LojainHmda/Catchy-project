@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { db, collection, query, orderBy, addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp, onSnapshot, getDocs, limit } from '../firebase';
+import { db, collection, query, orderBy, addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp, onSnapshot } from '../firebase';
+import { fetchAllProducts } from '../lib/admin/fetchAllProducts';
 import { Plus, Trash2, Image as ImageIcon, MoveUp, MoveDown, Loader2, Upload, ExternalLink, Eye, EyeOff, Search, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
@@ -86,14 +87,15 @@ const AdminHero = () => {
     return () => unsubscribe();
   }, []);
 
+  // Every product, newest first: the picker's search must find older products too (it used to
+  // stop at the newest 100), and chips for already-selected older products need their names.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const pq = query(collection(db, 'products'), orderBy('createdAt', 'desc'), limit(100));
-        const snap = await getDocs(pq);
+        const products = await fetchAllProducts();
         if (cancelled) return;
-        setAllProducts(snap.docs.map((d: any) => ({ id: d.id, ...d.data() })));
+        setAllProducts(products);
       } catch {
         if (!cancelled) setAllProducts([]);
       }

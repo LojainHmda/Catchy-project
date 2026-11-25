@@ -1,5 +1,7 @@
 import type { OrderRecord } from '../../types/order';
 import { formatOrderDateTime, formatOrderMoney, parseLineItemDisplay, shortOrderId } from './orderUtils';
+import { orderWebDiscountAmount } from './webOrderDiscount';
+import { cloudinaryTransform } from '../cloudinaryTransform';
 
 /** Localized text the generated invoice image needs (built from the i18n `t()` by the caller). */
 export type InvoiceLabels = {
@@ -18,16 +20,43 @@ export type InvoiceLabels = {
   priceCol: string;
   totalCol: string;
   subtotal: string;
+  /** Row label for an admin discount on a web order (only drawn when there is one). */
+  discount?: string;
   shipping: string;
   total: string;
   thanks: string;
 };
+
+/**
+ * The rows above the highlighted grand total: subtotal, the web-order admin discount
+ * (only when there is one — POS sales are unchanged), then shipping.
+ */
+export function invoiceSubtotalRows(
+  order: OrderRecord,
+  labels: InvoiceLabels,
+  moneyLocale: string,
+  shippingZoneLabel?: string | null
+): { label: string; value: string }[] {
+  const rows = [{ label: labels.subtotal, value: formatOrderMoney(order.subtotal, moneyLocale) }];
+  const discount = orderWebDiscountAmount(order);
+  if (discount > 0) rows.push({ label: labels.discount ?? 'Discount', value: `−${formatOrderMoney(discount, moneyLocale)}` });
+  rows.push({
+    label: shippingZoneLabel ? `${labels.shipping} (${shippingZoneLabel})` : labels.shipping,
+    value: formatOrderMoney(order.shippingCost, moneyLocale),
+  });
+  return rows;
+}
 
 export type InvoiceImageOptions = {
   isRTL: boolean;
   locale: string;
   /** Localized delivery-area name (e.g. "Jerusalem" / "القدس"). */
   shippingZoneLabel?: string | null;
+  /**
+   * The address line to print (newer orders: "place · region · details"). When omitted the
+   * order's stored `deliveryAddress` is printed, as before.
+   */
+  addressLine?: string | null;
   /** Resolved product photo URL per line item, aligned to `order.items` by index. */
   itemImageSrcs?: (string | null | undefined)[];
 };
@@ -184,7 +213,8 @@ function paintInvoice(
   const customerParts: string[] = [];
   if (order.customerName) customerParts.push(order.customerName);
   if (order.customerPhone) customerParts.push(`${labels.phone}: ${order.customerPhone}`);
-  if (order.deliveryAddress) customerParts.push(`${labels.address}: ${order.deliveryAddress}`);
+  const addressLine = opts.addressLine !== undefined ? opts.addressLine : order.deliveryAddress;
+  if (addressLine) customerParts.push(`${labels.address}: ${addressLine}`);
   const hasCustomer = customerParts.length > 0;
 
   const innerPad = 18;
@@ -333,9 +363,7 @@ function paintInvoice(
     text(value, valueX, y, { size: 12.5, weight: 700, color: INK, align: endAlign });
     y += 26;
   };
-  subRow(labels.subtotal, formatOrderMoney(order.subtotal, moneyLocale));
-  const shippingLabel = opts.shippingZoneLabel ? `${labels.shipping} (${opts.shippingZoneLabel})` : labels.shipping;
-  subRow(shippingLabel, formatOrderMoney(order.shippingCost, moneyLocale));
+  for (const row of invoiceSubtotalRows(order, labels, moneyLocale, opts.shippingZoneLabel)) subRow(row.label, row.value);
 
   y += 6;
   const boxX1 = mapX(COLS.price.o);
@@ -375,26 +403,30 @@ function paintInvoice(
   return y;
 }
 
+const isRemote = (src: string) => /^https?:\/\//i.test(src.trim());
+
 /**
- * Remote photos (Firebase Storage etc.) are served through our same-origin
+ * Remote photos (Cloudinary, Firebase Storage) are served through our same-origin
  * `/api/image-proxy` so the canvas can read them: a cross-origin `<img>` without
  * CORS headers either fails to load or taints the canvas, breaking `toDataURL`.
  * Local paths and `data:` URLs are already safe and pass through unchanged.
  */
-function canvasSafeSrc(src: string): string {
-  if (/^https?:\/\//i.test(src.trim())) {
-    return `/api/image-proxy?url=${encodeURIComponent(src.trim())}`;
-  }
-  return src;
+export function canvasSafeSrc(src: string): string {
+  return isRemote(src) ? `/api/image-proxy?url=${encodeURIComponent(src.trim())}` : src;
 }
 
-/** Load one image; resolves to null on error/timeout so a missing photo never blocks the invoice. */
-function loadImage(src: string): Promise<HTMLImageElement | null> {
+/**
+ * The URL to fetch for one invoice thumbnail. Cloudinary uploads (up to 1600px) are
+ * asked for a small resize sized for the thumbnail, so they load well within the
+ * timeout; any other URL is returned unchanged.
+ */
+export function invoiceThumbSrc(src: string): string {
+  return cloudinaryTransform(src.trim(), { width: THUMB * SCALE, crop: 'limit' });
+}
+
+/** Load one image (null on error/timeout). `crossOrigin` keeps a CORS-served image drawable without tainting the canvas. */
+function loadImageFrom(src: string, crossOrigin: boolean): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
-    if (!src) {
-      resolve(null);
-      return;
-    }
     const img = new Image();
     let settled = false;
     const done = (val: HTMLImageElement | null) => {
@@ -402,12 +434,30 @@ function loadImage(src: string): Promise<HTMLImageElement | null> {
       settled = true;
       resolve(val);
     };
-    img.onload = () => done(img);
+    img.onload = () => {
+      // Make sure the pixels are decoded before the canvas is painted.
+      if (typeof img.decode === 'function') img.decode().then(() => done(img), () => done(img));
+      else done(img);
+    };
     img.onerror = () => done(null);
     // Don't let a slow/blocked CDN hang the download.
-    setTimeout(() => done(null), 6000);
-    img.src = canvasSafeSrc(src);
+    setTimeout(() => done(null), 10000);
+    if (crossOrigin) img.crossOrigin = 'anonymous';
+    img.src = src;
   });
+}
+
+/**
+ * Load one product photo; resolves to null when it cannot be loaded so a missing photo
+ * never blocks the invoice. Remote photos go through the same-origin proxy first; if
+ * the proxy refuses or fails, a direct CORS request is tried (Cloudinary allows it).
+ */
+async function loadImage(src: string): Promise<HTMLImageElement | null> {
+  if (!src) return null;
+  const url = invoiceThumbSrc(src);
+  const viaProxy = await loadImageFrom(canvasSafeSrc(url), false);
+  if (viaProxy || !isRemote(url)) return viaProxy;
+  return loadImageFrom(url.trim(), true);
 }
 
 /** Build a PNG data URL of the order invoice (includes the generation date/time). */

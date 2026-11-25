@@ -40,7 +40,9 @@ import {
 } from '../productVariants';
 import { isCoordinateCartId, coordinateLookIdFromCart, validateCoordinateItemSizes, coordinateAvailableSets, formatCoordinateItemSizes } from '../coordinateCart';
 import { resolveCoordinate } from '../coordinateResolve';
-import { getShippingCost } from '../shippingZones';
+import { deliveryLocationSnapshot, findDeliveryLocationById } from '../delivery/deliveryAreas';
+import { fetchDeliveryPriceSettings } from '../delivery/deliveryPriceService';
+import { isCheckoutMobile } from '../../../server/lib/checkoutPhone.js';
 import { OrderError } from './orderErrors';
 import {
   firstProductImageUrl,
@@ -50,9 +52,11 @@ import {
   orderHasReturns,
   parseOrderLineItems,
   parseReturnSummary,
+  parseWebDiscount,
   sanitizeStoredImageUrl,
 } from './orderUtils';
 import { canChangeOrderStatus } from './orderListFilters';
+import { webDiscountAmount, webOrderTotal } from './webOrderDiscount';
 import { primaryCoordinateImage } from '../coordinateImages';
 
 const PRODUCTS_COLLECTION = 'products';
@@ -394,6 +398,26 @@ export async function placeOrderFromCart(
     throw new OrderError('EMPTY_CART', 'Your bag is empty.');
   }
 
+  // Delivery place + its CURRENT price, read from the server now (an admin may have just
+  // changed it). Refused before anything is read or written if the place is unknown or the
+  // price is no longer the one the customer was shown.
+  const delivery = customer.delivery;
+  // Palestinian mobile numbers only (10 digits, 05…); the Firestore rules refuse any other.
+  if (!isCheckoutMobile(delivery?.customerPhone)) {
+    throw new OrderError('DELIVERY_INVALID', 'The mobile number must be 10 digits and start with 05.');
+  }
+  const location = await findDeliveryLocationById(delivery?.deliveryLocationId);
+  if (!delivery || !location) {
+    throw new OrderError('DELIVERY_INVALID', 'Please choose your delivery area from the list.');
+  }
+  const deliveryLocation = deliveryLocationSnapshot(location, await fetchDeliveryPriceSettings());
+  if (!deliveryLocation) {
+    throw new OrderError('DELIVERY_INVALID', 'Please choose your delivery area from the list.');
+  }
+  if (typeof delivery.expectedShippingCost === 'number' && delivery.expectedShippingCost !== deliveryLocation.price) {
+    throw new OrderError('DELIVERY_PRICE_CHANGED', 'The delivery price for your area has changed.');
+  }
+
   const { productSnaps, coordinateBundles } = await prepareCheckoutContext(cartItems);
   const { lineItems, inventoryUpdates, total: subtotal, itemCount } = buildCheckoutPayload(
     cartItems,
@@ -401,18 +425,18 @@ export async function placeOrderFromCart(
     coordinateBundles
   );
 
-  const delivery = customer.delivery;
-  const shippingCost = delivery?.deliveryZone ? getShippingCost(delivery.deliveryZone) : 0;
+  const shippingCost = deliveryLocation.price;
   const total = subtotal + shippingCost;
 
   const orderDoc = await addDoc(collection(db, 'orders'), {
     userId: customer.uid,
     isGuest: false,
-    email: delivery?.email ?? customer.email,
-    customerName: delivery?.customerName ?? customer.displayName,
-    customerPhone: delivery?.customerPhone ?? null,
-    deliveryAddress: delivery?.deliveryAddress ?? null,
-    deliveryZone: delivery?.deliveryZone ?? null,
+    email: delivery.email ?? customer.email,
+    customerName: delivery.customerName ?? customer.displayName,
+    customerPhone: delivery.customerPhone ?? null,
+    // Optional street / building / directions (null when left empty).
+    deliveryAddress: delivery.deliveryAddress?.trim() || null,
+    deliveryLocation,
     status: 'pending',
     subtotal,
     shippingCost,
@@ -554,6 +578,8 @@ export type OrderItemsMutationResult = {
   shippingCost: number;
   total: number;
   itemCount: number;
+  /** The order's admin web discount re-derived for the new subtotal (null = none). */
+  webDiscount?: OrderRecord['webDiscount'];
   /**
    * Units that were removed from the order but could NOT be put back into stock
    * because their product was deleted or their colour/size no longer exists.
@@ -593,25 +619,35 @@ async function persistOrderItems(
   const normalized = items.map((item) => ({ ...item, lineTotal: item.price * item.quantity }));
   const subtotal = normalized.reduce((sum, item) => sum + item.lineTotal, 0);
   const itemCount = normalized.reduce((sum, item) => sum + item.quantity, 0);
-  const total = subtotal + order.shippingCost;
 
   // Write the items only if the stored order is still editable AND still has the
   // items this screen loaded (the stock deltas were computed from those). If it
   // was cancelled or edited elsewhere, this throws before any stock is touched.
+  // An admin web discount (fixed ILS) is taken from the STORED order and capped at
+  // the new subtotal — never re-applied on top of the previous total. (The edit
+  // dialog refuses a discount above the subtotal; the cap is only a safety net.)
   const ref = doc(db, 'orders', order.id);
-  await runTransaction(db, async (tx) => {
+  const outcome = await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
-    assertStoredOrderEditable(snap.exists() ? ((snap.data() ?? {}) as Record<string, unknown>) : undefined, order.items);
-    tx.update(ref, {
+    const data = snap.exists() ? ((snap.data() ?? {}) as Record<string, unknown>) : undefined;
+    assertStoredOrderEditable(data, order.items);
+    const webDiscount = parseWebDiscount(data?.webDiscount);
+    const discountAmount = webDiscountAmount(webDiscount?.amount, subtotal);
+    // No discount: exactly the previous formula (unrounded), so such orders are unaffected.
+    const total = webDiscount ? webOrderTotal(subtotal, order.shippingCost, discountAmount) : subtotal + order.shippingCost;
+    const patch: Record<string, unknown> = {
       items: normalized.map(toStoredLineItem),
       subtotal,
       total,
       itemCount,
       updatedAt: serverTimestamp(),
-    });
+    };
+    if (webDiscount && discountAmount !== webDiscount.amount) patch['webDiscount.amount'] = discountAmount;
+    tx.update(ref, patch);
+    return { total, webDiscount: webDiscount ? { ...webDiscount, amount: discountAmount } : null };
   });
 
-  return { items: normalized, subtotal, shippingCost: order.shippingCost, total, itemCount };
+  return { items: normalized, subtotal, shippingCost: order.shippingCost, total: outcome.total, itemCount, webDiscount: outcome.webDiscount };
 }
 
 /**

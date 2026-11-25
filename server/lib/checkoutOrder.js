@@ -1,4 +1,13 @@
 import { colorVariantsForWrite } from './posSaleCorrection.js';
+import { hasWrongMobilePrefix, isCheckoutMobile } from './checkoutPhone.js';
+import { findDeliveryLocation } from './delivery/deliveryLocationLookup.js';
+import {
+  DELIVERY_PRICES_COLLECTION,
+  DELIVERY_PRICES_DOC_ID,
+  deliveryLocationSnapshot,
+  normalizeDeliveryPrice,
+  parseDeliveryPriceSettings,
+} from './delivery/deliveryPricing.js';
 
 const GUEST_USER_ID = 'guest';
 
@@ -164,22 +173,28 @@ function validateDelivery(delivery) {
     return { ok: false, code: 'DELIVERY_INVALID', message: 'Please enter your full name.' };
   }
 
+  // Palestinian mobile numbers only: 10 digits starting with 05 (same rule as the checkout
+  // form and the Firestore rules). Refused — never rewritten — when it does not match.
   const customerPhone = normalizePhone(delivery?.customerPhone);
-  const digits = customerPhone.replace(/\D/g, '');
-  if (digits.length !== 10) {
-    return { ok: false, code: 'DELIVERY_INVALID', message: 'Please enter a 10-digit phone number.' };
+  if (!isCheckoutMobile(customerPhone)) {
+    return {
+      ok: false,
+      code: 'DELIVERY_INVALID',
+      field: 'customerPhone',
+      message: hasWrongMobilePrefix(customerPhone)
+        ? 'The first two digits of the mobile number must be 05.'
+        : 'Please enter a 10-digit mobile number starting with 05.',
+    };
   }
 
-  const deliveryAddress = String(delivery?.deliveryAddress ?? '').trim();
-  if (deliveryAddress.length < 8) {
-    return { ok: false, code: 'DELIVERY_INVALID', message: 'Please enter your full delivery address.' };
+  // The delivery place must be one of Catchy's own places (server/lib/delivery/).
+  const location = findDeliveryLocation(delivery?.deliveryLocationId);
+  if (!location) {
+    return { ok: false, code: 'DELIVERY_INVALID', message: 'Please choose your delivery area from the list.' };
   }
 
-  const deliveryZone = String(delivery?.deliveryZone ?? '').trim();
-  const validZones = ['west_bank', 'jerusalem', 'abu_ghosh', 'inside_israel'];
-  if (!validZones.includes(deliveryZone)) {
-    return { ok: false, code: 'DELIVERY_INVALID', message: 'Please select a delivery area.' };
-  }
+  // Street, building, house number and directions are OPTIONAL — never required.
+  const deliveryAddress = typeof delivery?.deliveryAddress === 'string' ? delivery.deliveryAddress.trim() : '';
 
   const email = String(delivery?.email ?? '').trim();
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -191,9 +206,11 @@ function validateDelivery(delivery) {
     details: {
       customerName,
       customerPhone,
-      deliveryAddress,
-      deliveryZone,
+      location,
+      deliveryAddress: deliveryAddress || null,
       email: email || null,
+      // The price the customer was shown; the order is refused if the current price differs.
+      expectedShippingCost: normalizeDeliveryPrice(delivery?.expectedShippingCost),
     },
   };
 }
@@ -344,13 +361,20 @@ export async function processGuestCheckout(db, { items, delivery }) {
 
       const subtotal = lineItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
       const itemCount = lineItems.reduce((sum, item) => sum + item.quantity, 0);
-      const shippingCosts = {
-        west_bank: 20,
-        jerusalem: 30,
-        abu_ghosh: 50,
-        inside_israel: 70,
-      };
-      const shippingCost = shippingCosts[deliveryCheck.details.deliveryZone] ?? 0;
+
+      // Delivery price as set in Admin -> Delivery prices, read in this transaction (all
+      // reads come before the writes below). Stored on the order as a snapshot.
+      const priceSnap = await tx.get(db.collection(DELIVERY_PRICES_COLLECTION).doc(DELIVERY_PRICES_DOC_ID));
+      const priceSettings = parseDeliveryPriceSettings(priceSnap.exists ? priceSnap.data() : null);
+      const deliveryLocation = deliveryLocationSnapshot(deliveryCheck.details.location, priceSettings);
+      if (!deliveryLocation) throw new Error('DELIVERY_INVALID');
+      const expected = deliveryCheck.details.expectedShippingCost;
+      if (expected !== null && expected !== deliveryLocation.price) {
+        const err = new Error('DELIVERY_PRICE_CHANGED');
+        err.shippingCost = deliveryLocation.price;
+        throw err;
+      }
+      const shippingCost = deliveryLocation.price;
       const total = subtotal + shippingCost;
 
       for (const productId of uniqueProductIds) {
@@ -374,8 +398,9 @@ export async function processGuestCheckout(db, { items, delivery }) {
         email: deliveryCheck.details.email,
         customerName: deliveryCheck.details.customerName,
         customerPhone: deliveryCheck.details.customerPhone,
+        // Optional street / building / directions (null when the customer left it empty).
         deliveryAddress: deliveryCheck.details.deliveryAddress,
-        deliveryZone: deliveryCheck.details.deliveryZone,
+        deliveryLocation,
         status: 'pending',
         subtotal,
         shippingCost,
@@ -407,6 +432,17 @@ export async function processGuestCheckout(db, { items, delivery }) {
         message: 'Not enough stock for one of the items in your bag.',
         productName: error.productName,
       };
+    }
+    if (code === 'DELIVERY_PRICE_CHANGED') {
+      return {
+        ok: false,
+        code: 'DELIVERY_PRICE_CHANGED',
+        message: 'The delivery price for your area has changed. Please review your total and confirm again.',
+        shippingCost: error.shippingCost,
+      };
+    }
+    if (code === 'DELIVERY_INVALID') {
+      return { ok: false, code: 'DELIVERY_INVALID', message: 'Please choose your delivery area from the list.' };
     }
     console.error('[checkout] guest transaction failed:', error);
     return { ok: false, code: 'UNKNOWN', message: 'Could not place your order. Please try again.' };

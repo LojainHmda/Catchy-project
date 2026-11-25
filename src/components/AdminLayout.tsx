@@ -22,6 +22,8 @@ import {
   Languages,
   BarChart3,
   PackageOpen,
+  Activity,
+  Truck,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -87,7 +89,9 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       badgeLabelKey: 'admin.nav.openReturnsBadge',
     },
     { icon: BarChart3, label: t('admin.nav.reports'), path: '/admin/reports' },
+    { icon: Activity, label: t('admin.nav.analytics'), path: '/admin/analytics' },
     { icon: Users, label: t('admin.nav.customers'), path: '/admin/customers' },
+    { icon: Truck, label: t('admin.nav.deliveryPrices'), path: '/admin/delivery-prices' },
     { icon: MessageCircle, label: t('admin.nav.whatsapp'), path: '/admin/whatsapp' },
     { icon: Settings, label: t('admin.nav.settings'), path: '/admin/settings' },
   ];

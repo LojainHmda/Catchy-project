@@ -1,6 +1,6 @@
 import { auth } from '../../firebase';
-import type { CancellationLine, OrderStatus, PosSaleCancellation } from '../../types/order';
-import { normalizeOrderStatus, toDate } from './orderUtils';
+import type { CancellationLine, OrderStatus, PosSaleCancellation, WebOrderDiscount } from '../../types/order';
+import { normalizeOrderStatus, parseWebDiscount, toDate } from './orderUtils';
 
 export class AdminOrderApiError extends Error {
   readonly code: string;
@@ -82,5 +82,66 @@ export async function cancelWebOrderRequest(
     alreadyCancelled: body.alreadyCancelled === true,
     replayed: body.replayed === true,
     cancellation: parseCancellation(body.cancellation),
+  };
+}
+
+export type SetWebOrderDiscountResult = {
+  webDiscount: WebOrderDiscount | null;
+  subtotal: number;
+  shippingCost: number;
+  total: number;
+};
+
+const WEB_DISCOUNT_ERROR_KEYS: Record<string, string> = {
+  NOT_EDITABLE: 'admin.orders.edit.orderNotEditable',
+  ORDER_CHANGED: 'admin.orders.edit.orderChanged',
+  NOT_WEB_ORDER: 'admin.orders.webDiscount.error.notWebOrder',
+  EXCEEDS_SUBTOTAL: 'admin.orders.webDiscount.error.EXCEEDS_SUBTOTAL',
+  REASON_REQUIRED: 'admin.orders.webDiscount.error.REASON_REQUIRED',
+  INVALID_VALUE: 'admin.orders.webDiscount.error.INVALID_VALUE',
+  MISSING_TOTALS: 'admin.orders.webDiscount.error.missingTotals',
+  FORBIDDEN: 'admin.orders.webDiscount.error.forbidden',
+};
+
+/**
+ * Owner-only. Applies, changes (`discount` set) or removes (`discount: null`) the admin
+ * fixed-amount (ILS) discount on a web order; the server validates it and recomputes the total in one
+ * transaction (server/lib/webOrderDiscount.js). `expectedSubtotal` is the item subtotal
+ * the admin saw — the server refuses with ORDER_CHANGED if the stored one differs.
+ */
+export async function setWebOrderDiscountRequest(
+  input: {
+    orderId: string;
+    discount: { amount: number; reason: string } | null;
+    expectedSubtotal: number;
+  },
+  t: (key: string) => string
+): Promise<SetWebOrderDiscountResult> {
+  const user = auth.currentUser;
+  if (!user) throw new AdminOrderApiError('NOT_SIGNED_IN', t('admin.posApi.notSignedIn'));
+  const token = await user.getIdToken();
+
+  const response = await fetch('/api/admin/orders/discount', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+
+  let body: Record<string, unknown>;
+  try {
+    body = await response.json();
+  } catch {
+    throw new AdminOrderApiError('UNKNOWN', t('admin.posApi.unexpectedResponse'));
+  }
+  if (!response.ok || body.ok !== true) {
+    const code = String(body.code ?? 'UNKNOWN');
+    const key = WEB_DISCOUNT_ERROR_KEYS[code];
+    throw new AdminOrderApiError(code, key ? t(key) : String(body.message ?? t('admin.posApi.requestFailed')));
+  }
+  return {
+    webDiscount: parseWebDiscount(body.webDiscount),
+    subtotal: Number(body.subtotal) || 0,
+    shippingCost: Number(body.shippingCost) || 0,
+    total: Number(body.total) || 0,
   };
 }

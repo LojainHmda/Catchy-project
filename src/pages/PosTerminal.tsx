@@ -30,7 +30,7 @@ import { formatOrderMoney } from '../lib/orders';
 import { fetchOrderById } from '../lib/orders';
 import { PosApiError, submitPosSale } from '../lib/pos/posApi';
 import { emptyDiscountDraft, resolveDiscountAmount, type PosDiscountDraft } from '../lib/pos/posPricing';
-import { posProductInStock, type PosCategorySelection } from '../lib/pos/posProduct';
+import { resolvePosBarcodeScan, type PosCategorySelection } from '../lib/pos/posProduct';
 import { parseProductIdFromScan } from '../lib/qr/productQr';
 import type { OrderRecord } from '../types/order';
 import type { PosPayment } from '../types/pos';
@@ -111,12 +111,14 @@ const PosTerminal: React.FC = () => {
 
     // A printed barcode encodes either the admin-entered value or, when none was
     // set, the product's own id (see productBarcodeValue) — check both.
-    const match = products.find((p) => (p.barcode && p.barcode === code) || p.id === code);
-    if (!match || !posProductInStock(match)) {
+    const scan = resolvePosBarcodeScan(products, code);
+    if (scan.kind === 'open') {
+      setPicker({ productId: scan.productId, colorId: null });
+    } else if (scan.kind === 'outOfStock') {
+      toast.error(t('pos.scan.outOfStock').replace('{name}', scan.name));
+    } else {
       setSearch(code);
-      return;
     }
-    setPicker({ productId: match.id, colorId: null });
   };
 
   const handleQrScan = (text: string) => {

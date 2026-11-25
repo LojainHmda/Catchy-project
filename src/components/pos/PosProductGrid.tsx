@@ -4,6 +4,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import {
   filterPosProductsByCategory,
   filterPosProductsBySearch,
+  filterPosSellable,
   sortPosProductsNewestFirst,
   type PosCategorySelection,
   type PosProduct,
@@ -35,10 +36,12 @@ const PosProductGrid: React.FC<PosProductGridProps> = ({
   const { t, isRTL } = useLanguage();
   const searching = search.trim().length > 0;
 
+  // Sold-out products are not offered; products hidden from the online store still are.
   const visibleProducts = useMemo(() => {
+    const sellable = filterPosSellable(products);
     const filtered = searching
-      ? filterPosProductsBySearch(products, search)
-      : filterPosProductsByCategory(products, selection);
+      ? filterPosProductsBySearch(sellable, search)
+      : filterPosProductsByCategory(sellable, selection);
     return sortPosProductsNewestFirst(filtered);
   }, [products, search, searching, selection]);
 

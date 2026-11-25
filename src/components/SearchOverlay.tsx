@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useLanguage } from '../context/LanguageContext';
 import { cn } from '../lib/utils';
-import { loadCatalogIndex, peekCatalogIndexStale } from '../lib/catalog/catalogService';
+import { loadCatalogIndex, peekCatalogIndex, peekCatalogIndexFallback } from '../lib/catalog/catalogService';
+import { filterCatalogProducts } from '../lib/catalog/catalogSelectors';
 import type { CatalogListProduct } from '../lib/catalogProductList';
 import { PRODUCT_IMAGE_PLACEHOLDER } from '../lib/productImages';
 import { cloudinaryTransform } from '../lib/cloudinaryTransform';
@@ -21,22 +22,30 @@ const SearchOverlay: React.FC<SearchOverlayProps> = ({ variant = 'desktop', icon
   const isAr = language === 'ar';
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [products, setProducts] = useState<CatalogListProduct[]>(
-    () => peekCatalogIndexStale()?.products ?? []
-  );
+  const [products, setProducts] = useState<CatalogListProduct[]>(() => peekCatalogIndex()?.products ?? []);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Re-read the product list from the server every time search opens (the search box
+  // lives in the navbar for the whole visit, so a once-loaded list would go stale).
+  // The saved copy is used only if the server cannot be reached.
   useEffect(() => {
     if (!open) return;
-    if (products.length === 0) {
-      loadCatalogIndex()
-        .then((data) => setProducts(data.products))
-        .catch(() => {});
-    }
+    let cancelled = false;
+    loadCatalogIndex()
+      .then((data) => {
+        if (!cancelled) setProducts(data.products);
+      })
+      .catch(() => {
+        const saved = peekCatalogIndexFallback();
+        if (!cancelled && saved?.products.length) setProducts((cur) => (cur.length ? cur : saved.products));
+      });
     const id = window.setTimeout(() => inputRef.current?.focus(), 50);
-    return () => window.clearTimeout(id);
-  }, [open, products.length]);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -55,17 +64,14 @@ const SearchOverlay: React.FC<SearchOverlayProps> = ({ variant = 'desktop', icon
   }, [open]);
 
   const needle = query.trim().toLowerCase();
+  // Same rules and matching as the catalog grid's search: every product in the store
+  // (newest first), but only those shown online and in stock.
   const results = useMemo(() => {
     if (!needle) return [];
-    return products
-      .filter((p) => {
-        const haystack = [p.name, p.category, ...(p.collections ?? [])]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
-        return haystack.includes(needle);
-      })
-      .slice(0, MAX_RESULTS);
+    return filterCatalogProducts(products, { selectedCats: [], saleOnly: false, search: needle }).slice(
+      0,
+      MAX_RESULTS
+    );
   }, [products, needle]);
 
   const close = () => {

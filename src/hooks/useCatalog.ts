@@ -7,15 +7,18 @@ import {
   buildCatalogGridEntries,
   buildCategoryOptions,
   CATALOG_VIEW_PAGE_SIZE,
+  nextCategorySelection,
   productsForCoordinateLook,
 } from '../lib/catalog/catalogSelectors';
 import {
+  CATALOG_SLOW_MS,
   coordinateLooksFromBundle,
   linkedProductsFromBundle,
   loadCatalogCoordinates,
   loadCatalogIndex,
   peekCatalogCoordinates,
-  peekCatalogIndexStale,
+  peekCatalogIndex,
+  peekCatalogIndexFallback,
 } from '../lib/catalog/catalogService';
 import type { CatalogCoordinatesBundle, CatalogIndex, CatalogSortKey } from '../lib/catalog/catalogTypes';
 
@@ -34,9 +37,11 @@ export function useCatalog() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { categories: storeCategories, visibleCategories } = useStoreCategories();
 
-  const [index, setIndex] = useState<CatalogIndex | null>(() => peekCatalogIndexStale());
+  // Only a list the server returned seconds ago (the boot prefetch) is shown at once;
+  // otherwise the page waits for the server rather than showing an old saved list.
+  const [index, setIndex] = useState<CatalogIndex | null>(() => peekCatalogIndex());
   const [indexStatus, setIndexStatus] = useState<'loading' | 'ready' | 'error'>(() =>
-    (peekCatalogIndexStale()?.products.length ?? 0) > 0 ? 'ready' : 'loading'
+    (peekCatalogIndex()?.products.length ?? 0) > 0 ? 'ready' : 'loading'
   );
   const [indexError, setIndexError] = useState<string | null>(null);
 
@@ -59,27 +64,41 @@ export function useCatalog() {
 
   useEffect(() => {
     let cancelled = false;
-    const hadDisplayable = Boolean(peekCatalogIndexStale()?.products.length);
+    let shown = Boolean(peekCatalogIndex()?.products.length);
 
-    loadCatalogIndex({ revalidate: hadDisplayable })
+    // Extreme case only: the server is slow or unreachable → show the last saved list
+    // meanwhile. The request keeps going and the real list replaces it when it arrives.
+    const showFallback = (): boolean => {
+      if (cancelled || shown) return shown;
+      const saved = peekCatalogIndexFallback();
+      if (!saved?.products.length) return false;
+      shown = true;
+      setIndex(saved);
+      setIndexStatus('ready');
+      return true;
+    };
+    const slowTimer = window.setTimeout(showFallback, CATALOG_SLOW_MS);
+
+    loadCatalogIndex()
       .then((data) => {
         if (!cancelled) {
+          shown = true;
           setIndex(data);
           setIndexStatus('ready');
           setIndexError(null);
         }
       })
       .catch((err: unknown) => {
-        if (!cancelled) {
-          if (!hadDisplayable) {
-            setIndexStatus('error');
-            setIndexError(err instanceof Error ? err.message : 'Could not load catalog');
-          }
+        if (!cancelled && !showFallback()) {
+          setIndexStatus('error');
+          setIndexError(err instanceof Error ? err.message : 'Could not load catalog');
         }
-      });
+      })
+      .finally(() => window.clearTimeout(slowTimer));
 
     return () => {
       cancelled = true;
+      window.clearTimeout(slowTimer);
     };
   }, []);
 
@@ -145,6 +164,11 @@ export function useCatalog() {
         : [...selectedCats, cat];
       setSelectedCats(next);
     },
+    [selectedCats, setSelectedCats]
+  );
+
+  const selectCat = useCallback(
+    (cat: string) => setSelectedCats(nextCategorySelection(selectedCats, cat)),
     [selectedCats, setSelectedCats]
   );
 
@@ -252,6 +276,7 @@ export function useCatalog() {
     saleOnly,
     coordinatesActive,
     toggleCat,
+    selectCat,
     toggleSaleFilter,
     clearAllFilters,
     retryLoad,
@@ -266,7 +291,6 @@ export function useCatalog() {
     coordinatesSectionLoading,
     coordinatesCatalogReady,
     fetchError: indexError,
-    indexComplete: index?.complete ?? true,
     debouncedSearch,
   };
 }

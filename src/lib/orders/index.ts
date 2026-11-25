@@ -40,8 +40,8 @@ export {
   updateOrderCustomerDetails,
   updateOrderStatus,
 } from './orderService';
-export { AdminOrderApiError, cancelWebOrderRequest } from './adminOrderApi';
-export type { CancelWebOrderResult } from './adminOrderApi';
+export { AdminOrderApiError, cancelWebOrderRequest, setWebOrderDiscountRequest } from './adminOrderApi';
+export type { CancelWebOrderResult, SetWebOrderDiscountResult } from './adminOrderApi';
 export type {
   OrderCustomerDetailsUpdate,
   OrderItemsMutationResult,

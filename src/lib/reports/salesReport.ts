@@ -2,8 +2,10 @@ import type { OrderRecord, OrderStatus } from '../../types/order';
 import { CANCELLED_ORDER_STATUS, ORDER_STATUSES } from '../../types/order';
 import type { CsvCell } from '../csv';
 import { customerKey } from '../orders/orderCustomerSummary';
+import { orderDeliveryArea, type OrderDeliveryArea } from '../orders/orderDelivery';
 import { orderInDateRange, type DateRange } from '../orders/orderListFilters';
 import { parseLineItemDisplay, shortOrderId } from '../orders/orderUtils';
+import { orderWebDiscountAmount } from '../orders/webOrderDiscount';
 
 /**
  * Revenue definitions (shared by the Reports page and the dashboard):
@@ -40,9 +42,16 @@ export type SalesReport = {
   posCash: number; // cash kept at the register: handed over minus change given
   posCard: number;
   posDiscounts: number;
+  /** Admin whole-order discounts on booked web orders (already deducted from their totals/revenue). */
+  webDiscounts: number;
+  webDiscountedOrders: number;
   shippingCharged: number; // shipping fees on booked web orders — charged, NOT proof of payment
   byStatus: Record<OrderStatus, MoneyCount>;
-  byZone: { zone: string; count: number; revenue: number }[]; // booked web orders
+  /**
+   * Booked web orders per delivery area: the chosen place's region on newer orders, the
+   * former zone on older ones. `zone` is the stable area key (see orderDelivery.ts).
+   */
+  byZone: { zone: string; area: OrderDeliveryArea; count: number; revenue: number }[];
   byDay: DayPoint[];
   topProducts: ProductRow[];
   topCustomers: CustomerRow[];
@@ -104,13 +113,13 @@ export function buildSalesReport(allOrders: OrderRecord[], range: DateRange, opt
   const bookedWeb = booked.filter((o) => (o.source ?? 'web') === 'web');
   const bookedPos = booked.filter((o) => o.source === 'pos');
 
-  const zoneMap = new Map<string, { zone: string; count: number; revenue: number }>();
+  const zoneMap = new Map<string, { zone: string; area: OrderDeliveryArea; count: number; revenue: number }>();
   for (const o of bookedWeb) {
-    const zone = o.deliveryZone?.trim() || 'unknown';
-    const row = zoneMap.get(zone) ?? { zone, count: 0, revenue: 0 };
+    const area = orderDeliveryArea(o);
+    const row = zoneMap.get(area.key) ?? { zone: area.key, area, count: 0, revenue: 0 };
     row.count += 1;
     row.revenue += o.total;
-    zoneMap.set(zone, row);
+    zoneMap.set(area.key, row);
   }
 
   const productMap = new Map<string, ProductRow>();
@@ -152,6 +161,8 @@ export function buildSalesReport(allOrders: OrderRecord[], range: DateRange, opt
     posCash: round2(bookedPos.reduce((s, o) => s + Math.max(0, (o.payment?.cashAmount ?? 0) - (o.payment?.changeGiven ?? 0)), 0)),
     posCard: round2(bookedPos.reduce((s, o) => s + (o.payment?.cardAmount ?? 0), 0)),
     posDiscounts: round2(bookedPos.reduce((s, o) => s + (o.discount?.amount ?? 0), 0)),
+    webDiscounts: round2(bookedWeb.reduce((s, o) => s + orderWebDiscountAmount(o), 0)),
+    webDiscountedOrders: bookedWeb.filter((o) => orderWebDiscountAmount(o) > 0).length,
     shippingCharged: round2(bookedWeb.reduce((s, o) => s + (o.shippingCost || 0), 0)),
     byStatus,
     byZone: [...zoneMap.values()].map((z) => ({ ...z, revenue: round2(z.revenue) })).sort((a, b) => b.revenue - a.revenue),
@@ -199,6 +210,8 @@ export function reportSummaryCsvRows(report: SalesReport, range: DateRange): Csv
     ['POS cash (net of change)', report.posCash],
     ['POS card', report.posCard],
     ['POS discounts', report.posDiscounts],
+    ['Web discounts (admin, booked web orders)', report.webDiscounts],
+    ['Web orders with a discount', report.webDiscountedOrders],
     ['Shipping charged (booked web orders)', report.shippingCharged],
   ];
 }

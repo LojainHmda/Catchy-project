@@ -97,13 +97,20 @@ service cloud.firestore {
       allow write: if isOwner();
     }
 
+    /** Checkout orders carry a Palestinian mobile number: exactly 10 digits starting with 05
+     *  (same rule as the checkout form and the guest-checkout server, server/lib/checkoutPhone.js). */
+    function isCheckoutMobile(phone) {
+      return phone is string && phone.matches('^05[0-9]{8}$');
+    }
+
     match /orders/{id} {
       // `returnSummary` is written only by the returns shelf on the server (Admin SDK);
       // no client — customer or owner — may set or change it.
       allow create: if signedIn()
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.status == 'pending'
-        && !('returnSummary' in request.resource.data);
+        && !('returnSummary' in request.resource.data)
+        && isCheckoutMobile(request.resource.data.customerPhone);
       // Guest orders are created server-side; confirmation page may read them without sign-in.
       allow read: if resource.data.isGuest == true
         || (signedIn() && (resource.data.userId == request.auth.uid || isOwner()));

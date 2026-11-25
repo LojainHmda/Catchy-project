@@ -5,6 +5,7 @@ import { customerKey } from './orderCustomerSummary';
 import { isCoordinateCartId } from '../coordinateCart';
 import { normalizeSearchText, toLatinDigits } from './searchText';
 import { orderHasReturns, orderListBucket, returnLineKey, shortOrderId } from './orderUtils';
+import { orderWebDiscountAmount } from './webOrderDiscount';
 
 // ── Status buckets ───────────────────────────────────────────────────────────
 
@@ -55,6 +56,10 @@ export function orderMatchesSearch(order: OrderRecord, rawQuery: string): boolea
     order.customerName,
     order.customerPhone,
     order.deliveryAddress,
+    // Delivery place and its region (as stored on the order).
+    order.deliveryLocation?.name,
+    order.deliveryLocation?.regionName,
+    order.deliveryLocation?.regionNameEn,
   ];
   if (text.some((value) => value && normalizeSearchText(value).includes(q))) return true;
 
@@ -358,10 +363,24 @@ export function customerHistoryFor(order: OrderRecord, allOrders: OrderRecord[])
 
 // ── CSV export ───────────────────────────────────────────────────────────────
 
+/**
+ * 'Discount type' / 'Discount reason' cells; empty without a discount. Web discounts are
+ * always a fixed amount ("amount 20"); POS sales keep their own mode ("percent 10" / "amount 10").
+ */
+function csvDiscountDetails(o: OrderRecord): [string, string] {
+  if (o.source === 'pos') return o.discount ? [`${o.discount.mode} ${o.discount.value}`, o.discount.reason ?? ''] : ['', ''];
+  const amount = orderWebDiscountAmount(o);
+  return amount > 0 ? [`amount ${amount}`, o.webDiscount?.reason ?? ''] : ['', ''];
+}
+
 export function ordersCsvRows(orders: OrderRecord[]): CsvCell[][] {
   const header = [
     'Order ID', 'Order', 'Created', 'Source', 'Status', 'Customer', 'Phone', 'Email', 'Zone', 'Address',
     'Items', 'Subtotal', 'Shipping', 'Discount', 'Total', 'Payment', 'Cashier', 'Status changed by', 'Admin note',
+    // Appended (not inserted) so existing spreadsheets keep their column positions.
+    'Discount type', 'Discount reason',
+    // Delivery place on newer orders ('Zone' stays the former zone of older orders).
+    'Delivery place', 'Delivery region', 'Delivery place ID',
   ];
   const rows = orders.map((o) => [
     o.id,
@@ -378,12 +397,17 @@ export function ordersCsvRows(orders: OrderRecord[]): CsvCell[][] {
     o.itemCount,
     o.subtotal,
     o.shippingCost,
-    o.discount?.amount ?? 0,
+    // POS: the register discount (unchanged); web: the admin whole-order discount.
+    o.source === 'pos' ? o.discount?.amount ?? 0 : orderWebDiscountAmount(o),
     o.total,
     o.payment?.method ?? '',
     o.cashierName ?? '',
     o.statusUpdatedByName ?? '',
     o.adminNote ?? '',
+    ...csvDiscountDetails(o),
+    o.deliveryLocation?.name ?? '',
+    o.deliveryLocation?.regionName ?? '',
+    o.deliveryLocation?.id ?? '',
   ]);
   return [header, ...rows];
 }

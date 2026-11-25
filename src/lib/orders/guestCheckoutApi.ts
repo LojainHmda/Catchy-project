@@ -56,6 +56,7 @@ export async function placeGuestOrderFromCart(
         | 'PRODUCT_MISSING'
         | 'EMPTY_CART'
         | 'DELIVERY_INVALID'
+        | 'DELIVERY_PRICE_CHANGED'
         | 'UNKNOWN') || 'UNKNOWN',
       failure.message || 'Could not place your order.',
       failure.productName

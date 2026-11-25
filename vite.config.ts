@@ -190,6 +190,66 @@ function cloudinaryUploadDevApi(env: Record<string, string>) {
   };
 }
 
+/**
+ * Emulator mode only: dev mirror of server/index.js's analytics routes, so visitor
+ * tracking and the owner dashboard can be tested against the local emulators. Not
+ * registered in plain `npm run dev` (that would write to the real project in .env).
+ */
+function analyticsDevApi(env: Record<string, string>) {
+  let store: any = null;
+  const getStore = async () => {
+    if (store) return store;
+    const db = await getDevFirestore(env);
+    if (!db) return null;
+    const {createFirestoreAnalyticsStore} = await import('./server/lib/analytics.js');
+    store = await createFirestoreAnalyticsStore(db);
+    return store;
+  };
+  const readJson = (req: any) =>
+    new Promise<any>((resolve) => {
+      let body = '';
+      req.on('data', (chunk: Buffer) => (body += chunk));
+      req.on('end', () => {
+        try {
+          resolve(JSON.parse(body || '{}'));
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+  const send = (res: any, result: {status: number; body?: unknown}) => {
+    res.statusCode = result.status;
+    if (result.body === undefined) return res.end();
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(result.body));
+  };
+  return {
+    name: 'analytics-dev-api',
+    configureServer(server: any) {
+      server.middlewares.use('/api/analytics/collect', async (req: any, res: any) => {
+        if (req.method !== 'POST') return send(res, {status: 405, body: {ok: false}});
+        const lib = await import('./server/lib/analytics.js');
+        const body = await readJson(req);
+        send(res, await lib.handleCollect(getStore, {body, headers: req.headers, ip: req.socket?.remoteAddress || ''}));
+      });
+      for (const route of ['/api/admin/analytics/live', '/api/admin/analytics/summary']) {
+        server.middlewares.use(route, async (req: any, res: any) => {
+          if (req.method !== 'POST') return send(res, {status: 405, body: {ok: false}});
+          try {
+            const {verifyAdminRequest} = await import('./server/lib/cloudinaryAdmin.js');
+            const lib = await import('./server/lib/analytics.js');
+            const auth = await verifyAdminRequest(req);
+            const body = await readJson(req);
+            send(res, route.endsWith('/live') ? await lib.handleLive(getStore, auth) : await lib.handleSummary(getStore, auth, body));
+          } catch (err: any) {
+            send(res, {status: 500, body: {ok: false, code: 'UNKNOWN', message: err?.message || 'Analytics request failed.'}});
+          }
+        });
+      }
+    },
+  };
+}
+
 function qzSignDevApi() {
   return {
     name: 'qz-sign-dev-api',
@@ -274,6 +334,17 @@ function posDevApi(env: Record<string, string>) {
             idempotencyKey: parsed?.idempotencyKey,
           });
           return {status: result.ok ? 200 : 400, body: result};
+        })
+      );
+
+      // Owner-only web order discount (dev mirror of server/index.js — same owner check).
+      server.middlewares.use(
+        '/api/admin/orders/discount',
+        jsonHandler(async (parsed, req) => {
+          const {verifyAdminRequest} = await import('./server/lib/cloudinaryAdmin.js');
+          const auth = await verifyAdminRequest(req);
+          const {handleWebOrderDiscountRequest} = await import('./server/lib/webOrderDiscount.js');
+          return handleWebOrderDiscountRequest(auth.ok ? await getDevFirestore(env) : null, auth, parsed);
         })
       );
 
@@ -454,7 +525,7 @@ export default defineConfig(async ({mode, command}) => {
       basicSsl(),
       guestCheckoutDevApi(env),
       ...(emulator
-        ? [emulatorBlockedRoutesDevApi()]
+        ? [emulatorBlockedRoutesDevApi(), analyticsDevApi(env)]
         : [whatsappDevApi(env), imageProxyDevApi(), cloudinaryUploadDevApi(env)]),
       posDevApi(env),
       qzSignDevApi(),
